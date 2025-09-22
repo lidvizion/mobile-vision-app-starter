@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback } from 'react'
 import { Camera, Upload, Loader2, X, Video, Image as ImageIcon, AlertCircle } from 'lucide-react'
 import { CVTask, CVResponse } from '@/types'
+import { validateImageFile } from '@/lib/validation'
+import { logger, createLogContext } from '@/lib/logger'
 import { cn } from '@/lib/utils'
 
 interface CameraPreviewProps {
@@ -24,8 +26,18 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
   const streamRef = useRef<MediaStream | null>(null)
 
   const handleFileSelect = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      setError('Please select a valid image file')
+    const context = createLogContext(currentTask, 'CameraPreview', 'file-select')
+    logger.info('File selected for upload', context, {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type
+    })
+
+    // Validate file
+    const validation = validateImageFile(file)
+    if (!validation.isValid) {
+      setError(validation.error || 'Invalid file format')
+      logger.warn('File validation failed', context, { error: validation.error })
       return
     }
 
@@ -39,8 +51,9 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
     try {
       const response = await processImage(file)
       onImageProcessed(response)
+      logger.info('File processed successfully', context)
     } catch (error) {
-      console.error('Error processing image:', error)
+      logger.error('Error processing image', context, error as Error)
       setError('Failed to process image. Please try again.')
     }
   }
@@ -108,7 +121,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
         setError('Failed to process image. Please try again.')
       }
     }, 'image/jpeg', 0.9)
-  }, [processImage, onImageProcessed, stopCamera])
+  }, [processImage, onImageProcessed, stopCamera, setSelectedImage])
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()

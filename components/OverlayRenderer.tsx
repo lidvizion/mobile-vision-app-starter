@@ -58,23 +58,23 @@ export default function OverlayRenderer({
       <div className="absolute inset-0 pointer-events-none">
         {segmentation.map((region, index) => (
           <div key={index} className="animate-fade-in" style={{ animationDelay: `${index * 0.2}s` }}>
-            {/* Region overlay */}
+            {/* Region overlay - simplified for area-based display */}
                    <div
                      className="absolute rounded border border-white/30"
               style={{
                 backgroundColor: `${region.color}40`,
-                left: region.polygon?.[0]?.x ? `${(region.polygon[0].x / imageWidth) * 100}%` : '0%',
-                top: region.polygon?.[0]?.y ? `${(region.polygon[0].y / imageHeight) * 100}%` : '0%',
-                width: region.polygon?.[2]?.x ? `${((region.polygon[2].x - region.polygon[0].x) / imageWidth) * 100}%` : '100%',
-                height: region.polygon?.[2]?.y ? `${((region.polygon[2].y - region.polygon[0].y) / imageHeight) * 100}%` : '100%',
+                left: '10%',
+                top: '10%',
+                width: '80%',
+                height: '80%',
               }}
             />
             {/* Region label */}
                    <div
                      className="absolute bg-white text-gray-800 text-xs px-2 py-1 rounded font-medium border border-gray-200"
               style={{
-                left: region.polygon?.[0]?.x ? `${(region.polygon[0].x / imageWidth) * 100}%` : '10px',
-                top: region.polygon?.[0]?.y ? `${(region.polygon[0].y / imageHeight) * 100}%` : '10px',
+                left: '10px',
+                top: '10px',
               }}
             >
               <div className="flex items-center gap-2">

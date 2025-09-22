@@ -1,67 +1,116 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ResultHistoryItem, CVResponse } from '@/types'
+import { logger, createLogContext } from '@/lib/logger'
+import { queryKeys } from '@/lib/query-client'
 
-const MOCK_HISTORY: ResultHistoryItem[] = [
-  {
-    id: '1',
-    image_url: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM2NjdlZWEiLz48c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiM3NjRiYTIiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2cpIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyMCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TYW1wbGUgSW1hZ2U8L3RleHQ+PHRleHQgeD0iNTAlIiB5PSI2MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj40MDAg4oaUIDMwMDwvdGV4dD48L3N2Zz4=',
-    task: 'classification',
-    response: {
-      task: 'classification',
-      timestamp: '2024-01-15T09:15:00Z',
-      model_version: 'v1.2.0',
-      results: {
-        labels: [
-          { class: 'healthy_skin', score: 0.82, confidence: 'high' },
-          { class: 'mole', score: 0.15, confidence: 'low' }
-        ]
-      },
-      processing_time: 1.2,
-      image_metadata: { width: 640, height: 480, format: 'jpeg' }
-    },
-    created_at: '2024-01-15T09:15:00Z'
-  },
-  {
-    id: '2', 
-    image_url: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM2NjdlZWEiLz48c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiM3NjRiYTIiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2cpIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyMCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TYW1wbGUgSW1hZ2U8L3RleHQ+PHRleHQgeD0iNTAlIiB5PSI2MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj40MDAg4oaUIDMwMDwvdGV4dD48L3N2Zz4=',
-    task: 'detection',
-    response: {
-      task: 'detection',
-      timestamp: '2024-01-15T09:20:00Z',
-      model_version: 'v1.2.0',
-      results: {
-        detections: [
-          { class: 'face', confidence: 0.95, bbox: { x: 120, y: 80, width: 200, height: 250 } }
-        ]
-      },
-      processing_time: 0.8,
-      image_metadata: { width: 640, height: 480, format: 'jpeg' }
-    },
-    created_at: '2024-01-15T09:20:00Z'
+// Local storage key
+const STORAGE_KEY = 'cv-result-history'
+
+// Load history from localStorage
+const loadHistoryFromStorage = (): ResultHistoryItem[] => {
+  if (typeof window === 'undefined') return []
+  
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    return stored ? JSON.parse(stored) : []
+  } catch (error) {
+    const context = createLogContext(undefined, 'useResultHistory', 'load-storage')
+    logger.error('Failed to load history from localStorage', context, error as Error)
+    return []
   }
-]
+}
+
+// Save history to localStorage
+const saveHistoryToStorage = (history: ResultHistoryItem[]): void => {
+  if (typeof window === 'undefined') return
+  
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(history))
+  } catch (error) {
+    const context = createLogContext(undefined, 'useResultHistory', 'save-storage')
+    logger.error('Failed to save history to localStorage', context, error as Error)
+  }
+}
 
 export function useResultHistory() {
-  const [history, setHistory] = useState<ResultHistoryItem[]>(MOCK_HISTORY)
+  const queryClient = useQueryClient()
 
-  const addResult = useCallback((item: Omit<ResultHistoryItem, 'id' | 'created_at'>) => {
-    const newItem: ResultHistoryItem = {
-      ...item,
-      id: Date.now().toString(),
-      created_at: new Date().toISOString()
+  // Query for result history
+  const { data: history = [], isLoading } = useQuery({
+    queryKey: queryKeys.resultHistory,
+    queryFn: () => {
+      const context = createLogContext(undefined, 'useResultHistory', 'load-history')
+      logger.info('Loading result history', context)
+      return loadHistoryFromStorage()
+    },
+    staleTime: 0, // Always refetch from storage
+    gcTime: 0 // Don't cache in memory
+  })
+
+  // Mutation to add a new result
+  const addResultMutation = useMutation({
+    mutationFn: async (newResult: Omit<ResultHistoryItem, 'id' | 'created_at'>): Promise<ResultHistoryItem> => {
+      const context = createLogContext(newResult.task, 'useResultHistory', 'add-result')
+      logger.info('Adding new result to history', context, {
+        task: newResult.task,
+        hasResponse: !!newResult.response
+      })
+      
+      const result: ResultHistoryItem = {
+        ...newResult,
+        id: crypto.randomUUID(),
+        created_at: new Date().toISOString()
+      }
+      
+      const updatedHistory = [result, ...history]
+      saveHistoryToStorage(updatedHistory)
+      
+      return result
+    },
+    onSuccess: (newResult) => {
+      const context = createLogContext(newResult.task, 'useResultHistory', 'add-success')
+      logger.info('Successfully added result to history', context)
+      
+      // Update the query cache
+      queryClient.setQueryData(queryKeys.resultHistory, (old: ResultHistoryItem[] = []) => {
+        return [newResult, ...old]
+      })
+    },
+    onError: (error) => {
+      const context = createLogContext(undefined, 'useResultHistory', 'add-error')
+      logger.error('Failed to add result to history', context, error as Error)
     }
-    setHistory(prev => [newItem, ...prev])
-  }, [])
+  })
 
-  const clearHistory = useCallback(() => {
-    setHistory([])
-  }, [])
+  // Mutation to clear all history
+  const clearHistoryMutation = useMutation({
+    mutationFn: async (): Promise<void> => {
+      const context = createLogContext(undefined, 'useResultHistory', 'clear-history')
+      logger.info('Clearing result history', context, { historyCount: history.length })
+      
+      saveHistoryToStorage([])
+    },
+    onSuccess: () => {
+      const context = createLogContext(undefined, 'useResultHistory', 'clear-success')
+      logger.info('Successfully cleared result history', context)
+      
+      // Update the query cache
+      queryClient.setQueryData(queryKeys.resultHistory, [])
+    },
+    onError: (error) => {
+      const context = createLogContext(undefined, 'useResultHistory', 'clear-error')
+      logger.error('Failed to clear result history', context, error as Error)
+    }
+  })
 
   return {
     history,
-    addResult,
-    clearHistory
+    isLoading,
+    addResult: addResultMutation.mutate,
+    clearHistory: clearHistoryMutation.mutate,
+    isAddingResult: addResultMutation.isPending,
+    isClearingHistory: clearHistoryMutation.isPending
   }
 }
