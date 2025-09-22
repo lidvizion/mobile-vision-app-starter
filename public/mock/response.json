@@ -1,0 +1,52 @@
+{
+  "task": "classification",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "model_version": "v1.2.0",
+  "results": {
+    "labels": [
+      {
+        "class": "healthy_skin",
+        "score": 0.82,
+        "confidence": "high"
+      },
+      {
+        "class": "mole",
+        "score": 0.15,
+        "confidence": "low"
+      },
+      {
+        "class": "rash",
+        "score": 0.03,
+        "confidence": "very_low"
+      }
+    ],
+    "detections": [
+      {
+        "class": "face",
+        "confidence": 0.95,
+        "bbox": {
+          "x": 120,
+          "y": 80,
+          "width": 200,
+          "height": 250
+        }
+      }
+    ],
+    "segmentation": {
+      "mask_url": "/mock/mask.png",
+      "regions": [
+        {
+          "class": "skin",
+          "area": 0.75,
+          "color": "#FFB6C1"
+        }
+      ]
+    }
+  },
+  "processing_time": 1.2,
+  "image_metadata": {
+    "width": 640,
+    "height": 480,
+    "format": "jpeg"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "task": "segmentation",
+  "timestamp": "2024-01-15T10:40:00Z",
+  "model_version": "v1.2.0",
+  "results": {
+    "segmentation": {
+      "mask_url": "/mock/segmentation-mask.png",
+      "regions": [
+        {
+          "class": "person",
+          "area": 0.45,
+          "color": "#FF6B6B",
+          "polygon": [
+            {"x": 50, "y": 30},
+            {"x": 230, "y": 30},
+            {"x": 230, "y": 330},
+            {"x": 50, "y": 330}
+          ]
+        },
+        {
+          "class": "background",
+          "area": 0.55,
+          "color": "#4ECDC4",
+          "polygon": [
+            {"x": 0, "y": 0},
+            {"x": 640, "y": 0},
+            {"x": 640, "y": 480},
+            {"x": 0, "y": 480}
+          ]
+        }
+      ]
+    }
+  },
+  "processing_time": 2.1,
+  "image_metadata": {
+    "width": 640,
+    "height": 480,
+    "format": "jpeg"
+  }
+}
