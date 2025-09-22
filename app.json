@@ -1,0 +1,20 @@
+{
+  "name": "Mobile Vision App Starter",
+  "slug": "mobile-vision-app-starter",
+  "task": "multi-type",
+  "inputs": ["camera", "image"],
+  "outputs": ["overlays", "labels", "masks"],
+  "description": "Cross-platform starters in React Native and Flutter for camera capture, gallery upload, and real-time overlays. Pluggable task modules for detection, segmentation, classification, or a Multi-Type mode that switches at runtime.",
+  "version": "1.0.0",
+  "platforms": ["react-native", "flutter", "web"],
+  "features": [
+    "camera-capture",
+    "gallery-upload", 
+    "real-time-overlays",
+    "task-switching",
+    "secure-upload",
+    "result-history",
+    "auth-support",
+    "theming"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "task": "detection",
+  "timestamp": "2024-01-15T10:35:00Z",
+  "model_version": "v1.2.0",
+  "results": {
+    "detections": [
+      {
+        "class": "person",
+        "confidence": 0.92,
+        "bbox": {
+          "x": 50,
+          "y": 30,
+          "width": 180,
+          "height": 300
+        }
+      },
+      {
+        "class": "car",
+        "confidence": 0.87,
+        "bbox": {
+          "x": 200,
+          "y": 150,
+          "width": 120,
+          "height": 80
+        }
+      },
+      {
+        "class": "dog",
+        "confidence": 0.76,
+        "bbox": {
+          "x": 350,
+          "y": 200,
+          "width": 80,
+          "height": 100
+        }
+      }
+    ]
+  },
+  "processing_time": 0.8,
+  "image_metadata": {
+    "width": 640,
+    "height": 480,
+    "format": "jpeg"
+  }
+}
