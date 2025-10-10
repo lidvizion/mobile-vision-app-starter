@@ -1,20 +1,24 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useCVTask } from '@/hooks/useCVTask'
 import { useResultHistory } from '@/hooks/useResultHistory'
 import TaskSelector from '@/components/TaskSelector'
 import CameraPreview from '@/components/CameraPreview'
 import ResultsDisplay from '@/components/ResultsDisplay'
 import ResultHistory from '@/components/ResultHistory'
+import ModelSearch from '@/components/ModelSearch'
 import { ResultHistoryItem } from '@/types'
-import { Smartphone, Github, ExternalLink, Zap, Shield, Palette, Sparkles, ArrowRight } from 'lucide-react'
+import { Github, ExternalLink, Zap, Shield, Palette, Sparkles, ArrowRight, Search } from 'lucide-react'
+import LidVizionIcon from '@/components/LidVizionIcon'
 
 export default function Home() {
   const { currentTask, switchTask, processImage, isProcessing, lastResponse } = useCVTask()
   const { history, addResult, clearHistory } = useResultHistory()
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [viewingHistoryItem, setViewingHistoryItem] = useState<ResultHistoryItem | null>(null)
+  const [activeSection, setActiveSection] = useState<'cv' | 'models'>('cv')
 
   const handleImageProcessed = (response: any) => {
     if (selectedImage) {
@@ -43,39 +47,36 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-wells-dark-grey rounded-xl flex items-center justify-center shadow-md">
-                <Smartphone className="w-4 h-4 text-white" />
-              </div>
+              <LidVizionIcon className="w-15 h-15" />
               <div>
-                <h1 className="text-lg font-serif font-semibold text-wells-dark-grey">Vision SDK</h1>
+                <h1 className="text-lg font-serif font-semibold text-wells-dark-grey">Lid Vizion</h1>
                 <p className="text-xs text-wells-warm-grey">Computer Vision Platform</p>
               </div>
             </div>
             
             <div className="flex items-center gap-4">
-              <div className="hidden md:flex items-center gap-2">
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-xl border border-green-200 text-xs font-medium shadow-sm">
-                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                  <span>Real-time</span>
-                </div>
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-xl border border-blue-200 text-xs font-medium shadow-sm">
-                  <Shield className="w-3 h-3" />
-                  <span>Secure</span>
-                </div>
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 rounded-xl border border-purple-200 text-xs font-medium shadow-sm">
-                  <Palette className="w-3 h-3" />
-                  <span>Customizable</span>
-                </div>
-              </div>
-              
               <div className="flex items-center gap-2">
-                <button className="btn-ghost btn-sm">
+                <button 
+                  onClick={() => setActiveSection('cv')}
+                  className={`btn-ghost btn-sm flex items-center gap-2 ${activeSection === 'cv' ? 'bg-wells-warm-grey/10' : ''}`}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span className="hidden sm:inline">CV Demo</span>
+                </button>
+                <button 
+                  onClick={() => setActiveSection('models')}
+                  className={`btn-ghost btn-sm flex items-center gap-2 ${activeSection === 'models' ? 'bg-wells-warm-grey/10' : ''}`}
+                >
+                  <Search className="w-4 h-4" />
+                  <span className="hidden sm:inline">Model Search</span>
+                </button>
+                <a href="https://github.com/lidvizion/mobile-vision-app-starter" target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm flex items-center justify-center">
                   <Github className="w-4 h-4" />
-                </button>
-                <button className="btn-primary btn-lg rounded-2xl flex items-center gap-2">
-                  <span>Docs</span>
+                </a>
+                <a href="https://calendly.com/lidvizion-info/15" target="_blank" rel="noopener noreferrer" className="btn-primary btn-lg rounded-2xl flex items-center gap-2">
+                  <span>Book a Call</span>
                   <ExternalLink className="w-4 h-4" />
-                </button>
+                </a>
               </div>
             </div>
           </div>
@@ -98,29 +99,26 @@ export default function Home() {
           </div>
           
           <h1 className="text-4xl md:text-6xl font-serif font-bold text-wells-dark-grey mb-6 leading-tight">
-            Build Mobile CV Apps <span className="text-wells-warm-grey">Faster Than Ever</span>
+            Deploy CV Apps <span className="text-wells-warm-grey">Faster Than Ever</span>
           </h1>
           
           <p className="text-lg text-wells-warm-grey max-w-2xl mx-auto mb-10 leading-relaxed">
-            Professional starter kit for React Native and Flutter with real-time overlays, task switching, and seamless backend integration.
+            Professional Starter kit for computer vision apps, overlays, and scalable cloud infra.
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="btn-primary btn-lg rounded-2xl hover-lift flex items-center gap-2">
-              <span>Get Started</span>
+            <a href="https://calendly.com/lidvizion-info/15" target="_blank" rel="noopener noreferrer" className="btn-primary btn-lg rounded-2xl hover-lift flex items-center gap-2">
+              <span>Book a Call</span>
               <ArrowRight className="w-4 h-4" />
-            </button>
-            <button className="btn-secondary btn-lg rounded-2xl hover-lift flex items-center gap-2">
-              <Github className="w-4 h-4" />
-              <span>View on GitHub</span>
-            </button>
+            </a>
           </div>
         </div>
       </section>
 
       {/* Main Content with Layered Cards */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {activeSection === 'cv' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left Column - Main Interface */}
           <div className="lg:col-span-2 space-y-8">
             {/* Task Selector */}
@@ -161,14 +159,9 @@ export default function Home() {
             
             {/* SDK Info - Floating Card */}
             <div className="card-floating p-6 animate-fade-in" style={{ animationDelay: '0.4s' }}>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-8 h-8 bg-wells-dark-grey rounded-xl flex items-center justify-center shadow-md">
-                  <Smartphone className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-serif font-semibold text-wells-dark-grey">SDK Integration</h3>
-                  <p className="text-sm text-wells-warm-grey">Cross-platform support</p>
-                </div>
+              <div className="mb-6">
+                <h3 className="text-lg font-serif font-semibold text-wells-dark-grey">SDK Integration</h3>
+                <p className="text-sm text-wells-warm-grey">Cross-platform support</p>
               </div>
               
               <div className="space-y-3">
@@ -238,6 +231,11 @@ export default function Home() {
             </div>
           </div>
         </div>
+        ) : (
+          <div className="animate-fade-in">
+            <ModelSearch />
+          </div>
+        )}
       </main>
 
       {/* Luxury Footer */}
@@ -245,16 +243,14 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="text-center">
             <div className="flex items-center justify-center gap-3 mb-6">
-              <div className="w-8 h-8 bg-wells-dark-grey rounded-xl flex items-center justify-center shadow-md">
-                <Smartphone className="w-4 h-4 text-white" />
-              </div>
-              <span className="text-xl font-serif font-semibold text-wells-dark-grey">Vision SDK</span>
+              <LidVizionIcon className="w-30 h-30" />
+              <span className="text-xl font-serif font-semibold text-wells-dark-grey">Lid Vizion</span>
             </div>
             <p className="text-wells-warm-grey text-sm mb-6 max-w-2xl mx-auto leading-relaxed">
               Cross-platform mobile starter kit for camera-based CV apps. Built with modern design principles and professional-grade components.
             </p>
             <div className="flex items-center justify-center gap-6 text-sm text-wells-warm-grey">
-              <span>© 2024 Vision SDK</span>
+              <span>© 2024 Lid Vizion</span>
               <span>•</span>
               <span>MIT License</span>
               <span>•</span>
