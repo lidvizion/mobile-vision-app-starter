@@ -60,8 +60,7 @@ export function useResultHistory() {
       
       const result: ResultHistoryItem = {
         ...newResult,
-        id: crypto.randomUUID(),
-        created_at: new Date().toISOString()
+        timestamp: new Date().toISOString()
       }
       
       const updatedHistory = [result, ...history]

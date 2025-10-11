@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react'
 import { Camera, Upload, Loader2, X, Video, Image as ImageIcon, AlertCircle } from 'lucide-react'
+import Image from 'next/image'
 import { CVTask, CVResponse } from '@/types'
 import { validateImageFile } from '@/lib/validation'
 import { logger, createLogContext } from '@/lib/logger'
@@ -24,6 +25,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const fileClickInProgress = useRef(false)
 
   const handleFileSelect = async (file: File) => {
     const context = createLogContext(currentTask, 'CameraPreview', 'file-select')
@@ -186,16 +188,26 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
           />
           <canvas ref={canvasRef} className="hidden" />
           
-          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-3">
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-3 items-center">
             <button
-              onClick={capturePhoto}
-              className="w-12 h-12 bg-wells-white rounded-full shadow-wells-lg flex items-center justify-center hover:bg-wells-light-beige transition-colors border border-wells-warm-grey/20"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                capturePhoto()
+              }}
+              className="w-16 h-16 bg-wells-white rounded-full shadow-wells-lg flex items-center justify-center hover:bg-wells-light-beige transition-all hover:scale-110 border-4 border-wells-dark-grey/20"
+              title="Capture Photo"
             >
-              <Camera className="w-6 h-6 text-wells-dark-grey" />
+              <Camera className="w-8 h-8 text-wells-dark-grey" />
             </button>
             <button
-              onClick={stopCamera}
-              className="w-12 h-12 bg-red-500 rounded-full shadow-wells-lg flex items-center justify-center hover:bg-red-600 transition-colors"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                stopCamera()
+              }}
+              className="w-12 h-12 bg-red-500 rounded-full shadow-wells-lg flex items-center justify-center hover:bg-red-600 transition-all hover:scale-110"
+              title="Stop Camera"
             >
               <X className="w-6 h-6 text-white" />
             </button>
@@ -220,9 +232,11 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
           {selectedImage ? (
             <div className="space-y-4">
               <div className="relative group">
-                <img
+                <Image
                   src={selectedImage}
                   alt="Selected"
+                  width={400}
+                  height={256}
                   className="max-w-full max-h-64 mx-auto rounded-2xl border border-wells-warm-grey/20 shadow-md"
                 />
                 <div className="absolute inset-0 bg-wells-dark-grey/0 group-hover:bg-wells-dark-grey/10 rounded-2xl transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
@@ -278,14 +292,27 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
               {!isProcessing && (
                 <div className="flex flex-col sm:flex-row gap-3 justify-center">
                   <button
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      if (fileClickInProgress.current) return
+                      fileClickInProgress.current = true
+                      fileInputRef.current?.click()
+                      setTimeout(() => {
+                        fileClickInProgress.current = false
+                      }, 1000)
+                    }}
                     className="btn-primary btn-lg hover-lift"
                   >
                     <Upload className="w-5 h-5" />
                     <span>Choose File</span>
                   </button>
                   <button 
-                    onClick={startCamera}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      startCamera()
+                    }}
                     className="btn-secondary btn-lg hover-lift"
                   >
                     <Video className="w-5 h-5" />

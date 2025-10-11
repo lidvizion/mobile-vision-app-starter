@@ -1,14 +1,8 @@
-// Import types from validation schemas
-import type {
-  CVResponse,
-  CVResults,
-  Detection,
-  Classification,
-  SegmentationRegion,
-  ImageMetadata
-} from '@/lib/validation';
+/**
+ * Type Exports for NPM Package
+ */
 
-// Re-export types from validation schemas
+// CV Types from validation
 export type {
   CVResponse,
   CVResults,
@@ -16,48 +10,22 @@ export type {
   Classification,
   SegmentationRegion,
   ImageMetadata
-};
+} from '../lib/validation'
 
-// Additional types for the application
-export type CVTask = 'detection' | 'classification' | 'segmentation' | 'multi-type';
+// Model Discovery Types
+export type {
+  ModelMetadata,
+  SearchFilters,
+  ModelSearchResult,
+  ExtractedKeywords
+} from './models'
+
+// Additional types defined locally
+export type CVTask = 'detection' | 'classification' | 'segmentation' | 'multi-type'
 
 export interface ResultHistoryItem {
-  id: string;
-  image_url: string;
-  task: CVTask;
-  response: CVResponse;
-  created_at: string;
-}
-
-export interface CameraPreviewProps {
-  currentTask: CVTask;
-  onImageProcessed: (response: CVResponse) => void;
-  isProcessing: boolean;
-  processImage: (file: File) => Promise<CVResponse>;
-  selectedImage: string | null;
-  setSelectedImage: (image: string | null) => void;
-}
-
-export interface TaskSelectorProps {
-  currentTask: CVTask;
-  onTaskChange: (task: CVTask) => void;
-}
-
-export interface ResultsDisplayProps {
-  response: CVResponse | null;
-  selectedImage: string | null;
-}
-
-export interface ResultHistoryProps {
-  history: ResultHistoryItem[];
-  onClearHistory: () => void;
-  onViewResult: (item: ResultHistoryItem) => void;
-}
-
-export interface OverlayRendererProps {
-  detections?: Detection[];
-  segmentation?: SegmentationRegion[];
-  imageWidth: number;
-  imageHeight: number;
-  task: CVTask;
+  image_url: string
+  task: string
+  response: any
+  timestamp?: string
 }

@@ -1,0 +1,450 @@
+'use client'
+
+import { useState } from 'react'
+import { observer } from 'mobx-react-lite'
+import { Sparkles, ArrowRight, Lightbulb, Download, ExternalLink, Smartphone, ChevronDown, ChevronUp, Filter, Grid, Layers, Tag, AlertCircle, CheckCircle } from 'lucide-react'
+import { EXAMPLE_QUERIES } from '@/lib/keywordExtraction'
+import { ModelMetadata } from '@/types/models'
+import { modelViewStore } from '@/stores/modelViewStore'
+import { useQueryRefine } from '@/hooks/useQueryRefine'
+import { useModelSearch } from '@/hooks/useModelSearch'
+import { useSaveModelSelection } from '@/hooks/useSaveModelSelection'
+import ModelSearchSkeleton from './ModelSearchSkeleton'
+
+interface GuidedModelFlowProps {
+  onModelSelect: (model: ModelMetadata) => void
+}
+
+const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
+  const [showSearchBar, setShowSearchBar] = useState(false)
+  const [sessionId] = useState(() => `session_${Date.now()}`)
+
+  // React Query hooks
+  const queryRefineMutation = useQueryRefine()
+  const modelSearchMutation = useModelSearch()
+  const saveSelectionMutation = useSaveModelSelection()
+
+  const taskIcons = {
+    detection: Grid,
+    classification: Tag,
+    segmentation: Layers
+  }
+
+  const handleSearch = async () => {
+    if (modelViewStore.queryText.length < 10) return
+
+    try {
+      // Step 1: Refine query
+      const refineResult = await queryRefineMutation.mutateAsync({
+        query: modelViewStore.queryText,
+        userId: 'anonymous'
+      })
+
+      // Store query_id globally for inference result saving
+      if (typeof window !== 'undefined') {
+        (window as any).__queryId = refineResult.query_id
+      }
+
+      // Step 2: Search models with refined keywords
+      await modelSearchMutation.mutateAsync({
+        keywords: refineResult.keywords,
+        task_type: refineResult.task_type,
+        limit: 20
+      })
+
+      // Step 3: Save recommendations
+      if (modelViewStore.modelList.length > 0 && modelViewStore.queryId) {
+        await fetch('/api/save-recommendations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query_id: modelViewStore.queryId,
+            models: modelViewStore.modelList.slice(0, 10).map(m => ({
+              name: m.name,
+              source: m.source,
+              task: m.task,
+              metrics: {
+                mAP: 0,
+                FPS: 0
+              },
+              url: m.modelUrl,
+              selected: false
+            }))
+          })
+        })
+      }
+    } catch (error) {
+      console.error('Search error:', error)
+    }
+  }
+
+  const handleSelectModel = async (model: ModelMetadata) => {
+    // Set selected model in store
+    modelViewStore.setSelectedModel(model)
+
+    // Save selection via API
+    if (modelViewStore.queryId) {
+      await saveSelectionMutation.mutateAsync({
+        query_id: modelViewStore.queryId,
+        model: {
+          name: model.name,
+          source: model.source,
+          url: model.modelUrl,
+          task: model.task,
+          description: model.description
+        },
+        session_id: sessionId
+      })
+    }
+
+    // Notify parent component
+    onModelSelect(model)
+  }
+
+  // Show skeleton loader while searching
+  if (modelViewStore.isSearching) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-wells-warm-grey/10 rounded-full mb-4">
+            <div className="w-4 h-4 border-2 border-wells-dark-grey/30 border-t-wells-dark-grey rounded-full animate-spin" />
+            <span className="text-sm font-medium text-wells-dark-grey">Analyzing your use case...</span>
+          </div>
+          <h2 className="text-2xl font-serif font-bold text-wells-dark-grey mb-2">
+            Searching for the perfect models
+          </h2>
+          <p className="text-wells-warm-grey">
+            Searching Roboflow Universe and Hugging Face Hub...
+          </p>
+        </div>
+        <ModelSearchSkeleton count={3} />
+      </div>
+    )
+  }
+
+  // Show results if we have models
+  if (modelViewStore.modelList.length > 0) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        {/* Collapsible Search Again Bar */}
+        <div className="card-floating overflow-hidden">
+          <button
+            onClick={() => setShowSearchBar(!showSearchBar)}
+            className="w-full px-4 py-3 flex items-center justify-between hover:bg-wells-warm-grey/5 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-wells-dark-grey" />
+              <span className="text-sm font-medium text-wells-dark-grey">Search Again</span>
+            </div>
+            {showSearchBar ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+          
+          {showSearchBar && (
+            <div className="px-4 pb-4 border-t border-wells-warm-grey/20">
+              <div className="mt-4">
+                <input
+                  type="text"
+                  value={modelViewStore.queryText}
+                  onChange={(e) => modelViewStore.setQueryText(e.target.value)}
+                  placeholder="Refine your search..."
+                  className="w-full px-4 py-2 border border-wells-warm-grey/30 rounded-lg focus:border-wells-dark-grey focus:outline-none text-sm"
+                />
+                <button
+                  onClick={handleSearch}
+                  disabled={modelViewStore.queryText.length < 10 || modelViewStore.isSearching}
+                  className="mt-2 w-full px-4 py-2 bg-wells-dark-grey text-white rounded-lg hover:bg-wells-warm-grey transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {modelViewStore.isSearching ? 'Searching...' : 'Search'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Results Header */}
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-wells-warm-grey/10 rounded-full mb-4">
+            <Sparkles className="w-4 h-4 text-wells-dark-grey" />
+            <span className="text-sm font-medium text-wells-dark-grey">Step 2</span>
+          </div>
+          <h2 className="text-2xl font-serif font-bold text-wells-dark-grey mb-2">
+            We found models that match your use case!
+          </h2>
+          <p className="text-wells-warm-grey mb-4">
+            Choose one to start your workflow or view more
+          </p>
+          <p className="text-sm text-wells-warm-grey">
+            Based on: "<strong className="text-wells-dark-grey">{modelViewStore.queryText}</strong>"
+          </p>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {modelViewStore.refinedKeywords.map((keyword, i) => (
+              <span key={i} className="px-3 py-1 bg-wells-warm-grey/10 text-wells-dark-grey text-xs rounded-lg">
+                {keyword}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Task Type Filters */}
+        <div className="flex items-center gap-2 justify-center flex-wrap">
+          <Filter className="w-4 h-4 text-wells-warm-grey" />
+          <span className="text-sm text-wells-warm-grey mr-2">Filter by task:</span>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => modelViewStore.setActiveFilter('all')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                modelViewStore.activeFilter === 'all'
+                  ? 'bg-wells-dark-grey text-white'
+                  : 'bg-wells-warm-grey/10 text-wells-dark-grey hover:bg-wells-warm-grey/20'
+              }`}
+            >
+              All
+            </button>
+            {(Object.keys(taskIcons) as Array<keyof typeof taskIcons>).map((task) => {
+              const Icon = taskIcons[task]
+              return (
+                <button
+                  key={task}
+                  onClick={() => modelViewStore.setActiveFilter(task)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                    modelViewStore.activeFilter === task
+                      ? 'bg-wells-dark-grey text-white'
+                      : 'bg-wells-warm-grey/10 text-wells-dark-grey hover:bg-wells-warm-grey/20'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="capitalize">{task}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Model Cards - Top 3 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {modelViewStore.displayedModels.map((model, index) => {
+            const TaskIcon = taskIcons[model.task as keyof typeof taskIcons] || Grid
+            const isTopThree = index < 3
+            
+            return (
+              <div 
+                key={model.id} 
+                className={`card-floating p-6 hover:shadow-xl transition-all cursor-pointer group ${
+                  isTopThree ? 'border-2 border-wells-dark-grey/10' : ''
+                }`}
+              >
+                {/* Rank Badge */}
+                {isTopThree && (
+                  <div className="flex items-center justify-between mb-4">
+                    <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      index === 0 ? 'bg-yellow-100 text-yellow-800' :
+                      index === 1 ? 'bg-gray-100 text-gray-700' :
+                      'bg-orange-100 text-orange-700'
+                    }`}>
+                      #{index + 1} Top Match
+                    </div>
+                  </div>
+                )}
+                
+                {/* Preview Image Placeholder */}
+                <div className="w-full h-32 bg-gradient-to-br from-wells-warm-grey/10 to-wells-warm-grey/20 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
+                  <TaskIcon className="w-12 h-12 text-wells-warm-grey/40" />
+                </div>
+
+                {/* Model Info */}
+                <div className="mb-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`text-xs px-2 py-1 rounded font-medium ${
+                      model.source === 'roboflow' 
+                        ? 'bg-blue-50 text-blue-700' 
+                        : 'bg-orange-50 text-orange-700'
+                    }`}>
+                      {model.source}
+                    </span>
+                    <span className="text-xs px-2 py-1 bg-wells-warm-grey/10 text-wells-dark-grey rounded font-medium capitalize">
+                      {model.task}
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-lg text-wells-dark-grey line-clamp-1 mb-1 group-hover:text-wells-warm-grey transition-colors">
+                    {model.name}
+                  </h3>
+                  <p className="text-sm text-wells-warm-grey">by {model.author}</p>
+                </div>
+
+                {/* Description */}
+                <p className="text-sm text-wells-warm-grey line-clamp-3 mb-4 min-h-[60px]">
+                  {model.description || 'No description available'}
+                </p>
+
+                {/* Metrics */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <div className="flex items-center gap-1 px-2 py-1 bg-wells-warm-grey/5 rounded text-xs">
+                    <Download className="w-3 h-3 text-wells-warm-grey" />
+                    <span className="font-medium">{formatNumber(model.downloads)}</span>
+                  </div>
+                  {model.supportsInference ? (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 rounded text-xs font-medium">
+                      <CheckCircle className="w-3 h-3" />
+                      <span>✓ Works</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-amber-50 text-amber-700 rounded text-xs font-medium" title="No Inference API support">
+                      <AlertCircle className="w-3 h-3" />
+                      <span>⚠️ No Inference</span>
+                    </div>
+                  )}
+                  {model.platforms.includes('mobile') && (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-medium">
+                      <Smartphone className="w-3 h-3" />
+                      <span>Mobile</span>
+                    </div>
+                  )}
+                  {model.frameworks.slice(0, 2).map((fw) => (
+                    <div key={fw} className="px-2 py-1 bg-wells-warm-grey/5 rounded text-xs text-wells-dark-grey">
+                      {fw}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleSelectModel(model)}
+                    className="flex-1 px-4 py-3 bg-wells-dark-grey text-white rounded-lg hover:bg-wells-warm-grey transition-colors font-semibold text-sm flex items-center justify-center gap-2 group-hover:scale-[1.02] transition-transform"
+                  >
+                    Use this model
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                  <a
+                    href={model.modelUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-3 border-2 border-wells-warm-grey/30 rounded-lg hover:border-wells-dark-grey/50 hover:bg-wells-warm-grey/5 transition-all"
+                    title="View Details"
+                  >
+                    <ExternalLink className="w-4 h-4 text-wells-dark-grey" />
+                  </a>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Show More Button */}
+        {modelViewStore.hasMoreResults && (
+          <div className="text-center">
+            <button
+              onClick={() => modelViewStore.setShowAllResults(true)}
+              className="px-8 py-4 bg-wells-warm-grey/10 hover:bg-wells-warm-grey/20 text-wells-dark-grey rounded-xl transition-all font-semibold flex items-center gap-2 mx-auto"
+            >
+              <span>Show {modelViewStore.remainingCount} more results</span>
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Results Count */}
+        <div className="text-center text-sm text-wells-warm-grey">
+          Showing {modelViewStore.displayedModels.length} of {modelViewStore.filteredModels.length} models
+        </div>
+      </div>
+    )
+  }
+
+  // Show input form (Step 1)
+  return (
+    <div className="max-w-2xl mx-auto animate-fade-in">
+      {/* Step 1: Define Your Use Case */}
+      <div className="text-center mb-8">
+        <div className="inline-flex items-center gap-2 px-4 py-2 bg-wells-warm-grey/10 rounded-full mb-4">
+          <Sparkles className="w-4 h-4 text-wells-dark-grey" />
+          <span className="text-sm font-medium text-wells-dark-grey">Step 1</span>
+        </div>
+        <h2 className="text-3xl font-serif font-bold text-wells-dark-grey mb-3">
+          What are you trying to detect?
+        </h2>
+        <p className="text-wells-warm-grey">
+          Example: Detect trash in river images or identify basketball shots
+        </p>
+      </div>
+
+      {/* Input Form */}
+      <div className="card-floating p-6 mb-6">
+        <label className="block text-sm font-medium text-wells-dark-grey mb-2">
+          Your Use Case
+        </label>
+        <textarea
+          value={modelViewStore.queryText}
+          onChange={(e) => modelViewStore.setQueryText(e.target.value)}
+          placeholder="I want to detect trash in images from beach cleanups..."
+          className="w-full px-4 py-3 text-base border-2 border-wells-warm-grey/30 rounded-xl focus:border-wells-dark-grey focus:outline-none resize-none transition-colors"
+          rows={4}
+          maxLength={500}
+          disabled={modelViewStore.isSearching}
+        />
+        
+        <div className="flex items-center justify-between mt-4">
+          <span className="text-xs text-wells-warm-grey">
+            {modelViewStore.queryText.length} / 500 
+            {modelViewStore.queryText.length < 10 && ` (${10 - modelViewStore.queryText.length} more needed)`}
+          </span>
+          
+          <button
+            onClick={handleSearch}
+            disabled={modelViewStore.queryText.length < 10 || modelViewStore.isSearching}
+            className={`px-6 py-3 rounded-xl font-semibold flex items-center gap-2 transition-all ${
+              modelViewStore.queryText.length >= 10 && !modelViewStore.isSearching
+                ? 'bg-wells-dark-grey text-white hover:bg-wells-warm-grey shadow-lg hover:shadow-xl'
+                : 'bg-wells-warm-grey/20 text-wells-warm-grey cursor-not-allowed'
+            }`}
+          >
+            {modelViewStore.isSearching ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Analyzing your use case...
+              </>
+            ) : (
+              <>
+                <span>Continue</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Example Queries */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 justify-center text-sm text-wells-warm-grey">
+          <Lightbulb className="w-4 h-4" />
+          <span>Try these examples:</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {EXAMPLE_QUERIES.map((example, index) => (
+            <button
+              key={index}
+              onClick={() => modelViewStore.setQueryText(example)}
+              className="p-3 text-left bg-white border border-wells-warm-grey/20 rounded-lg hover:border-wells-dark-grey/30 hover:shadow-md transition-all text-sm text-wells-dark-grey"
+            >
+              {example}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+})
+
+// Helper function to format large numbers
+function formatNumber(num: number): string {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1) + 'M'
+  }
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'K'
+  }
+  return num.toString()
+}
+
+export default GuidedModelFlow
