@@ -4,6 +4,7 @@ import { ResultHistoryItem } from '@/types'
 import { formatTimestamp } from '@/lib/utils'
 import { Trash2, Eye, History, Clock, Zap, Image as ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import Image from 'next/image'
 
 interface ResultHistoryProps {
   history: ResultHistoryItem[]
@@ -81,7 +82,7 @@ export default function ResultHistory({ history, onClearHistory, onViewResult }:
       <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-luxury">
         {history.map((item, index) => (
           <div
-            key={item.id}
+            key={`${item.image_url}-${index}`}
             className="group p-4 bg-wells-light-beige rounded-xl border border-wells-warm-grey/20 hover:border-wells-warm-grey/30 hover:bg-wells-white hover:shadow-md transition-all duration-300 cursor-pointer"
             onClick={() => onViewResult(item)}
             style={{ animationDelay: `${index * 0.05}s` }}
@@ -89,9 +90,11 @@ export default function ResultHistory({ history, onClearHistory, onViewResult }:
             <div className="flex items-center gap-4">
               {/* Thumbnail */}
               <div className="relative flex-shrink-0">
-                <img
+                <Image
                   src={item.image_url}
                   alt="Result thumbnail"
+                  width={56}
+                  height={56}
                   className="w-14 h-14 object-cover rounded-xl border border-wells-warm-grey/20 shadow-sm"
                 />
                 <div className={cn(
@@ -113,7 +116,7 @@ export default function ResultHistory({ history, onClearHistory, onViewResult }:
                 <div className="flex items-center gap-4 text-sm text-wells-warm-grey mb-1">
                   <div className="flex items-center gap-1.5">
                     <Clock className="w-3 h-3" />
-                    <span>{formatTimestamp(item.created_at)}</span>
+                     <span>{formatTimestamp(item.timestamp || new Date().toISOString())}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Zap className="w-3 h-3" />

@@ -5,6 +5,7 @@ import { formatTimestamp, formatConfidence } from '@/lib/utils'
 import { Clock, Zap, Image as ImageIcon, BarChart3, Target, Tag, Palette } from 'lucide-react'
 import OverlayRenderer from './OverlayRenderer'
 import { cn } from '@/lib/utils'
+import Image from 'next/image'
 
 interface ResultsDisplayProps {
   response: CVResponse | null
@@ -82,9 +83,11 @@ export default function ResultsDisplay({ response, selectedImage }: ResultsDispl
 
       {/* Image with overlays */}
       <div className="relative mb-8 rounded-2xl overflow-hidden border border-wells-warm-grey/20 shadow-md">
-        <img
+        <Image
           src={selectedImage}
           alt="Processed"
+          width={800}
+          height={320}
           className="w-full max-h-80 object-contain bg-wells-light-beige"
         />
         <OverlayRenderer
