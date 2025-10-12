@@ -54,7 +54,19 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
           
           if (!response.ok) {
             const error = await response.json()
-            throw new Error(error.error || 'Inference failed')
+            const errorMessage = error.error || 'Inference failed'
+            const errorDetails = error.details ? ` - ${error.details}` : ''
+            const errorStatus = error.status ? ` (Status: ${error.status})` : ''
+            
+            // Create enhanced error with Hugging Face redirect info
+            const enhancedError = new Error(`${errorMessage}${errorDetails}${errorStatus}`)
+            if (error.redirectToHF && error.modelUrl) {
+              (enhancedError as any).modelUrl = error.modelUrl
+              (enhancedError as any).redirectToHF = true
+            }
+            
+            logger.error('HF Inference API error', context, enhancedError)
+            throw enhancedError
           }
           
           const inferenceData = await response.json()

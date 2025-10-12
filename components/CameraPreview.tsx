@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react'
 import { Camera, Upload, Loader2, X, Video, Image as ImageIcon, AlertCircle } from 'lucide-react'
 import Image from 'next/image'
 import { CVTask, CVResponse } from '@/types'
+import { ModelMetadata } from '@/types/models'
 import { validateImageFile } from '@/lib/validation'
 import { logger, createLogContext } from '@/lib/logger'
 import { cn } from '@/lib/utils'
@@ -15,12 +16,16 @@ interface CameraPreviewProps {
   processImage: (file: File) => Promise<CVResponse>
   selectedImage: string | null
   setSelectedImage: (image: string | null) => void
+  selectedModel: ModelMetadata | null
+  onModelSelect: (model: ModelMetadata) => void
+  availableModels: ModelMetadata[]
 }
 
-export default function CameraPreview({ currentTask, onImageProcessed, isProcessing, processImage, selectedImage, setSelectedImage }: CameraPreviewProps) {
+export default function CameraPreview({ currentTask, onImageProcessed, isProcessing, processImage, selectedImage, setSelectedImage, selectedModel, onModelSelect, availableModels }: CameraPreviewProps) {
   const [dragActive, setDragActive] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [currentImageFile, setCurrentImageFile] = useState<File | null>(null) // Store the File object for reprocessing
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -44,6 +49,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
     }
 
     setError(null)
+    setCurrentImageFile(file) // Store the File object for reprocessing
     const reader = new FileReader()
     reader.onload = (e) => {
       setSelectedImage(e.target?.result as string)
@@ -55,8 +61,9 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
       onImageProcessed(response)
       logger.info('File processed successfully', context)
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       logger.error('Error processing image', context, error as Error)
-      setError('Failed to process image. Please try again.')
+      setError(`Failed to process image: ${errorMessage}`)
     }
   }
 
@@ -107,6 +114,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
       if (!blob) return
 
       const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' })
+      setCurrentImageFile(file) // Store the File object for reprocessing
       
       const reader = new FileReader()
       reader.onload = (e) => {
@@ -119,8 +127,9 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
         onImageProcessed(response)
         stopCamera()
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
         console.error('Error processing image:', error)
-        setError('Failed to process image. Please try again.')
+        setError(`Failed to process image: ${errorMessage}`)
       }
     }, 'image/jpeg', 0.9)
   }, [processImage, onImageProcessed, stopCamera, setSelectedImage])
@@ -164,15 +173,71 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
 
       {/* Error Message */}
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 shadow-wells-sm">
-          <AlertCircle className="w-5 h-5 text-red-600" />
-          <span className="text-sm text-red-700">{error}</span>
-          <button
-            onClick={() => setError(null)}
-            className="ml-auto text-red-600 hover:text-red-800 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl shadow-wells-sm">
+          <div className="flex items-center gap-3 mb-3">
+            <AlertCircle className="w-5 h-5 text-red-600" />
+            <span className="text-sm text-red-700 flex-1">{error}</span>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-600 hover:text-red-800 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          
+          {/* Fallback Options */}
+          <div className="flex flex-col sm:flex-row gap-2 mt-3">
+            <button
+              onClick={async () => {
+                if (selectedModel && availableModels.length > 0 && currentImageFile) {
+                  const currentIndex = availableModels.findIndex(model => model.id === selectedModel.id)
+                  const nextIndex = (currentIndex + 1) % availableModels.length
+                  const nextModel = availableModels[nextIndex]
+                  
+                  console.log(`🔄 Switching to next model: ${nextModel.name}`)
+                  onModelSelect(nextModel)
+                  setError(null) // Clear the error
+                  
+                  // Wait a brief moment for the model to be selected, then reprocess
+                  setTimeout(async () => {
+                    try {
+                      console.log(`🔮 Reprocessing image with model: ${nextModel.name}`)
+                      const response = await processImage(currentImageFile)
+                      onImageProcessed(response)
+                      console.log(`✅ Successfully processed with: ${nextModel.name}`)
+                    } catch (error) {
+                      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+                      console.error('Error reprocessing image with next model:', error)
+                      setError(`Failed to process image: ${errorMessage}`)
+                    }
+                  }, 100)
+                }
+              }}
+              disabled={!currentImageFile || isProcessing}
+              className={cn(
+                "flex items-center gap-2 px-3 py-2 rounded-xl transition-colors text-sm font-medium",
+                !currentImageFile || isProcessing
+                  ? "bg-blue-400 text-white cursor-not-allowed"
+                  : "bg-blue-600 text-white hover:bg-blue-700"
+              )}
+            >
+              <span>🔄</span>
+              Test Next Model
+            </button>
+            
+            <button
+              onClick={() => {
+                // Use the selected model ID directly instead of trying to parse it from error message
+                if (selectedModel) {
+                  window.open(`https://huggingface.co/${selectedModel.id}`, '_blank')
+                }
+              }}
+              className="flex items-center gap-2 px-3 py-2 bg-gray-600 text-white rounded-xl hover:bg-gray-700 transition-colors text-sm font-medium"
+            >
+              <span>🔗</span>
+              View Model
+            </button>
+          </div>
         </div>
       )}
       
@@ -252,12 +317,14 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
               
               <div className="text-center">
                 <h4 className="text-lg font-medium text-wells-dark-grey mb-1">
-                  {isProcessing ? 'Processing Image...' : 'Image Ready'}
+                  {isProcessing ? 'Processing Image...' : error ? 'Processing Failed' : 'Image Ready'}
                 </h4>
                 <p className="text-sm text-wells-warm-grey">
                   {isProcessing 
                     ? 'Analyzing your image with computer vision models...'
-                    : 'Your image is ready for analysis'
+                    : error
+                      ? 'Try another model or view model details'
+                      : 'Your image is ready for analysis'
                   }
                 </p>
               </div>

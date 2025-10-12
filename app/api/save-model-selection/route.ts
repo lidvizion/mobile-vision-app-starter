@@ -19,6 +19,7 @@ interface SaveModelRequest {
     url: string
     task?: string
     description?: string
+    classes?: string[] // Add classes field
   }
   session_id?: string
 }
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
       query_id,
       model_name: model.name,
       source: model.source as 'Roboflow' | 'Hugging Face',
+      classes: model.classes || null, // Add classes field
       selected_at: new Date().toISOString(),
       session_id: session_id || null
     }

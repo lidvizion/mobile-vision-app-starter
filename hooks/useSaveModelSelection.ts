@@ -10,6 +10,7 @@ interface SaveModelSelectionRequest {
     url: string
     task?: string
     description?: string
+    classes?: string[] // Add classes field
   }
   session_id?: string
 }

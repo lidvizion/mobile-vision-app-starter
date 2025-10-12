@@ -9,6 +9,7 @@ import ResultsDisplay from '@/components/ResultsDisplay'
 import ResultHistory from '@/components/ResultHistory'
 import { ResultHistoryItem } from '@/types'
 import { ModelMetadata } from '@/types/models'
+import { modelViewStore } from '@/stores/modelViewStore'
 import { Github, ExternalLink, Sparkles, ArrowRight } from 'lucide-react'
 import LidVizionIcon from '@/components/LidVizionIcon'
 
@@ -142,6 +143,9 @@ export default function Home() {
                     processImage={processImage}
                     selectedImage={selectedImage}
                     setSelectedImage={setSelectedImage}
+                    selectedModel={selectedModel}
+                    onModelSelect={handleModelSelect}
+                    availableModels={modelViewStore.modelList}
                   />
                 </div>
 

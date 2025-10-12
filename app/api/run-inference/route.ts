@@ -58,26 +58,24 @@ export async function POST(request: NextRequest) {
     console.log('🔮 Running inference', {
       requestId,
       modelId: model_id,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      inputType: inputs.startsWith('data:') ? 'base64' : 'url',
+      inputLength: inputs.length,
+      inputPreview: inputs.substring(0, 50) + '...'
     })
 
-    // Determine if inputs is a URL or base64
-    let imageData = inputs
-    
-    // If it's a base64 string, extract the actual data
-    if (inputs.startsWith('data:image')) {
-      const base64Data = inputs.split(',')[1]
-      imageData = base64Data
-    }
-
-    // HF Inference API expects raw image data, not JSON
+    // HF Inference API expects JSON format with { inputs: <data> }
+    // Inputs can be a URL or base64 string
     const response = await fetch(inferenceEndpoint, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
         'x-request-id': requestId
       },
-      body: Buffer.from(imageData, 'base64')
+      body: JSON.stringify({
+        inputs: inputs // Send the full base64 data URL or regular URL
+      })
     })
 
     if (!response.ok) {
@@ -92,14 +90,37 @@ export async function POST(request: NextRequest) {
       })
 
       if (response.status === 503) {
-        const errorData = JSON.parse(errorText)
+        try {
+          const errorData = JSON.parse(errorText)
+          return NextResponse.json(
+            {
+              error: 'Model is loading',
+              estimated_time: errorData.estimated_time,
+              status: 'loading'
+            },
+            { status: 503 }
+          )
+        } catch {
+          return NextResponse.json(
+            {
+              error: 'Model is currently loading. Please wait a moment and try again.',
+              status: 'loading'
+            },
+            { status: 503 }
+          )
+        }
+      }
+
+      if (response.status === 404) {
         return NextResponse.json(
           {
-            error: 'Model is loading',
-            estimated_time: errorData.estimated_time,
-            status: 'loading'
+            error: 'Model not found',
+            details: `The model "${model_id}" is not available for inference. This model may not support the Hugging Face Inference API, or it may have been removed. Please try a different model.`,
+            status: 404,
+            modelUrl: `https://huggingface.co/${model_id}`,
+            redirectToHF: true
           },
-          { status: 503 }
+          { status: 404 }
         )
       }
 

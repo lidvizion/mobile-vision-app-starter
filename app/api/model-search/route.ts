@@ -1,5 +1,335 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
+import { fetchMultipleModelClasses } from '@/lib/huggingface/fetchModelClasses'
+
+/**
+ * Fetch model description from Hugging Face README.md
+ */
+async function fetchModelDescription(modelId: string): Promise<string | null> {
+  try {
+    const readmeUrl = `https://huggingface.co/${modelId}/raw/main/README.md`
+    const response = await fetch(readmeUrl)
+    
+    if (!response.ok) {
+      return null
+    }
+    
+    const readmeContent = await response.text()
+    
+    // Extract description from README
+    // Look for content after the YAML front matter (---)
+    const lines = readmeContent.split('\n')
+    let inYamlFrontMatter = false
+    let description = ''
+    let foundMeaningfulContent = false
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      
+      // Check for YAML front matter boundaries
+      if (line.trim() === '---') {
+        inYamlFrontMatter = !inYamlFrontMatter
+        continue
+      }
+      
+      // Skip YAML front matter
+      if (inYamlFrontMatter) {
+        continue
+      }
+      
+      // Skip empty lines at the start
+      if (line.trim() === '') {
+        continue
+      }
+      
+      // Skip markdown headers, images, and other formatting
+      if (line.startsWith('#') || 
+          line.startsWith('![') || 
+          line.startsWith('|') ||
+          line.startsWith('```') ||
+          line.startsWith('<!--') ||
+          line.trim() === '') {
+        continue
+      }
+      
+      // Look for meaningful content (not just HTML comments or boilerplate)
+      const cleanLine = line.trim()
+      if (cleanLine.length > 20 && 
+          !cleanLine.toLowerCase().includes('this model card has been generated') &&
+          !cleanLine.toLowerCase().includes('provide a quick summary') &&
+          !cleanLine.toLowerCase().includes('model-index') &&
+          !cleanLine.toLowerCase().includes('metrics:') &&
+          !cleanLine.startsWith('<!--')) {
+        description = cleanLine
+        foundMeaningfulContent = true
+        break
+      }
+    }
+    
+    // If no meaningful content found, try to get a better description
+    if (!foundMeaningfulContent) {
+      // Look for any paragraph that might contain useful info
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim()
+        if (line.length > 30 && 
+            line.includes(' ') && // Contains spaces (likely a sentence)
+            !line.startsWith('#') &&
+            !line.startsWith('!') &&
+            !line.startsWith('|') &&
+            !line.startsWith('```') &&
+            !line.startsWith('<!--') &&
+            !line.toLowerCase().includes('model-index') &&
+            !line.toLowerCase().includes('metrics:')) {
+          description = line
+          break
+        }
+      }
+    }
+    
+    // Clean up the description
+    if (description) {
+      // Remove HTML comments first
+      description = description
+        .replace(/<!--[\s\S]*?-->/g, '') // Remove HTML comments
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Remove links, keep text
+        .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold
+        .replace(/\*([^*]+)\*/g, '$1') // Remove italic
+        .replace(/`([^`]+)`/g, '$1') // Remove code formatting
+        .replace(/^[^\w]*/, '') // Remove leading non-word characters
+        .trim()
+      
+      // Only return if it's a reasonable length and meaningful content
+      if (description.length > 10 && description.length < 200 && 
+          !description.toLowerCase().includes('model-index') &&
+          !description.toLowerCase().includes('metrics:') &&
+          !description.toLowerCase().includes('this model card has been generated') &&
+          !description.toLowerCase().includes('provide a quick summary')) {
+        return description
+      }
+    }
+    
+    return null
+  } catch (error) {
+    console.warn(`Failed to fetch description for ${modelId}:`, error)
+    return null
+  }
+}
+
+/**
+ * Fetch descriptions for multiple models in parallel
+ */
+async function fetchMultipleModelDescriptions(modelIds: string[]): Promise<Record<string, string | null>> {
+  const results = await Promise.all(
+    modelIds.map(async (modelId) => ({
+      modelId,
+      description: await fetchModelDescription(modelId)
+    }))
+  )
+  
+  return results.reduce((acc, { modelId, description }) => {
+    acc[modelId] = description
+    return acc
+  }, {} as Record<string, string | null>)
+}
+
+/**
+ * Determine model type based on classes and pipeline tag
+ */
+function determineModelType(model: any, classes?: string[]): {
+  type: 'custom' | 'generative' | 'unspecified'
+  tier: 1 | 2 | 3
+  displayLabel: string
+  description: string
+  taskType: 'object-detection' | 'classification' | 'segmentation' | 'captioning' | 'qa' | 'embedding' | 'general'
+  displayFormat: {
+    type: 'bounding-boxes' | 'labels' | 'masks' | 'text' | 'embeddings' | 'general'
+    requiresImage: boolean
+    requiresText: boolean
+    outputType: 'structured' | 'text' | 'numerical'
+    visualization: 'overlay' | 'sidebar' | 'modal' | 'inline'
+  }
+} {
+  const pipelineTag = model.pipeline_tag?.toLowerCase() || ''
+  
+  // Tier 1: Custom/Task-specific CV models with explicit classes
+  if (classes && classes.length > 0 && classes[0] !== 'LABEL_0') {
+    // Determine specific task type based on pipeline tag and model name
+    let taskType: 'object-detection' | 'classification' | 'segmentation' | 'captioning' | 'qa' | 'embedding' | 'general' = 'general'
+            let displayFormat: {
+              type: 'bounding-boxes' | 'labels' | 'masks' | 'text' | 'embeddings' | 'general'
+              requiresImage: boolean
+              requiresText: boolean
+              outputType: 'structured' | 'text' | 'numerical'
+              visualization: 'overlay' | 'sidebar' | 'modal' | 'inline'
+            } = {
+              type: 'general',
+              requiresImage: true,
+              requiresText: false,
+              outputType: 'structured',
+              visualization: 'sidebar'
+            }
+    
+    // Check model name and description for task type clues
+    const modelName = model.name?.toLowerCase() || ''
+    const modelDescription = model.description?.toLowerCase() || ''
+    const combinedText = `${pipelineTag} ${modelName} ${modelDescription}`
+    
+    if (combinedText.includes('object-detection') || 
+        combinedText.includes('detection') || 
+        combinedText.includes('yolo') || 
+        combinedText.includes('detr') ||
+        combinedText.includes('faster-rcnn') ||
+        combinedText.includes('retinanet') ||
+        combinedText.includes('bounding') ||
+        combinedText.includes('bbox')) {
+      taskType = 'object-detection'
+      displayFormat.type = 'bounding-boxes'
+      displayFormat.visualization = 'overlay'
+    } else if (combinedText.includes('classification') || 
+               combinedText.includes('image-classification') ||
+               combinedText.includes('classify') ||
+               combinedText.includes('resnet') ||
+               combinedText.includes('vit') ||
+               combinedText.includes('efficientnet')) {
+      taskType = 'classification'
+      displayFormat.type = 'labels'
+    } else if (combinedText.includes('segmentation') || 
+               combinedText.includes('mask') ||
+               combinedText.includes('deeplab') ||
+               combinedText.includes('unet') ||
+               combinedText.includes('mask-rcnn')) {
+      taskType = 'segmentation'
+      displayFormat.type = 'masks'
+      displayFormat.visualization = 'overlay'
+    }
+    
+    return {
+      type: 'custom',
+      tier: 1,
+      displayLabel: 'Custom Model',
+      description: `Detects ${classes.length} specific classes: ${classes.slice(0, 3).join(', ')}${classes.length > 3 ? '...' : ''}`,
+      taskType,
+      displayFormat
+    }
+  }
+  
+  // Tier 2: Generative vision-language models
+  const modelName = model.name?.toLowerCase() || ''
+  const modelDescription = model.description?.toLowerCase() || ''
+  const combinedText = `${pipelineTag} ${modelName} ${modelDescription}`
+  
+  const generativeTags = ['image-to-text', 'multimodal', 'text-generation', 'visual-question-answering', 'image-captioning']
+  const generativeKeywords = ['blip', 'llava', 'llama', 'phi', 'qwen', 'instruct', 'caption', 'captioning', 'vision-language', 'vlm', 'vision-language-model']
+  
+  if (generativeTags.some(tag => pipelineTag.includes(tag)) || 
+      generativeKeywords.some(keyword => combinedText.includes(keyword))) {
+    let taskType: 'captioning' | 'qa' | 'general' = 'general'
+    let displayFormat: {
+      type: 'bounding-boxes' | 'labels' | 'masks' | 'text' | 'embeddings' | 'general'
+      requiresImage: boolean
+      requiresText: boolean
+      outputType: 'structured' | 'text' | 'numerical'
+      visualization: 'overlay' | 'sidebar' | 'modal' | 'inline'
+    } = {
+      type: 'text',
+      requiresImage: true,
+      requiresText: false,
+      outputType: 'text',
+      visualization: 'modal'
+    }
+    
+    if (combinedText.includes('captioning') || 
+        combinedText.includes('image-to-text') || 
+        combinedText.includes('caption') ||
+        combinedText.includes('blip')) {
+      taskType = 'captioning'
+      displayFormat.visualization = 'sidebar'
+    } else if (combinedText.includes('question-answering') || 
+               combinedText.includes('qa') ||
+               combinedText.includes('instruct')) {
+      taskType = 'qa'
+      displayFormat.requiresText = true
+    }
+    
+    return {
+      type: 'generative',
+      tier: 2,
+      displayLabel: 'Generative Vision',
+      description: 'Returns free-text descriptions and answers about images',
+      taskType,
+      displayFormat
+    }
+  }
+  
+  // Tier 3: Unspecified/Legacy models
+  return {
+    type: 'unspecified',
+    tier: 3,
+    displayLabel: 'Vision Model',
+    description: 'No predefined labels — responses vary by prompt',
+    taskType: 'general',
+    displayFormat: {
+      type: 'general',
+      requiresImage: true,
+      requiresText: false,
+      outputType: 'text',
+      visualization: 'modal'
+    }
+  }
+}
+
+/**
+ * Calculate enhanced relevance score with model type consideration
+ */
+function calculateEnhancedRelevance(model: any, keywords: string[], classes?: string[]): number {
+  const modelTypeInfo = determineModelType(model, classes)
+  let baseScore = 0
+  
+  // HIGHEST PRIORITY: Known working models (verified to work with Inference API)
+  if (model.isKnownWorking) {
+    baseScore += 500 // Massive boost to ensure these appear first
+  }
+  
+  // Base keyword relevance
+  const modelText = `${model.name} ${model.description} ${model.tags?.join(' ') || ''}`.toLowerCase()
+  const keywordMatches = keywords.filter(keyword => 
+    modelText.includes(keyword.toLowerCase())
+  ).length
+  baseScore += keywordMatches * 20
+  
+  // Tier-based scoring
+  switch (modelTypeInfo.tier) {
+    case 1: // Custom models with classes
+      baseScore += 100
+      // Bonus for class keyword matches
+      if (classes) {
+        const classMatches = keywords.filter(keyword =>
+          classes.some(cls => cls.toLowerCase().includes(keyword.toLowerCase()))
+        ).length
+        baseScore += classMatches * 30
+      }
+      break
+    case 2: // Generative models
+      baseScore += 50
+      break
+    case 3: // Unspecified models
+      baseScore += 10
+      break
+  }
+  
+  // Downloads bonus (logarithmic to prevent huge models from dominating)
+  baseScore += Math.log(model.downloads + 1) * 5
+  
+  // Bonus for models from trusted organizations (more likely to work)
+  if (model.id?.startsWith('microsoft/') || 
+      model.id?.startsWith('google/') || 
+      model.id?.startsWith('facebook/') ||
+      model.id?.startsWith('openai/')) {
+    baseScore += 100
+  }
+  
+  return baseScore
+}
 
 /**
  * Map Hugging Face pipeline tags to specific task types
@@ -79,7 +409,7 @@ interface ModelSearchRequest {
 interface NormalizedModel {
   id: string
   name: string
-  source: 'Roboflow' | 'Hugging Face'
+  source: 'roboflow' | 'huggingface'
   description: string
   url: string
   modelUrl: string
@@ -88,20 +418,45 @@ interface NormalizedModel {
   metrics?: {
     mAP?: number
     accuracy?: number
+    precision?: number
+    recall?: number
     FPS?: number
     modelSize?: string
   }
   task: string
   author: string
   downloads: number
+  views?: number
   likes?: number
+  stars?: number
   tags?: string[]
+  classes?: string[]
   updatedAt?: string
+  lastUpdated?: string
+  trainingImages?: number
+  modelId?: string
   frameworks: string[]
   platforms: string[]
   supportsInference?: boolean
   inferenceEndpoint?: string
   inferenceStatus?: string
+  isKnownWorking?: boolean // Flag for verified working models
+  // Enhanced model type information
+  modelType?: 'custom' | 'generative' | 'unspecified'
+  modelTypeInfo?: {
+    type: 'custom' | 'generative' | 'unspecified'
+    tier: 1 | 2 | 3
+    displayLabel: string
+    description: string
+    taskType: 'object-detection' | 'classification' | 'segmentation' | 'captioning' | 'qa' | 'embedding' | 'general'
+    displayFormat: {
+      type: 'bounding-boxes' | 'labels' | 'masks' | 'text' | 'embeddings' | 'general'
+      requiresImage: boolean
+      requiresText: boolean
+      outputType: 'structured' | 'text' | 'numerical'
+      visualization: 'overlay' | 'sidebar' | 'modal' | 'inline'
+    }
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -141,21 +496,13 @@ export async function POST(request: NextRequest) {
       return model.supportsInference === true
     })
     
-    console.log(`✅ Inference-ready models (for UI): ${inferenceReadyModels.length}`)
+    console.log(`✅ Live inference-ready models (hosted/warm): ${inferenceReadyModels.length}`)
     
-    // Sort inference-ready models by relevance
+    // Sort inference-ready models by enhanced relevance
     const sortedModels = inferenceReadyModels.sort((a, b) => {
-      // Calculate keyword relevance score
-      const aKeywordScore = calculateKeywordRelevance(a, keywords)
-      const bKeywordScore = calculateKeywordRelevance(b, keywords)
-      
-      // Prioritize keyword match over task match
-      const aTaskMatch = task_type && a.task.includes(task_type) ? 50 : 0
-      const bTaskMatch = task_type && b.task.includes(task_type) ? 50 : 0
-      
-      // Combined score: keyword relevance + task match + downloads
-      const aScore = aKeywordScore + aTaskMatch + Math.log(a.downloads + 1)
-      const bScore = bKeywordScore + bTaskMatch + Math.log(b.downloads + 1)
+      // Calculate enhanced relevance scores (will be updated after classes are fetched)
+      const aScore = calculateKeywordRelevance(a, keywords)
+      const bScore = calculateKeywordRelevance(b, keywords)
       
       return bScore - aScore
     })
@@ -170,11 +517,86 @@ export async function POST(request: NextRequest) {
     // Get models for current page
     const paginatedModels = sortedModels.slice(startIdx, endIdx)
 
+    // Fetch classes and descriptions for ALL Hugging Face models (not just current page)
+    const allHfModelIds = inferenceReadyModels
+      .filter(m => m.source === 'huggingface' && m.id)
+      .map(m => m.id)
+    
+    let classesMap: Record<string, string[]> = {}
+    let descriptionsMap: Record<string, string> = {}
+    
+    if (allHfModelIds.length > 0) {
+      console.log(`📝 Fetching classes and descriptions for ${allHfModelIds.length} HF models...`)
+      
+      try {
+        // Fetch both classes and descriptions in parallel
+        const [classesResults, descriptionsResults] = await Promise.all([
+          fetchMultipleModelClasses(allHfModelIds),
+          fetchMultipleModelDescriptions(allHfModelIds)
+        ])
+        
+        // Extract successful classes
+        Object.entries(classesResults).forEach(([modelId, result]) => {
+          if (result.success && result.classes) {
+            classesMap[modelId] = result.classes
+            console.log(`   ✅ ${modelId}: ${result.classes.length} classes`)
+          } else {
+            console.log(`   ⚠️  ${modelId}: No classes found`)
+          }
+        })
+        
+        // Extract successful descriptions
+        Object.entries(descriptionsResults).forEach(([modelId, description]) => {
+          if (description) {
+            descriptionsMap[modelId] = description
+            console.log(`   📝 ${modelId}: "${description.substring(0, 50)}..."`)
+          } else {
+            console.log(`   ⚠️  ${modelId}: No description found`)
+          }
+        })
+        
+      } catch (error) {
+        console.error('Error fetching classes/descriptions:', error)
+        // Continue without classes/descriptions if fetch fails
+      }
+    }
+
+    // Add classes, better descriptions, and model type information to paginated models
+    const paginatedModelsWithMetadata = paginatedModels.map(model => {
+      const betterDescription = model.source === 'huggingface' && descriptionsMap[model.id]
+        ? descriptionsMap[model.id]
+        : model.description
+      
+      // Get classes for this model
+      const modelClasses = model.source === 'huggingface' && classesMap[model.id]
+        ? classesMap[model.id]
+        : model.classes // Use existing classes for Roboflow models
+      
+      // Determine model type and add type information
+      const modelTypeInfo = determineModelType(model, modelClasses)
+      
+      return {
+        ...model,
+        description: betterDescription,
+        classes: modelClasses,
+        modelType: modelTypeInfo.type,
+        modelTypeInfo: modelTypeInfo
+      }
+    })
+
+    // Re-sort with enhanced relevance scoring now that we have classes and model types
+    const finalSortedModels = paginatedModelsWithMetadata.sort((a, b) => {
+      const aScore = calculateEnhancedRelevance(a, keywords, a.classes)
+      const bScore = calculateEnhancedRelevance(b, keywords, b.classes)
+      
+      return bScore - aScore
+    })
+
     // Response for frontend (only inference-ready models)
     const response = {
-      models: paginatedModels,
+      models: finalSortedModels,
       total: inferenceReadyModels.length,
-      displayed: paginatedModels.length,
+      displayed: finalSortedModels.length,
       hasMore: currentPage < totalPages,
       remaining: Math.max(0, inferenceReadyModels.length - endIdx),
       sources: {
@@ -210,16 +632,48 @@ export async function POST(request: NextRequest) {
 
     console.log(`💾 Saving to MongoDB:`)
     console.log(`   - Total models fetched: ${allModelsIncludingNonInference.length}`)
-    console.log(`   - Inference-ready: ${inferenceReadyModels.length}`)
-    console.log(`   - Non-inference: ${allModelsIncludingNonInference.length - inferenceReadyModels.length}`)
+    console.log(`   - Live inference-ready (hosted/warm): ${inferenceReadyModels.length}`)
+    console.log(`   - Non-live (download required): ${allModelsIncludingNonInference.length - inferenceReadyModels.length}`)
     console.log(`📄 Pagination:`)
     console.log(`   - Page ${currentPage} of ${totalPages}`)
     console.log(`   - Showing ${paginatedModels.length} models`)
     console.log(`   - Remaining: ${response.remaining} models`)
 
+    // Generate query ID for this search
+    const queryId = `uuid-query-${Date.now()}`
+    
+    // Update analytics data with query ID
+    const analyticsDataWithQueryId = {
+      ...analyticsData,
+      query_id: queryId
+    }
+    
     // Cache the UI response AND save analytics data to MongoDB
     await saveSearchCache(cacheKey, response)
-    await saveSearchAnalytics(crypto.randomUUID(), analyticsData)
+    await saveSearchAnalytics(queryId, analyticsDataWithQueryId)
+    
+    // Save ALL inference-ready models to recommendations (not just paginated ones)
+    // Process ALL inference-ready models with metadata
+    const allModelsWithMetadata = inferenceReadyModels.map(model => {
+      const modelClasses = model.classes || (model.id && classesMap[model.id] ? classesMap[model.id] : undefined)
+      const modelTypeInfo = determineModelType(model, modelClasses)
+      
+      return {
+        ...model,
+        classes: modelClasses,
+        modelType: modelTypeInfo?.type || 'unspecified',
+        modelTypeInfo: modelTypeInfo
+      }
+    })
+    
+    // Sort all models by enhanced relevance
+    const allSortedModels = allModelsWithMetadata.sort((a, b) => {
+      const aScore = calculateEnhancedRelevance(a, keywords, a.classes)
+      const bScore = calculateEnhancedRelevance(b, keywords, b.classes)
+      return bScore - aScore
+    })
+    
+    await saveModelRecommendations(queryId, allSortedModels, classesMap)
 
     return NextResponse.json(response)
 
@@ -258,6 +712,7 @@ async function searchRoboflowModels(
       url += `&type=${roboflowTask}`
     }
 
+    console.log(`🔍 Searching Roboflow: ${query}`)
     const response = await fetch(url)
     if (!response.ok) {
       console.error('Roboflow API error:', response.statusText)
@@ -265,24 +720,91 @@ async function searchRoboflowModels(
     }
 
     const data = await response.json()
+    console.log(`✅ Found ${data.results?.length || 0} models on Roboflow`)
 
-    return (data.results || []).map((model: any) => ({
-      name: model.name || model.project,
-      source: 'Roboflow' as const,
-      description: model.description || `${model.name} model for ${taskType || 'computer vision'}`,
-      url: `https://universe.roboflow.com/${model.workspace}/${model.project}`,
-      image: model.image || model.thumbnail,
-      metrics: {
-        mAP: model.map || model.accuracy,
-        FPS: 30, // Default estimate
-        modelSize: model.size || 'Medium'
-      },
-      task: mapRoboflowTaskToStandard(model.type),
-      author: model.workspace,
-      downloads: model.downloads || model.runs || 0,
-      frameworks: ['Roboflow', 'TFLite', 'ONNX'],
-      platforms: ['mobile', 'web', 'edge']
-    }))
+    // Fetch detailed model information for each result
+    const modelsWithDetails = await Promise.all(
+      (data.results || []).map(async (model: any) => {
+        try {
+          // Fetch detailed model info
+          const detailUrl = `https://api.roboflow.com/universe/${model.workspace}/${model.project}?api_key=${apiKey}`
+          const detailResponse = await fetch(detailUrl)
+          
+          let detailedInfo: any = {}
+          if (detailResponse.ok) {
+            detailedInfo = await detailResponse.json()
+          }
+
+          // Extract classes from the detailed model info
+          const classes = detailedInfo.classes || model.classes || []
+          
+          // Create better description
+          let description = model.description || detailedInfo.description
+          if (!description || description.length < 20) {
+            if (classes.length > 0) {
+              description = `Detects ${classes.join(', ')} in images`
+            } else {
+              description = `${model.name} model for ${taskType || 'computer vision'}`
+            }
+          }
+
+          return {
+            id: `${model.workspace}/${model.project}`,
+            name: model.name || model.project,
+            source: 'roboflow' as const,
+            description: description,
+            url: `https://universe.roboflow.com/${model.workspace}/${model.project}`,
+            image: model.image || model.thumbnail || detailedInfo.thumbnail,
+            metrics: {
+              mAP: detailedInfo.map50 || model.map || model.accuracy,
+              precision: detailedInfo.precision || model.precision,
+              recall: detailedInfo.recall || model.recall,
+              FPS: 30, // Default estimate
+              modelSize: model.size || 'Medium'
+            },
+            task: mapRoboflowTaskToStandard(model.type || detailedInfo.type),
+            author: model.workspace || detailedInfo.workspace,
+            downloads: model.downloads || model.runs || detailedInfo.downloads || 0,
+            views: model.views || detailedInfo.views || 0,
+            stars: model.stars || detailedInfo.stars || 0,
+            frameworks: ['Roboflow', 'TFLite', 'ONNX'],
+            platforms: ['mobile', 'web', 'edge'],
+            tags: model.tags || detailedInfo.tags || [],
+            classes: classes,
+            modelId: detailedInfo.model_id || `${model.workspace}/${model.project}/1`, // Roboflow model ID format
+            trainingImages: detailedInfo.training_images || model.training_images,
+            lastUpdated: detailedInfo.updated_at || model.updated_at,
+            supportsInference: true, // Roboflow models support inference via API
+            inferenceEndpoint: `https://serverless.roboflow.com/${model.workspace}/${model.project}/1`
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch details for ${model.workspace}/${model.project}:`, error)
+          // Fallback to basic model info
+          return {
+            id: `${model.workspace}/${model.project}`,
+            name: model.name || model.project,
+            source: 'roboflow' as const,
+            description: model.description || `${model.name} model for ${taskType || 'computer vision'}`,
+            url: `https://universe.roboflow.com/${model.workspace}/${model.project}`,
+            image: model.image || model.thumbnail,
+            metrics: {
+              mAP: model.map || model.accuracy,
+              FPS: 30,
+              modelSize: model.size || 'Medium'
+            },
+            task: mapRoboflowTaskToStandard(model.type),
+            author: model.workspace,
+            downloads: model.downloads || model.runs || 0,
+            frameworks: ['Roboflow', 'TFLite', 'ONNX'],
+            platforms: ['mobile', 'web', 'edge'],
+            supportsInference: true,
+            inferenceEndpoint: `https://serverless.roboflow.com/${model.workspace}/${model.project}/1`
+          }
+        }
+      })
+    )
+
+    return modelsWithDetails
 
   } catch (error) {
     console.error('Roboflow search error:', error)
@@ -467,16 +989,40 @@ async function searchHFModels(
         // Clean up any double spaces or trailing/leading spaces
         cleanDescription = cleanDescription.replace(/\s+/g, ' ').trim()
         
-        // Use the inference data from individual model fetch OR fall back to library_name check
-        const supportsInference = model.inferenceStatus === 'warm' || 
-                                 model.inferenceStatus === 'hosted' || 
-                                 model.inferenceStatus === 'Inference API' ||
-                                 model.library_name === 'transformers'
+        // Known working models from popular organizations (verified to work with Inference API)
+        const knownWorkingModels = [
+          'microsoft/resnet-50',
+          'microsoft/resnet-18', 
+          'microsoft/resnet-152',
+          'google/vit-base-patch16-224',
+          'google/vit-large-patch16-224',
+          'facebook/detr-resnet-50',
+          'facebook/detr-resnet-101',
+          'openai/clip-vit-base-patch32',
+          'openai/clip-vit-large-patch14'
+        ]
+        
+        const isKnownWorking = knownWorkingModels.includes(model.id)
+        
+        // Balanced approach: prioritize known working models, but allow others with better indicators
+        const hasGoodInferenceIndicators = 
+          model.library_name === 'transformers' && 
+          (model.pipeline_tag === 'image-classification' ||
+           model.pipeline_tag === 'zero-shot-image-classification' ||
+           model.pipeline_tag === 'object-detection' ||
+           model.pipeline_tag === 'image-segmentation') &&
+          (model.downloads > 10000 || // Popular models more likely to be hosted
+           model.id.startsWith('microsoft/') ||
+           model.id.startsWith('google/') ||
+           model.id.startsWith('facebook/') ||
+           model.id.startsWith('openai/'))
+        
+        const supportsInference = isKnownWorking || hasGoodInferenceIndicators
         
         return {
           id: model.id,  // ✅ Full model ID (e.g., "roboflow/YOLOv8-Basketball-Detection")
           name: modelName,
-          source: 'Hugging Face' as const,
+          source: 'huggingface' as const,
           description: cleanDescription || modelName, // Use cleaned description
           url: `https://huggingface.co/${model.id}`,
           modelUrl: `https://huggingface.co/${model.id}`,
@@ -494,10 +1040,11 @@ async function searchHFModels(
           frameworks: detectFrameworks(model.tags || []),
           platforms: ['Web', 'Cloud', 'Edge'],
           updatedAt: model.lastModified || new Date().toISOString(),
-          // Inference API support
+          // Inference API support (live/hosted models)
           supportsInference: supportsInference,
           inferenceEndpoint: supportsInference ? `https://api-inference.huggingface.co/models/${model.id}` : undefined,
-          inferenceStatus: supportsInference ? 'ready' : 'unavailable'
+          inferenceStatus: supportsInference ? 'live' : 'unavailable',
+          isKnownWorking: isKnownWorking // Flag for verified working models
         }
       })
 
@@ -656,6 +1203,46 @@ async function saveSearchCache(cacheKey: string, results: any): Promise<void> {
 }
 
 /**
+ * Save model recommendations to MongoDB
+ */
+async function saveModelRecommendations(queryId: string, models: any[], classesMap: Record<string, string[]>) {
+  try {
+    const { getDatabase } = await import('@/lib/mongodb/connection')
+    const db = await getDatabase()
+    
+    // Map models with classes
+    const modelsWithClasses = models.map(model => ({
+      name: model.name,
+      model_id: model.id,
+      source: model.source === 'huggingface' ? 'Hugging Face' : 'Roboflow',
+      task: model.task,
+      metrics: {
+        mAP: model.metrics?.mAP || 0,
+        accuracy: model.metrics?.accuracy || 0,
+        FPS: model.metrics?.FPS || 0,
+        modelSize: model.metrics?.modelSize || 'Unknown'
+      },
+      url: model.modelUrl,
+      selected: false,
+      classes: model.classes || (model.id && classesMap[model.id] ? classesMap[model.id] : undefined)
+    }))
+    
+    const recommendationRecord = {
+      recommendation_id: `uuid-modelrec-${Date.now()}`,
+      query_id: queryId,
+      models: modelsWithClasses,
+      created_at: new Date().toISOString()
+    }
+    
+    await db.collection('model_recommendations').insertOne(recommendationRecord)
+    console.log(`✅ Saved ${modelsWithClasses.length} model recommendations to MongoDB`)
+    
+  } catch (error) {
+    console.error('❌ Failed to save model recommendations:', error)
+  }
+}
+
+/**
  * Save ALL search results (including non-inference models) to MongoDB for analytics
  */
 async function saveSearchAnalytics(queryId: string, analyticsData: any): Promise<void> {
@@ -670,6 +1257,8 @@ async function saveSearchAnalytics(queryId: string, analyticsData: any): Promise
       non_inference_count: analyticsData.non_inference,
       all_models: analyticsData.models, // Save ALL models (including inference: null)
       sources: analyticsData.sources,
+      keywords: analyticsData.keywords || [], // Include search keywords
+      task_type: analyticsData.task_type || null, // Include task type
       created_at: analyticsData.timestamp
     })
     

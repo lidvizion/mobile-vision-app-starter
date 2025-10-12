@@ -6,7 +6,7 @@ import {
   Sparkles, ArrowRight, ArrowRightLeft, Box, Lightbulb, Download, ExternalLink, 
   Smartphone, ChevronDown, ChevronUp, Filter, Grid, Grid3X3, Image, Layers, 
   Layers3, MapPin, Square, Tag, Target, Type, Video, VideoIcon, AlertCircle, 
-  CheckCircle, FileText, FileVideo, Zap 
+  CheckCircle, FileText, FileVideo, Zap
 } from 'lucide-react'
 import { EXAMPLE_QUERIES } from '@/lib/keywordExtraction'
 import { ModelMetadata } from '@/types/models'
@@ -49,6 +49,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
     'Text to 3D': Type
   }
 
+
   const handleSearch = async () => {
     if (modelViewStore.queryText.length < 10) return
 
@@ -59,7 +60,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         userId: 'anonymous'
       })
 
-      // Store query_id globally for inference result saving
+      // Store query_id globally for inference result saving 
       if (typeof window !== 'undefined') {
         (window as any).__queryId = refineResult.query_id
       }
@@ -72,27 +73,8 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         page: 1
       })
 
-      // Step 3: Save recommendations
-      if (modelViewStore.modelList.length > 0 && modelViewStore.queryId) {
-        await fetch('/api/save-recommendations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query_id: modelViewStore.queryId,
-            models: modelViewStore.modelList.slice(0, 10).map(m => ({
-              name: m.name,
-              source: m.source,
-              task: m.task,
-              metrics: {
-                mAP: 0,
-                FPS: 0
-              },
-              url: m.modelUrl,
-              selected: false
-            }))
-          })
-        })
-      }
+      // Step 3: Recommendations are now saved automatically by the backend
+      // No need to call save-recommendations from frontend anymore
     } catch (error) {
       console.error('Search error:', error)
     }
@@ -111,7 +93,8 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           source: model.source,
           url: model.modelUrl,
           task: model.task,
-          description: model.description
+          description: model.description,
+          classes: model.classes // Add classes field
         },
         session_id: sessionId
       })
@@ -245,7 +228,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           </div>
         </div>
 
-        {/* Model Cards - Top 3 */}
+        {/* Model Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {modelViewStore.displayedModels.map((model, index) => {
             const TaskIcon = taskIcons[model.task as keyof typeof taskIcons] || Grid
@@ -286,9 +269,24 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                     }`}>
                       {model.source}
                     </span>
-                    <span className="text-xs px-2 py-1 bg-wells-warm-grey/10 text-wells-dark-grey rounded font-medium capitalize">
-                      {model.task}
-                    </span>
+                    {/* Model Type Badge */}
+                    {model.modelTypeInfo && (
+                      <span className={`text-xs px-2 py-1 rounded font-medium ${
+                        model.modelTypeInfo.type === 'custom' 
+                          ? 'bg-green-50 text-green-700' 
+                          : model.modelTypeInfo.type === 'generative'
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'bg-gray-50 text-gray-700'
+                      }`}>
+                        {model.modelTypeInfo.displayLabel}
+                      </span>
+                    )}
+                    {/* Fallback to task if no modelTypeInfo */}
+                    {!model.modelTypeInfo && (
+                      <span className="text-xs px-2 py-1 bg-wells-warm-grey/10 text-wells-dark-grey rounded font-medium capitalize">
+                        {model.task}
+                      </span>
+                    )}
                   </div>
                   <h3 className="font-bold text-lg text-wells-dark-grey line-clamp-1 mb-1 group-hover:text-wells-warm-grey transition-colors">
                     {model.name}
@@ -297,8 +295,8 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 </div>
 
                 {/* Description */}
-                <p className="text-sm text-wells-warm-grey line-clamp-4 mb-4 flex-grow min-h-[80px]">
-                  {model.description || 'No description available'}
+                <p className="text-sm text-wells-warm-grey line-clamp-3 mb-4 flex-grow min-h-[80px]">
+                  {model.modelTypeInfo?.description || model.description || 'No description available'}
                 </p>
 
                 {/* Metrics */}
@@ -316,6 +314,13 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                     <div className="flex items-center gap-1 px-2 py-1 bg-amber-50 text-amber-700 rounded text-xs font-medium" title="No Inference API support">
                       <AlertCircle className="w-3 h-3" />
                       <span>⚠️ No Inference</span>
+                    </div>
+                  )}
+                  {/* Warning for models without predefined classes */}
+                  {model.modelTypeInfo?.type === 'unspecified' && (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-yellow-50 text-yellow-700 rounded text-xs font-medium" title="No predefined labels — responses vary by prompt">
+                      <AlertCircle className="w-3 h-3" />
+                      <span>⚠️ Variable Output</span>
                     </div>
                   )}
                   {model.platforms.includes('mobile') && (

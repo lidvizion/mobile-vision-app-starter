@@ -22,6 +22,7 @@ interface SaveRecommendationsRequest {
     }
     url: string
     selected: boolean
+    classes?: string[]
   }>
 }
 
@@ -62,9 +63,9 @@ export async function POST(request: NextRequest) {
     // Add classes to models
     const modelsWithClasses = models.map(model => ({
       ...model,
-      classes: model.model_id && classesMap[model.model_id] 
+      classes: model.classes || (model.model_id && classesMap[model.model_id] 
         ? classesMap[model.model_id]
-        : undefined
+        : undefined)
     }))
 
     // Prepare recommendation record

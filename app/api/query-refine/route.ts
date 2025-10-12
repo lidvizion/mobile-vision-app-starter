@@ -66,9 +66,10 @@ export async function POST(request: NextRequest) {
     const queryRecord = {
       query_id: queryId,
       user_id: userId || 'anonymous',
-      query_text: query,
+      query: query, // User's original query text
       keywords: extracted.allKeywords,
       task_type: taskType,
+      timestamp: new Date().toISOString(), // Using timestamp for consistency
       created_at: new Date().toISOString()
     }
 
