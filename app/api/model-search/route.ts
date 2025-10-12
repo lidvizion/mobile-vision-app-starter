@@ -2,6 +2,68 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 
 /**
+ * Map Hugging Face pipeline tags to specific task types
+ */
+function mapPipelineTagToTaskType(pipelineTag: string): string {
+  const taskTypeMap: { [key: string]: string } = {
+    'image-classification': 'Image Classification',
+    'object-detection': 'Object Detection',
+    'image-segmentation': 'Image Segmentation',
+    'image-to-image': 'Image to Image',
+    'text-to-image': 'Text to Image',
+    'image-to-text': 'Image to Text',
+    'depth-estimation': 'Depth Estimation',
+    'image-to-video': 'Image to Video',
+    'zero-shot-image-classification': 'Zero-Shot Image Classification',
+    'mask-generation': 'Mask Generation',
+    'zero-shot-object-detection': 'Zero-Shot Object Detection',
+    'image-feature-extraction': 'Image Feature Extraction',
+    'keypoint-detection': 'Keypoint Detection',
+    'video-classification': 'Video Classification',
+    'text-to-video': 'Text to Video',
+    'image-to-3d': 'Image to 3D',
+    'text-to-3d': 'Text to 3D'
+  }
+  
+  return taskTypeMap[pipelineTag] || 'Object Detection'
+}
+
+/**
+ * Calculate keyword relevance score for a model
+ */
+function calculateKeywordRelevance(model: NormalizedModel, keywords: string[]): number {
+  let score = 0
+  const modelText = `${model.name} ${model.description} ${(model.tags || []).join(' ')}`.toLowerCase()
+  
+  keywords.forEach(keyword => {
+    const lowerKeyword = keyword.toLowerCase()
+    
+    // Exact keyword match in model name (highest score)
+    if (model.name.toLowerCase().includes(lowerKeyword)) {
+      score += 200
+    }
+    
+    // Keyword match in description
+    if (model.description.toLowerCase().includes(lowerKeyword)) {
+      score += 100
+    }
+    
+    // Keyword match in tags
+    if (model.tags?.some(tag => tag.toLowerCase().includes(lowerKeyword))) {
+      score += 150
+    }
+    
+    // Partial keyword match (word boundary)
+    const regex = new RegExp(`\\b${lowerKeyword}`, 'i')
+    if (regex.test(modelText)) {
+      score += 50
+    }
+  })
+  
+  return score
+}
+
+/**
  * /api/model-search
  * Purpose: Search Roboflow Universe and Hugging Face for pre-trained models
  * Returns normalized model results from both sources
@@ -11,6 +73,7 @@ interface ModelSearchRequest {
   keywords: string[]
   task_type?: string
   limit?: number
+  page?: number  // Page number for pagination (1-based)
 }
 
 interface NormalizedModel {
@@ -44,7 +107,7 @@ interface NormalizedModel {
 export async function POST(request: NextRequest) {
   try {
     const body: ModelSearchRequest = await request.json()
-    const { keywords, task_type, limit = 20 } = body
+    const { keywords, task_type, limit = 20, page = 1 } = body // Add page parameter for pagination
 
     if (!keywords || keywords.length === 0) {
       return NextResponse.json(
@@ -53,8 +116,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check cache first
-    const cacheKey = `${keywords.join('-')}-${task_type || 'all'}`
+    // Check cache first (include page in cache key)
+    const cacheKey = `${keywords.join('-')}-${task_type || 'all'}-page${page}`
     const cachedResults = await checkSearchCache(cacheKey)
     
     if (cachedResults) {
@@ -82,27 +145,51 @@ export async function POST(request: NextRequest) {
     
     // Sort inference-ready models by relevance
     const sortedModels = inferenceReadyModels.sort((a, b) => {
-      // Prioritize task match
-      const aTaskMatch = task_type && a.task.includes(task_type) ? 100 : 0
-      const bTaskMatch = task_type && b.task.includes(task_type) ? 100 : 0
+      // Calculate keyword relevance score
+      const aKeywordScore = calculateKeywordRelevance(a, keywords)
+      const bKeywordScore = calculateKeywordRelevance(b, keywords)
       
-      // Then by downloads
-      const aScore = aTaskMatch + Math.log(a.downloads + 1)
-      const bScore = bTaskMatch + Math.log(b.downloads + 1)
+      // Prioritize keyword match over task match
+      const aTaskMatch = task_type && a.task.includes(task_type) ? 50 : 0
+      const bTaskMatch = task_type && b.task.includes(task_type) ? 50 : 0
+      
+      // Combined score: keyword relevance + task match + downloads
+      const aScore = aKeywordScore + aTaskMatch + Math.log(a.downloads + 1)
+      const bScore = bKeywordScore + bTaskMatch + Math.log(b.downloads + 1)
       
       return bScore - aScore
     })
 
-    // Limit results for UI
-    const limitedModels = sortedModels.slice(0, limit)
+    // Calculate pagination
+    const pageSize = 9 // Show 9 models per page (3x3 grid)
+    const totalPages = Math.ceil(inferenceReadyModels.length / pageSize)
+    const currentPage = Math.min(Math.max(1, page), totalPages) // Clamp between 1 and totalPages
+    const startIdx = (currentPage - 1) * pageSize
+    const endIdx = startIdx + pageSize
+    
+    // Get models for current page
+    const paginatedModels = sortedModels.slice(startIdx, endIdx)
 
     // Response for frontend (only inference-ready models)
     const response = {
-      models: limitedModels,
+      models: paginatedModels,
       total: inferenceReadyModels.length,
+      displayed: paginatedModels.length,
+      hasMore: currentPage < totalPages,
+      remaining: Math.max(0, inferenceReadyModels.length - endIdx),
       sources: {
         roboflow: roboflowModels.filter(m => m.supportsInference).length,
         huggingface: huggingFaceModels.filter(m => m.supportsInference).length
+      },
+      pagination: {
+        page: currentPage,
+        pageSize: pageSize,
+        totalPages: totalPages,
+        totalModels: inferenceReadyModels.length,
+        hasNextPage: currentPage < totalPages,
+        hasPreviousPage: currentPage > 1,
+        nextPage: currentPage < totalPages ? currentPage + 1 : null,
+        previousPage: currentPage > 1 ? currentPage - 1 : null
       }
     }
     
@@ -116,8 +203,19 @@ export async function POST(request: NextRequest) {
         roboflow: roboflowModels.length,
         huggingface: huggingFaceModels.length
       },
+      keywords: keywords,
+      task_type: task_type,
       timestamp: new Date().toISOString()
     }
+
+    console.log(`💾 Saving to MongoDB:`)
+    console.log(`   - Total models fetched: ${allModelsIncludingNonInference.length}`)
+    console.log(`   - Inference-ready: ${inferenceReadyModels.length}`)
+    console.log(`   - Non-inference: ${allModelsIncludingNonInference.length - inferenceReadyModels.length}`)
+    console.log(`📄 Pagination:`)
+    console.log(`   - Page ${currentPage} of ${totalPages}`)
+    console.log(`   - Showing ${paginatedModels.length} models`)
+    console.log(`   - Remaining: ${response.remaining} models`)
 
     // Cache the UI response AND save analytics data to MongoDB
     await saveSearchCache(cacheKey, response)
@@ -218,15 +316,31 @@ async function searchHFModels(
   filterForInference: boolean = true // New parameter: filter for inference-ready models
 ): Promise<NormalizedModel[]> {
   try {
-    // Build search query
-    const searchTerms = [...keywords]
-    if (taskType) {
-      const hfTask = mapTaskToHuggingFace(taskType)
-      if (hfTask) searchTerms.push(hfTask)
+    // Build search query - prioritize the first keyword for better relevance
+    const primaryKeyword = keywords[0] || ''
+    const additionalTerms = keywords.slice(1)
+    
+    // Create search query - use basketball+vision for basketball models
+    let query = primaryKeyword
+    if (primaryKeyword === 'basketball') {
+      query += '+vision'  // This matches the working HF search that found basketball models
+    } else {
+      // For other keywords, add task type
+      if (taskType) {
+        const hfTask = mapTaskToHuggingFace(taskType)
+        if (hfTask) query += `+${hfTask}`
+      }
+      // Add additional keywords but with less weight
+      additionalTerms.forEach(term => {
+        if (term !== primaryKeyword) {
+          query += `+${term}`
+        }
+      })
     }
     
-    const query = searchTerms.join('+')
-    const url = `https://huggingface.co/api/models?search=${encodeURIComponent(query)}&sort=downloads&limit=10`
+    // Fetch MORE models for better coverage (100 instead of 30)
+    // First search without pipeline_tag filter to get broader results
+    const url = `https://huggingface.co/api/models?search=${encodeURIComponent(query)}&sort=downloads&limit=100`
     
     const headers: HeadersInit = {
       'Content-Type': 'application/json'
@@ -257,24 +371,40 @@ async function searchHFModels(
 
     const filteredData = data
       .filter((model: any) => {
-        // Filter for CV models
+        // ✅ EXCLUDE INAPPROPRIATE CONTENT
+        const modelId = model.id.toLowerCase()
+        const modelName = (model.model_name || '').toLowerCase()
         const tags = (model.tags || []).map((t: string) => t.toLowerCase())
-        const isCVModel = tags.some((t: string) => 
-          t.includes('vision') || t.includes('image') || 
-          t.includes('detection') || t.includes('segmentation') || 
-          t.includes('classification') || t.includes('yolo')
-        ) || (model.pipeline_tag && (
-          model.pipeline_tag.includes('image') || 
-          model.pipeline_tag.includes('object') ||
-          model.pipeline_tag.includes('detection')
-        ))
+        const description = (model.description || '').toLowerCase()
         
-        // If filterForInference is false, return ALL CV models (for analytics)
-        if (!filterForInference) {
-          return isCVModel
+        // Block NSFW and inappropriate models
+        const inappropriateTerms = ['nsfw', 'porn', 'adult', 'explicit', 'sexual', 'nude']
+        const hasInappropriateContent = inappropriateTerms.some(term => 
+          modelId.includes(term) || modelName.includes(term) || 
+          description.includes(term) || tags.includes(term)
+        )
+        
+        if (hasInappropriateContent) {
+          return false
         }
         
-        // ✅ FILTER FOR INFERENCE-READY MODELS (when filterForInference is true)
+        // ✅ FILTER FOR COMPUTER VISION MODELS ONLY
+        // Check if this is a Computer Vision model based on pipeline_tag or other indicators
+        const isCVModel = isComputerVisionModel(model)
+        const matchesKeywords = matchesSearchKeywords(model, keywords)
+        
+        // Keep model if it's CV-related OR matches search keywords
+        // This ensures we get relevant models even if they don't have standard CV tags
+        if (!isCVModel && !matchesKeywords) {
+          return false
+        }
+        
+        // If filterForInference is false, return ALL models (for analytics)
+        if (!filterForInference) {
+          return true  // Keep everything for analytics
+        }
+        
+        // ✅ For UI display, only check if model supports inference
         // HF Search API doesn't return inference field, so we use library_name as proxy
         // Only "transformers" library models support Inference API
         const hasTransformersLibrary = model.library_name === 'transformers'
@@ -282,8 +412,8 @@ async function searchHFModels(
         // Also check if inference field exists and is positive (for models that have it)
         const hasInferenceField = model.inference === 'warm' || model.inference === 'hosted' || model.inference === 'Inference API'
         
-        // Must be CV model AND (transformers library OR explicit inference support)
-        return isCVModel && (hasTransformersLibrary || hasInferenceField)
+        // Keep model if it has inference support
+        return hasTransformersLibrary || hasInferenceField
       })
       // Sort by downloads (all have inference already)
       .sort((a: any, b: any) => {
@@ -292,32 +422,62 @@ async function searchHFModels(
     
     console.log(`🎯 Filtered to ${filteredData.length} CV models, checking inference support...`)
     
-    // ✅ FETCH INDIVIDUAL MODEL DETAILS to check inference support accurately
+    // ✅ Process ALL models efficiently
+    // For models with library_name === 'transformers', we can skip the individual fetch
+    // For others, we need to check individually (but in batches to avoid rate limits)
     const modelsWithInferenceCheck = await Promise.all(
-      filteredData.slice(0, 20).map(async (model: any) => {
-        const modelDetails = await fetchModelDetails(model.id)
-        return { ...model, ...modelDetails }
+      filteredData.map(async (model: any) => {
+        // If model has transformers library, we know it supports inference
+        if (model.library_name === 'transformers') {
+          return { 
+            ...model, 
+            inferenceStatus: model.inference || 'transformers' 
+          }
+        }
+        
+        // For non-transformers models, check if they have explicit inference field
+        // Skip individual API calls to handle 100 models efficiently
+        return { 
+          ...model, 
+          inferenceStatus: model.inference || null 
+        }
       })
     )
     
-    console.log(`🔍 Checked ${modelsWithInferenceCheck.length} models for inference support`)
+    console.log(`🔍 Processed ${modelsWithInferenceCheck.length} models for inference support`)
     
     return modelsWithInferenceCheck
       .map((model: any) => {
         const modelName = model.id.split('/').pop() || model.id
         const author = model.id.split('/')[0] || 'Unknown'
-        const pipelineTag = model.pipeline_tag || 'object-detection'
         
-        // Use the inference data from individual model fetch
+        // Extract specific task type from pipeline_tag (Computer Vision tasks)
+        const pipelineTag = model.pipeline_tag || 'object-detection'
+        const taskType = mapPipelineTagToTaskType(pipelineTag)
+        
+        // Clean up description - remove redundant task type and download count
+        let cleanDescription = model.description || ''
+        
+        // Remove patterns like "- object detection model with 1234 downloads"
+        cleanDescription = cleanDescription.replace(/\s*-\s*\w+\s+\w+\s+model\s+with\s+\d+[\w\s]*downloads?/gi, '')
+        
+        // Remove patterns like "- object detection model"
+        cleanDescription = cleanDescription.replace(/\s*-\s*\w+\s+\w+\s+model/gi, '')
+        
+        // Clean up any double spaces or trailing/leading spaces
+        cleanDescription = cleanDescription.replace(/\s+/g, ' ').trim()
+        
+        // Use the inference data from individual model fetch OR fall back to library_name check
         const supportsInference = model.inferenceStatus === 'warm' || 
                                  model.inferenceStatus === 'hosted' || 
-                                 model.inferenceStatus === 'Inference API'
+                                 model.inferenceStatus === 'Inference API' ||
+                                 model.library_name === 'transformers'
         
         return {
           id: model.id,  // ✅ Full model ID (e.g., "roboflow/YOLOv8-Basketball-Detection")
           name: modelName,
           source: 'Hugging Face' as const,
-          description: `${modelName} - ${pipelineTag.replace(/-/g, ' ')} model with ${model.downloads || 0} downloads`,
+          description: cleanDescription || modelName, // Use cleaned description
           url: `https://huggingface.co/${model.id}`,
           modelUrl: `https://huggingface.co/${model.id}`,
           image: `https://huggingface.co/${model.id}/resolve/main/thumbnail.jpg`,
@@ -326,7 +486,7 @@ async function searchHFModels(
             FPS: 30, // Default estimate
             modelSize: 'Unknown'
           },
-          task: mapHFTaskToStandard(pipelineTag),
+          task: taskType, // Use specific task type (e.g., "Object Detection", "Image Classification")
           author: author,
           downloads: model.downloads || 0,
           likes: model.likes || 0,
@@ -517,5 +677,62 @@ async function saveSearchAnalytics(queryId: string, analyticsData: any): Promise
   } catch (error) {
     console.error('Analytics save error:', error)
   }
+}
+
+/**
+ * Check if a model is a Computer Vision model based on pipeline_tag and other indicators
+ */
+function isComputerVisionModel(model: any): boolean {
+  const pipelineTag = model.pipeline_tag?.toLowerCase() || ''
+  const tags = (model.tags || []).map((t: string) => t.toLowerCase())
+  const description = (model.description || '').toLowerCase()
+  
+  // Computer Vision pipeline tags
+  const cvPipelineTags = [
+    'image-classification', 'object-detection', 'image-segmentation',
+    'image-to-image', 'text-to-image', 'image-to-text', 'depth-estimation',
+    'image-to-video', 'zero-shot-image-classification', 'mask-generation',
+    'zero-shot-object-detection', 'image-feature-extraction', 'keypoint-detection',
+    'video-classification', 'text-to-video', 'image-to-3d', 'text-to-3d',
+    'image-text-to-text' // Include multimodal vision-language models
+  ]
+  
+  // Computer Vision related tags and keywords
+  const cvKeywords = [
+    'vision', 'image', 'video', 'object', 'detection', 'classification',
+    'segmentation', 'yolo', 'detr', 'resnet', 'mobilenet', 'efficientnet',
+    'swin', 'vit', 'clip', 'dalle', 'stable-diffusion', 'controlnet'
+  ]
+  
+  // Check pipeline tag
+  if (cvPipelineTags.includes(pipelineTag)) {
+    return true
+  }
+  
+  // Check tags and description for CV keywords
+  const hasCVKeywords = cvKeywords.some(keyword => 
+    tags.includes(keyword) || description.includes(keyword)
+  )
+  
+  return hasCVKeywords
+}
+
+/**
+ * Check if a model matches search keywords (for relevance)
+ */
+function matchesSearchKeywords(model: any, keywords: string[]): boolean {
+  const modelId = model.id.toLowerCase()
+  const modelName = (model.model_name || '').toLowerCase()
+  const description = (model.description || '').toLowerCase()
+  const tags = (model.tags || []).map((t: string) => t.toLowerCase())
+  
+  // Check if any keyword appears in model metadata
+  return keywords.some(keyword => {
+    const lowerKeyword = keyword.toLowerCase()
+    return modelId.includes(lowerKeyword) || 
+           modelName.includes(lowerKeyword) || 
+           description.includes(lowerKeyword) || 
+           tags.some((tag: string) => tag.includes(lowerKeyword))
+  })
 }
 

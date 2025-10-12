@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 
 /**
  * /api/run-inference
@@ -51,15 +52,20 @@ export async function POST(request: NextRequest) {
     }
 
     const inferenceEndpoint = `https://api-inference.huggingface.co/models/${model_id}`
+    const requestId = crypto.randomUUID()
+    const startTime = Date.now()
 
-    console.log('🔮 Running inference on:', model_id)
+    console.log('🔮 Running inference', {
+      requestId,
+      modelId: model_id,
+      timestamp: new Date().toISOString()
+    })
 
     // Determine if inputs is a URL or base64
     let imageData = inputs
     
     // If it's a base64 string, extract the actual data
     if (inputs.startsWith('data:image')) {
-      // Extract base64 data after the comma
       const base64Data = inputs.split(',')[1]
       imageData = base64Data
     }
@@ -68,14 +74,22 @@ export async function POST(request: NextRequest) {
     const response = await fetch(inferenceEndpoint, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Bearer ${apiKey}`,
+        'x-request-id': requestId
       },
       body: Buffer.from(imageData, 'base64')
     })
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('Inference API error:', response.status, errorText)
+      const duration = Date.now() - startTime
+      console.error('❌ HF inference failed', {
+        requestId,
+        modelId: model_id,
+        status: response.status,
+        duration,
+        error: errorText
+      })
 
       if (response.status === 503) {
         const errorData = JSON.parse(errorText)
@@ -100,8 +114,15 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await response.json()
+    const duration = Date.now() - startTime
 
-    console.log('✅ Inference completed successfully')
+    console.log('✅ HF inference success', {
+      requestId,
+      modelId: model_id,
+      duration,
+      resultCount: Array.isArray(result) ? result.length : 1,
+      timestamp: new Date().toISOString()
+    })
 
     // Normalize response based on task type
     return NextResponse.json({

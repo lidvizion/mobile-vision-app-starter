@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractKeywords } from '@/lib/keywordExtraction'
-import { advancedQueryRefine, mapAdvancedTaskToSimple } from '@/lib/advancedQueryRefine'
 
 /**
  * /api/query-refine
  * Purpose: Refine user text into optimized search keywords
- * Uses advanced NLP extraction with structured output
+ * Uses keyword extraction to identify CV tasks and objects
  */
 
 interface QueryRefineRequest {
   query: string
   userId?: string
-  useAdvanced?: boolean // Use advanced refinement with structured output
 }
 
 interface QueryRefineResponse {
@@ -20,21 +18,6 @@ interface QueryRefineResponse {
   task_type: string
   query_id: string
   refined_query: string
-  // Advanced fields (optional)
-  advanced?: {
-    task: string
-    media_type: string
-    realtime: boolean
-    input_constraints: {
-      resolution: string
-      fps: number | null
-      streaming: boolean
-    }
-    output_type: string
-    hardware_target: string
-    priority: string
-    summary: string
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -50,18 +33,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Use advanced refinement for better keyword extraction
-    const advancedResult = await advancedQueryRefine(query)
-    
-    // Also extract keywords using built-in NLP for backward compatibility
+    // Extract keywords using built-in NLP
     const extracted = extractKeywords(query)
+    const allKeywords = extracted.allKeywords
     
-    // Combine keywords from both methods
-    const combinedKeywords = [...advancedResult.keywords, ...extracted.allKeywords]
-    const allKeywords = Array.from(new Set(combinedKeywords))
-    
-    // Use advanced task mapping
-    const taskType = mapAdvancedTaskToSimple(advancedResult.task)
+    // Determine task type from extracted tasks
+    const taskType = extracted.tasks.length > 0 ? extracted.tasks[0] : 'detection'
 
     // Generate use case identifier
     const useCase = allKeywords
@@ -82,9 +59,7 @@ export async function POST(request: NextRequest) {
       keywords: allKeywords,
       task_type: taskType,
       query_id: queryId,
-      refined_query: refinedQuery,
-      // Include advanced analysis
-      advanced: advancedResult
+      refined_query: refinedQuery
     }
 
     // Save to MongoDB using new schema

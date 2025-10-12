@@ -2,7 +2,12 @@
 
 import { useState } from 'react'
 import { observer } from 'mobx-react-lite'
-import { Sparkles, ArrowRight, Lightbulb, Download, ExternalLink, Smartphone, ChevronDown, ChevronUp, Filter, Grid, Layers, Tag, AlertCircle, CheckCircle } from 'lucide-react'
+import { 
+  Sparkles, ArrowRight, ArrowRightLeft, Box, Lightbulb, Download, ExternalLink, 
+  Smartphone, ChevronDown, ChevronUp, Filter, Grid, Grid3X3, Image, Layers, 
+  Layers3, MapPin, Square, Tag, Target, Type, Video, VideoIcon, AlertCircle, 
+  CheckCircle, FileText, FileVideo, Zap 
+} from 'lucide-react'
 import { EXAMPLE_QUERIES } from '@/lib/keywordExtraction'
 import { ModelMetadata } from '@/types/models'
 import { modelViewStore } from '@/stores/modelViewStore'
@@ -21,13 +26,27 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
 
   // React Query hooks
   const queryRefineMutation = useQueryRefine()
-  const modelSearchMutation = useModelSearch()
+  const searchModels = useModelSearch()  // Renamed for clarity
   const saveSelectionMutation = useSaveModelSelection()
 
   const taskIcons = {
-    detection: Grid,
-    classification: Tag,
-    segmentation: Layers
+    'Object Detection': Grid,
+    'Image Classification': Tag,
+    'Image Segmentation': Layers,
+    'Image to Image': ArrowRightLeft,
+    'Text to Image': FileText,
+    'Image to Text': Image,
+    'Depth Estimation': Layers3,
+    'Image to Video': Video,
+    'Zero-Shot Image Classification': Target,
+    'Mask Generation': Square,
+    'Zero-Shot Object Detection': Grid3X3,
+    'Image Feature Extraction': Zap,
+    'Keypoint Detection': MapPin,
+    'Video Classification': VideoIcon,
+    'Text to Video': FileVideo,
+    'Image to 3D': Box,
+    'Text to 3D': Type
   }
 
   const handleSearch = async () => {
@@ -45,11 +64,12 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         (window as any).__queryId = refineResult.query_id
       }
 
-      // Step 2: Search models with refined keywords
-      await modelSearchMutation.mutateAsync({
+      // Step 2: Search models with refined keywords (start with page 1)
+      await searchModels.mutateAsync({
         keywords: refineResult.keywords,
         task_type: refineResult.task_type,
-        limit: 20
+        limit: 20,
+        page: 1
       })
 
       // Step 3: Save recommendations
@@ -200,23 +220,28 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
             >
               All
             </button>
-            {(Object.keys(taskIcons) as Array<keyof typeof taskIcons>).map((task) => {
-              const Icon = taskIcons[task]
-              return (
-                <button
-                  key={task}
-                  onClick={() => modelViewStore.setActiveFilter(task)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                    modelViewStore.activeFilter === task
-                      ? 'bg-wells-dark-grey text-white'
-                      : 'bg-wells-warm-grey/10 text-wells-dark-grey hover:bg-wells-warm-grey/20'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span className="capitalize">{task}</span>
-                </button>
-              )
-            })}
+            {(() => {
+              // Get unique task types from current models
+              const uniqueTasks = Array.from(new Set(modelViewStore.displayedModels.map(model => model.task)))
+              
+              return uniqueTasks.map((task) => {
+                const Icon = taskIcons[task as keyof typeof taskIcons] || Grid
+                return (
+                  <button
+                    key={task}
+                    onClick={() => modelViewStore.setActiveFilter(task)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                      modelViewStore.activeFilter === task
+                        ? 'bg-wells-dark-grey text-white'
+                        : 'bg-wells-warm-grey/10 text-wells-dark-grey hover:bg-wells-warm-grey/20'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{task}</span>
+                  </button>
+                )
+              })
+            })()}
           </div>
         </div>
 
@@ -224,12 +249,12 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {modelViewStore.displayedModels.map((model, index) => {
             const TaskIcon = taskIcons[model.task as keyof typeof taskIcons] || Grid
-            const isTopThree = index < 3
+            const isTopThree = modelViewStore.currentPage === 1 && index < 3
             
             return (
               <div 
                 key={model.id} 
-                className={`card-floating p-6 hover:shadow-xl transition-all cursor-pointer group ${
+                className={`card-floating p-6 hover:shadow-xl transition-all cursor-pointer group flex flex-col h-[520px] ${
                   isTopThree ? 'border-2 border-wells-dark-grey/10' : ''
                 }`}
               >
@@ -272,12 +297,12 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 </div>
 
                 {/* Description */}
-                <p className="text-sm text-wells-warm-grey line-clamp-3 mb-4 min-h-[60px]">
+                <p className="text-sm text-wells-warm-grey line-clamp-4 mb-4 flex-grow min-h-[80px]">
                   {model.description || 'No description available'}
                 </p>
 
                 {/* Metrics */}
-                <div className="flex flex-wrap gap-2 mb-4">
+                <div className="flex flex-wrap gap-2 mb-4 flex-shrink-0">
                   <div className="flex items-center gap-1 px-2 py-1 bg-wells-warm-grey/5 rounded text-xs">
                     <Download className="w-3 h-3 text-wells-warm-grey" />
                     <span className="font-medium">{formatNumber(model.downloads)}</span>
@@ -307,7 +332,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-2">
+                <div className="flex gap-2 mt-auto flex-shrink-0">
                   <button
                     onClick={() => handleSelectModel(model)}
                     className="flex-1 px-4 py-3 bg-wells-dark-grey text-white rounded-lg hover:bg-wells-warm-grey transition-colors font-semibold text-sm flex items-center justify-center gap-2 group-hover:scale-[1.02] transition-transform"
@@ -330,23 +355,129 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           })}
         </div>
 
-        {/* Show More Button */}
-        {modelViewStore.hasMoreResults && (
-          <div className="text-center">
-            <button
-              onClick={() => modelViewStore.setShowAllResults(true)}
-              className="px-8 py-4 bg-wells-warm-grey/10 hover:bg-wells-warm-grey/20 text-wells-dark-grey rounded-xl transition-all font-semibold flex items-center gap-2 mx-auto"
-            >
-              <span>Show {modelViewStore.remainingCount} more results</span>
-              <ChevronDown className="w-4 h-4" />
-            </button>
+        {/* Improved Pagination */}
+        {modelViewStore.totalPages > 1 && (
+          <div className="flex flex-col items-center gap-6 mt-8">
+            {/* Page Numbers with Smart Display */}
+            <div className="flex items-center gap-2 flex-wrap justify-center">
+              {/* Previous Button */}
+              {modelViewStore.currentPage > 1 && (
+                <button
+                  onClick={() => {
+                    modelViewStore.goToPreviousPage()
+                    searchModels.mutate({
+                      keywords: modelViewStore.refinedKeywords,
+                      task_type: modelViewStore.taskType,
+                      page: modelViewStore.currentPage - 1
+                    })
+                  }}
+                  className="px-5 py-2.5 bg-wells-dark-grey/10 hover:bg-wells-dark-grey/20 text-wells-dark-grey rounded-xl transition-all font-semibold flex items-center gap-2 shadow-sm hover:shadow-md"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  Previous
+                </button>
+              )}
+              
+              {/* Smart Page Number Display */}
+              {(() => {
+                const current = modelViewStore.currentPage
+                const total = modelViewStore.totalPages
+                const pages: (number | string)[] = []
+                
+                // Always show first page
+                pages.push(1)
+                
+                // Show pages around current page
+                if (current > 3) pages.push('...')
+                
+                for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) {
+                  pages.push(i)
+                }
+                
+                // Show last page
+                if (current < total - 2) pages.push('...')
+                if (total > 1) pages.push(total)
+                
+                return pages.map((pageNum, idx) => {
+                  if (pageNum === '...') {
+                    return (
+                      <span key={`ellipsis-${idx}`} className="px-2 text-wells-warm-grey">
+                        •••
+                      </span>
+                    )
+                  }
+                  
+                  const isCurrentPage = pageNum === current
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => {
+                        if (pageNum !== current) {
+                          modelViewStore.setCurrentPage(pageNum as number)
+                          searchModels.mutate({
+                            keywords: modelViewStore.refinedKeywords,
+                            task_type: modelViewStore.taskType,
+                            page: pageNum as number
+                          })
+                        }
+                      }}
+                      style={{ 
+                        cursor: pageNum === current ? 'default' : 'pointer',
+                        pointerEvents: pageNum === current ? 'none' : 'auto'
+                      }}
+                      className={`
+                        min-w-[44px] h-11 px-4 rounded-xl font-bold transition-all duration-200
+                        ${isCurrentPage 
+                          ? 'bg-wells-dark-grey text-white shadow-wells-lg scale-110' 
+                          : 'bg-wells-warm-grey/10 hover:bg-wells-warm-grey/20 text-wells-dark-grey hover:scale-105 shadow-sm'
+                        }
+                      `}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                })
+              })()}
+              
+              {/* Next Button */}
+              {modelViewStore.currentPage < modelViewStore.totalPages && (
+                <button
+                  onClick={() => {
+                    modelViewStore.goToNextPage()
+                    searchModels.mutate({
+                      keywords: modelViewStore.refinedKeywords,
+                      task_type: modelViewStore.taskType,
+                      page: modelViewStore.currentPage + 1
+                    })
+                  }}
+                  className="px-5 py-2.5 bg-wells-dark-grey/10 hover:bg-wells-dark-grey/20 text-wells-dark-grey rounded-xl transition-all font-semibold flex items-center gap-2 shadow-sm hover:shadow-md"
+                >
+                  Next
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            
+            {/* Results Count with Better Styling */}
+            <div className="flex items-center gap-3 px-6 py-3 bg-wells-warm-grey/10 rounded-full">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-wells-dark-grey rounded-full animate-pulse"></div>
+                <span className="text-sm font-semibold text-wells-dark-grey">
+                  Page {modelViewStore.currentPage} of {modelViewStore.totalPages}
+                </span>
+              </div>
+              <div className="w-px h-4 bg-wells-warm-grey/30"></div>
+              <span className="text-sm text-wells-warm-grey">
+                Showing {modelViewStore.displayedModels.length} models
+              </span>
+            </div>
           </div>
         )}
-
-        {/* Results Count */}
-        <div className="text-center text-sm text-wells-warm-grey">
-          Showing {modelViewStore.displayedModels.length} of {modelViewStore.filteredModels.length} models
-        </div>
       </div>
     )
   }

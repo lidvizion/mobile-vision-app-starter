@@ -24,7 +24,12 @@ class ModelViewStore {
 
   // UI state
   showAllResults: boolean = false
-  activeFilter: 'all' | 'detection' | 'classification' | 'segmentation' = 'all'
+  activeFilter: string = 'all'
+  
+  // Pagination state
+  currentPage: number = 1
+  totalPages: number = 1
+  pageSize: number = 9  // 9 models per page (3x3 grid)
 
   constructor() {
     makeAutoObservable(this)
@@ -74,8 +79,29 @@ class ModelViewStore {
     this.showAllResults = show
   }
 
-  setActiveFilter(filter: 'all' | 'detection' | 'classification' | 'segmentation') {
+  setActiveFilter(filter: string) {
     this.activeFilter = filter
+  }
+  
+  // Pagination actions
+  setCurrentPage(page: number) {
+    this.currentPage = page
+  }
+  
+  setTotalPages(totalPages: number) {
+    this.totalPages = totalPages
+  }
+  
+  goToNextPage() {
+    if (this.currentPage < this.totalPages) {
+      this.currentPage++
+    }
+  }
+  
+  goToPreviousPage() {
+    if (this.currentPage > 1) {
+      this.currentPage--
+    }
   }
 
   // Computed values
@@ -89,16 +115,16 @@ class ModelViewStore {
   }
 
   get displayedModels() {
-    const filtered = this.filteredModels
-    return this.showAllResults ? filtered : filtered.slice(0, 3)
+    // Return all models from current page (backend handles pagination)
+    return this.filteredModels
   }
 
   get hasMoreResults() {
-    return this.filteredModels.length > 3 && !this.showAllResults
+    return this.currentPage < this.totalPages
   }
 
   get remainingCount() {
-    return Math.max(0, this.filteredModels.length - 3)
+    return Math.max(0, this.totalResults - (this.currentPage * this.pageSize))
   }
 
   // Reset actions
@@ -116,6 +142,8 @@ class ModelViewStore {
     this.showAllResults = false
     this.activeFilter = 'all'
     this.searchError = null
+    this.currentPage = 1
+    this.totalPages = 1
   }
 
   resetSelection() {

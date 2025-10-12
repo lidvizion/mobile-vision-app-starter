@@ -92,6 +92,10 @@ export interface ModelRecommendation {
  * db.model_recommendations.createIndex({ created_at: -1 })
  * db.model_recommendations.createIndex({ "models.name": 1 })
  * db.model_recommendations.createIndex({ "models.source": 1 })
+ * 
+ * // Compound indexes for performance optimization
+ * db.model_recommendations.createIndex({ "models.task": 1, "models.source": 1, created_at: -1 })
+ * db.model_recommendations.createIndex({ query_id: 1, created_at: -1 })
  */
 
 // ============================================
