@@ -32,7 +32,11 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
       try {
         // If model is selected and supports inference, use HF Inference API
         if (selectedModel?.supportsInference && selectedModel?.inferenceEndpoint) {
-          logger.info('Using HF Inference API', context, { model: selectedModel.name })
+          logger.info('Using HF Inference API', context, { 
+            model: selectedModel.name,
+            supportsInference: selectedModel.supportsInference,
+            inferenceEndpoint: selectedModel.inferenceEndpoint
+          })
           
           // Convert image to base64
           const base64 = await new Promise<string>((resolve, reject) => {
@@ -42,13 +46,24 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             reader.readAsDataURL(imageFile)
           })
           
+          // Prepare task-specific parameters for better compatibility
+          const parameters: Record<string, any> = {}
+          
+          // Add parameters based on task type
+          if (selectedModel.task?.toLowerCase().includes('classification')) {
+            parameters.top_k = 5 // Return top 5 predictions
+          } else if (selectedModel.task?.toLowerCase().includes('detection')) {
+            parameters.threshold = 0.5 // Confidence threshold for detections
+          }
+          
           // Call HF Inference API through our backend
           const response = await fetch('/api/run-inference', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               model_id: selectedModel.id,
-              inputs: base64
+              inputs: base64,
+              parameters: Object.keys(parameters).length > 0 ? parameters : undefined
             })
           })
           
@@ -62,7 +77,7 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             const enhancedError = new Error(`${errorMessage}${errorDetails}${errorStatus}`)
             if (error.redirectToHF && error.modelUrl) {
               (enhancedError as any).modelUrl = error.modelUrl
-              (enhancedError as any).redirectToHF = true
+              (enhancedError as any).redirectToHF = error.redirectToHF
             }
             
             logger.error('HF Inference API error', context, enhancedError)
@@ -71,8 +86,17 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
           
           const inferenceData = await response.json()
           
+          // Get actual image dimensions
+          let imageDimensions: { width: number; height: number } | undefined
+          try {
+            imageDimensions = await getImageDimensions(imageFile)
+            logger.info('Image dimensions retrieved', context, imageDimensions)
+          } catch (dimError) {
+            logger.warn('Failed to get image dimensions, using defaults', context, dimError as Error)
+          }
+          
           // Transform HF response to CVResponse format
-          const cvResponse: CVResponse = transformHFToCVResponse(inferenceData, selectedModel)
+          const cvResponse: CVResponse = transformHFToCVResponse(inferenceData, selectedModel, imageDimensions)
           
           logger.info('HF Inference completed successfully', context, {
             resultsCount: inferenceData.results?.length
@@ -99,34 +123,15 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
           
           return cvResponse
         } else {
-          // Fallback to mock data for testing
-          logger.info('Using mock data (no model selected or inference not supported)', context)
-          
-          const mockResponses = {
-            detection: '/mock/detection-response.json',
-            classification: '/mock/response.json',
-            segmentation: '/mock/segmentation-response.json',
-            'multi-type': '/mock/response.json'
-          }
-          
-          const responseUrl = mockResponses[currentTask]
-          const response = await fetch(responseUrl)
-          
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`)
-          }
-          
-          const data = await response.json()
-          
-          // Validate the response
-          const validation = validateCVResponse(data)
-          if (!validation.isValid) {
-            throw new Error(validation.error || 'Invalid response format')
-          }
-          
-          logger.info('Mock data processed successfully', context)
-          
-          return validation.data!
+          // No model selected - require model selection first
+          logger.warn('No model selected for inference', context, { 
+            selectedModel: selectedModel ? {
+              name: selectedModel.name,
+              supportsInference: selectedModel.supportsInference,
+              inferenceEndpoint: selectedModel.inferenceEndpoint
+            } : null
+          })
+          throw new Error('Please select a model first before processing images. Use the guided model flow to find and select an appropriate model for your use case.')
         }
       } catch (error) {
         logger.error('Image processing failed', context, error as Error)
@@ -167,13 +172,34 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
 }
 
 /**
+ * Get image dimensions from a File object
+ */
+function getImageDimensions(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight })
+    }
+    img.onerror = () => {
+      reject(new Error('Failed to load image'))
+    }
+    img.src = URL.createObjectURL(file)
+  })
+}
+
+/**
  * Transform Hugging Face Inference API response to CVResponse format
  */
-function transformHFToCVResponse(inferenceData: any, model: ModelMetadata): CVResponse {
+function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, imageDimensions?: { width: number; height: number }): CVResponse {
   const results = inferenceData.results || []
   
-  // Determine task type from model
-  const task = model.task || 'detection'
+  // Determine task type from model and results
+  let task = model.task || 'detection'
+  
+  // If we have bounding box data, force it to be detection
+  if (results.length > 0 && results[0].box) {
+    task = 'detection'
+  }
   
   // Transform based on task type
   if (task === 'detection' || task.includes('detection')) {
@@ -184,8 +210,8 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata): CVRe
       processing_time: 0.5,
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
-        width: 640,
-        height: 480,
+        width: imageDimensions?.width || 640,
+        height: imageDimensions?.height || 480,
         format: 'jpeg'
       },
       results: {
@@ -209,8 +235,8 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata): CVRe
       processing_time: 0.3,
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
-        width: 640,
-        height: 480,
+        width: imageDimensions?.width || 640,
+        height: imageDimensions?.height || 480,
         format: 'jpeg'
       },
       results: {
@@ -229,8 +255,8 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata): CVRe
       processing_time: 0.8,
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
-        width: 640,
-        height: 480,
+        width: imageDimensions?.width || 640,
+        height: imageDimensions?.height || 480,
         format: 'jpeg'
       },
       results: {

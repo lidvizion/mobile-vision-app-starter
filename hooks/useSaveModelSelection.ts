@@ -47,6 +47,8 @@ export function useSaveModelSelection() {
       
       if (data.redirect) {
         console.log('Redirect to:', data.redirect)
+        // Don't redirect - let the parent component handle the model selection
+        // The redirect is just for analytics, the main app should stay on the same page
       }
     },
     onError: (error: Error) => {

@@ -16,6 +16,7 @@ import LidVizionIcon from '@/components/LidVizionIcon'
 export default function Home() {
   const [selectedModel, setSelectedModel] = useState<ModelMetadata | null>(null)
   const { currentTask, switchTask, processImage, isProcessing, lastResponse } = useCVTask(selectedModel)
+  
   const { history, addResult, clearHistory } = useResultHistory()
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [viewingHistoryItem, setViewingHistoryItem] = useState<ResultHistoryItem | null>(null)

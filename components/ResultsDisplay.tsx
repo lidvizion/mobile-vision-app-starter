@@ -81,22 +81,40 @@ export default function ResultsDisplay({ response, selectedImage }: ResultsDispl
         </div>
       </div>
 
-      {/* Image with overlays */}
-      <div className="relative mb-8 rounded-2xl overflow-hidden border border-wells-warm-grey/20 shadow-md">
-        <Image
-          src={selectedImage}
-          alt="Processed"
-          width={800}
-          height={320}
-          className="w-full max-h-80 object-contain bg-wells-light-beige"
-        />
-        <OverlayRenderer
-          detections={response.results.detections}
-          segmentation={response.results.segmentation?.regions}
-          imageWidth={response.image_metadata.width}
-          imageHeight={response.image_metadata.height}
-          task={response.task}
-        />
+      {/* Two-column layout: Image on left, JSON on right */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Left: Image with overlays */}
+        <div className="relative rounded-2xl overflow-hidden border border-wells-warm-grey/20 shadow-md">
+          <Image
+            src={selectedImage}
+            alt="Processed"
+            width={800}
+            height={320}
+            className="w-full h-full object-contain bg-wells-light-beige"
+          />
+          <OverlayRenderer
+            detections={response.results.detections}
+            segmentation={response.results.segmentation?.regions}
+            imageWidth={response.image_metadata.width}
+            imageHeight={response.image_metadata.height}
+            task={response.task}
+          />
+        </div>
+
+        {/* Right: JSON Output */}
+        <div className="bg-wells-light-beige rounded-2xl border border-wells-warm-grey/20 p-4">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-6 h-6 bg-wells-dark-grey rounded-lg flex items-center justify-center">
+              <span className="text-white text-xs font-bold">{'{}'}</span>
+            </div>
+            <h4 className="text-lg font-serif font-semibold text-wells-dark-grey">JSON Output</h4>
+          </div>
+          <div className="bg-wells-white rounded-xl border border-wells-warm-grey/20 p-4 overflow-auto max-h-80">
+            <pre className="text-sm text-wells-dark-grey whitespace-pre-wrap font-mono">
+              {JSON.stringify(response, null, 2)}
+            </pre>
+          </div>
+        </div>
       </div>
 
       {/* Metadata */}

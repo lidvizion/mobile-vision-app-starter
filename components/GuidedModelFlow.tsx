@@ -6,7 +6,8 @@ import {
   Sparkles, ArrowRight, ArrowRightLeft, Box, Lightbulb, Download, ExternalLink, 
   Smartphone, ChevronDown, ChevronUp, Filter, Grid, Grid3X3, Image, Layers, 
   Layers3, MapPin, Square, Tag, Target, Type, Video, VideoIcon, AlertCircle, 
-  CheckCircle, FileText, FileVideo, Zap
+  CheckCircle, FileText, FileVideo, Zap, Eye, Scan, Focus, Camera, 
+  ScanLine, ScanFace, ScanBarcode, ScanEye, ScanSearch, ScanText
 } from 'lucide-react'
 import { EXAMPLE_QUERIES } from '@/lib/keywordExtraction'
 import { ModelMetadata } from '@/types/models'
@@ -30,16 +31,34 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
   const saveSelectionMutation = useSaveModelSelection()
 
   const taskIcons = {
-    'Object Detection': Grid,
+    'detection': ScanEye, // Object Detection - eye scanning for detection
+    'classification': Tag, // Image Classification - tagging/labeling
+    'segmentation': ScanLine, // Image Segmentation - scanning lines for segmentation
+    'image-to-image': ArrowRightLeft, // Image to Image
+    'text-to-image': FileText, // Text to Image
+    'image-to-text': ScanText, // Image to Text - scanning text
+    'depth-estimation': Layers3, // Depth Estimation
+    'image-to-video': Video, // Image to Video
+    'zero-shot-classification': Target, // Zero-Shot Image Classification
+    'mask-generation': ScanFace, // Mask Generation - face scanning
+    'zero-shot-detection': Grid3X3, // Zero-Shot Object Detection
+    'feature-extraction': Zap, // Image Feature Extraction
+    'keypoint-detection': MapPin, // Keypoint Detection
+    'video-classification': VideoIcon, // Video Classification
+    'text-to-video': FileVideo, // Text to Video
+    'image-to-3d': Box, // Image to 3D
+    'text-to-3d': Type, // Text to 3D
+    // Legacy mappings for backward compatibility
+    'Object Detection': ScanEye,
     'Image Classification': Tag,
-    'Image Segmentation': Layers,
+    'Image Segmentation': ScanLine,
     'Image to Image': ArrowRightLeft,
     'Text to Image': FileText,
-    'Image to Text': Image,
+    'Image to Text': ScanText,
     'Depth Estimation': Layers3,
     'Image to Video': Video,
     'Zero-Shot Image Classification': Target,
-    'Mask Generation': Square,
+    'Mask Generation': ScanFace,
     'Zero-Shot Object Detection': Grid3X3,
     'Image Feature Extraction': Zap,
     'Keypoint Detection': MapPin,
@@ -73,7 +92,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         page: 1
       })
 
-      // Step 3: Recommendations are now saved automatically by the backend
+      // Step 3: Recommendations are now saved automatically by the backend 
       // No need to call save-recommendations from frontend anymore
     } catch (error) {
       console.error('Search error:', error)
@@ -86,18 +105,23 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
 
     // Save selection via API
     if (modelViewStore.queryId) {
-      await saveSelectionMutation.mutateAsync({
-        query_id: modelViewStore.queryId,
-        model: {
-          name: model.name,
-          source: model.source,
-          url: model.modelUrl,
-          task: model.task,
-          description: model.description,
-          classes: model.classes // Add classes field
-        },
-        session_id: sessionId
-      })
+      try {
+        await saveSelectionMutation.mutateAsync({
+          query_id: modelViewStore.queryId,
+          model: {
+            name: model.name,
+            source: model.source,
+            url: model.modelUrl,
+            task: model.task,
+            description: model.description,
+            classes: model.classes // Add classes field
+          },
+          session_id: sessionId
+        })
+      } catch (error) {
+        console.error('❌ Error saving model selection:', error)
+        // Continue anyway - don't let API errors prevent model selection 
+      }
     }
 
     // Notify parent component
@@ -215,12 +239,12 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                     onClick={() => modelViewStore.setActiveFilter(task)}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
                       modelViewStore.activeFilter === task
-                        ? 'bg-wells-dark-grey text-white'
-                        : 'bg-wells-warm-grey/10 text-wells-dark-grey hover:bg-wells-warm-grey/20'
+                        ? 'bg-wells-dark-grey text-white shadow-md'
+                        : 'bg-wells-warm-grey/10 text-wells-dark-grey hover:bg-wells-warm-grey/20 hover:shadow-sm'
                     }`}
                   >
                     <Icon className="w-4 h-4" />
-                    <span>{task}</span>
+                    <span className="capitalize">{task.replace(/([A-Z])/g, ' $1').trim()}</span>
                   </button>
                 )
               })
@@ -229,7 +253,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         </div>
 
         {/* Model Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {modelViewStore.displayedModels.map((model, index) => {
             const TaskIcon = taskIcons[model.task as keyof typeof taskIcons] || Grid
             const isTopThree = modelViewStore.currentPage === 1 && index < 3
@@ -237,13 +261,13 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
             return (
               <div 
                 key={model.id} 
-                className={`card-floating p-6 hover:shadow-xl transition-all cursor-pointer group flex flex-col h-[520px] ${
+                className={`card-floating p-3 hover:shadow-xl transition-all cursor-pointer group flex flex-col h-[350px] ${
                   isTopThree ? 'border-2 border-wells-dark-grey/10' : ''
                 }`}
               >
                 {/* Rank Badge */}
                 {isTopThree && (
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-2">
                     <div className={`px-3 py-1 rounded-full text-xs font-bold ${
                       index === 0 ? 'bg-yellow-100 text-yellow-800' :
                       index === 1 ? 'bg-gray-100 text-gray-700' :
@@ -254,35 +278,40 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                   </div>
                 )}
                 
-                {/* Preview Image Placeholder */}
-                <div className="w-full h-32 bg-gradient-to-br from-wells-warm-grey/10 to-wells-warm-grey/20 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
-                  <TaskIcon className="w-12 h-12 text-wells-warm-grey/40" />
+                {/* Model Type Icon */}
+                <div className="flex items-center justify-center mb-2">
+                  <div className="w-12 h-12 bg-gradient-to-br from-wells-dark-grey/5 to-wells-dark-grey/10 rounded-xl flex items-center justify-center border border-wells-warm-grey/20">
+                    <TaskIcon className="w-6 h-6 text-wells-dark-grey" />
+                  </div>
                 </div>
 
                 {/* Model Info */}
-                <div className="mb-3">
+                <div className="mb-1">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className={`text-xs px-2 py-1 rounded font-medium ${
-                      model.source === 'roboflow' 
-                        ? 'bg-blue-50 text-blue-700' 
-                        : 'bg-orange-50 text-orange-700'
-                    }`}>
-                      {model.source}
-                    </span>
-                    {/* Model Type Badge */}
-                    {model.modelTypeInfo && (
+                    {/* Source badge - hidden for now */}
+                    {false && (
                       <span className={`text-xs px-2 py-1 rounded font-medium ${
-                        model.modelTypeInfo.type === 'custom' 
+                        model.source === 'roboflow' 
+                          ? 'bg-blue-50 text-blue-700' 
+                          : 'bg-orange-50 text-orange-700'
+                      }`}>
+                        {model.source}
+                      </span>
+                    )}
+                    {/* Model Type Badge - hidden for now */}
+                    {false && model.modelTypeInfo && (
+                      <span className={`text-xs px-2 py-1 rounded font-medium ${
+                        model.modelTypeInfo?.type === 'custom' 
                           ? 'bg-green-50 text-green-700' 
-                          : model.modelTypeInfo.type === 'generative'
+                          : model.modelTypeInfo?.type === 'generative'
                           ? 'bg-blue-50 text-blue-700'
                           : 'bg-gray-50 text-gray-700'
                       }`}>
-                        {model.modelTypeInfo.displayLabel}
+                        {model.modelTypeInfo?.displayLabel}
                       </span>
                     )}
-                    {/* Fallback to task if no modelTypeInfo */}
-                    {!model.modelTypeInfo && (
+                    {/* Fallback to task if no modelTypeInfo - hidden for now */}
+                    {false && !model.modelTypeInfo && (
                       <span className="text-xs px-2 py-1 bg-wells-warm-grey/10 text-wells-dark-grey rounded font-medium capitalize">
                         {model.task}
                       </span>
@@ -294,13 +323,15 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                   <p className="text-sm text-wells-warm-grey">by {model.author}</p>
                 </div>
 
-                {/* Description */}
-                <p className="text-sm text-wells-warm-grey line-clamp-3 mb-4 flex-grow min-h-[80px]">
-                  {model.modelTypeInfo?.description || model.description || 'No description available'}
-                </p>
+                {/* Description - hidden for now */}
+                {false && (
+                  <p className="text-sm text-wells-warm-grey line-clamp-3 mb-4 flex-grow min-h-[80px]">
+                    {model.modelTypeInfo?.description || model.description || 'No description available'}
+                  </p>
+                )}
 
                 {/* Metrics */}
-                <div className="flex flex-wrap gap-2 mb-4 flex-shrink-0">
+                <div className="flex flex-wrap gap-2 mb-2 flex-shrink-0">
                   <div className="flex items-center gap-1 px-2 py-1 bg-wells-warm-grey/5 rounded text-xs">
                     <Download className="w-3 h-3 text-wells-warm-grey" />
                     <span className="font-medium">{formatNumber(model.downloads)}</span>
@@ -316,8 +347,8 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                       <span>⚠️ No Inference</span>
                     </div>
                   )}
-                  {/* Warning for models without predefined classes */}
-                  {model.modelTypeInfo?.type === 'unspecified' && (
+                  {/* Warning for models without predefined classes - hidden for now */}
+                  {false && model.modelTypeInfo?.type === 'unspecified' && (
                     <div className="flex items-center gap-1 px-2 py-1 bg-yellow-50 text-yellow-700 rounded text-xs font-medium" title="No predefined labels — responses vary by prompt">
                       <AlertCircle className="w-3 h-3" />
                       <span>⚠️ Variable Output</span>
@@ -342,7 +373,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                     onClick={() => handleSelectModel(model)}
                     className="flex-1 px-4 py-3 bg-wells-dark-grey text-white rounded-lg hover:bg-wells-warm-grey transition-colors font-semibold text-sm flex items-center justify-center gap-2 group-hover:scale-[1.02] transition-transform"
                   >
-                    Use this model
+                    Use Model
                     <ArrowRight className="w-4 h-4" />
                   </button>
                   <a
@@ -500,7 +531,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           What are you trying to detect?
         </h2>
         <p className="text-wells-warm-grey">
-          Example: Detect trash in river images or identify basketball shots
+          Example: Detect objects in images, classify scenes, or analyze visual content
         </p>
       </div>
 

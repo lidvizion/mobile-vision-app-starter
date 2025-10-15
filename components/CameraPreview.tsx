@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { Camera, Upload, Loader2, X, Video, Image as ImageIcon, AlertCircle } from 'lucide-react'
 import Image from 'next/image'
 import { CVTask, CVResponse } from '@/types'
@@ -31,6 +31,38 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const fileClickInProgress = useRef(false)
+  const autoProcessTriggered = useRef(false)
+
+  // Automatic processing when both image and model are selected (only once)
+  useEffect(() => {
+    const autoProcess = async () => {
+      if (currentImageFile && selectedModel && !isProcessing && selectedImage && !autoProcessTriggered.current) {
+        autoProcessTriggered.current = true
+        const context = createLogContext(currentTask, 'CameraPreview', 'auto-process')
+        logger.info('Auto-processing image with selected model', context, {
+          model: selectedModel.name,
+          fileName: currentImageFile.name
+        })
+        
+        try {
+          const response = await processImage(currentImageFile)
+          onImageProcessed(response)
+          logger.info('Auto-processing completed successfully', context)
+        } catch (error) {
+          logger.error('Auto-processing failed', context, error as Error)
+          setError(`Auto-processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        }
+      }
+    }
+
+    autoProcess()
+  }, [currentImageFile, selectedModel, isProcessing, selectedImage])
+
+  // Reset auto-process trigger when image changes
+  useEffect(() => {
+    autoProcessTriggered.current = false
+  }, [currentImageFile])
+
 
   const handleFileSelect = async (file: File) => {
     const context = createLogContext(currentTask, 'CameraPreview', 'file-select')
