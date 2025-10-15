@@ -6,14 +6,28 @@ interface ModelSearchRequest {
   keywords: string[]
   task_type?: string
   limit?: number
+  page?: number
 }
 
 interface ModelSearchResponse {
   models: ModelMetadata[]
   total: number
+  displayed: number
+  hasMore: boolean
+  remaining: number
   sources: {
     roboflow: number
     huggingface: number
+  }
+  pagination: {
+    page: number
+    pageSize: number
+    totalPages: number
+    totalModels: number
+    hasNextPage: boolean
+    hasPreviousPage: boolean
+    nextPage: number | null
+    previousPage: number | null
   }
 }
 
@@ -74,6 +88,8 @@ export function useModelSearch() {
       // Update MobX store with search results
       modelViewStore.setModelList(data.models)
       modelViewStore.setTotalResults(data.total)
+      modelViewStore.setCurrentPage(data.pagination.page)
+      modelViewStore.setTotalPages(data.pagination.totalPages)
       modelViewStore.setIsSearching(false)
       modelViewStore.setSearchError(null)
     },

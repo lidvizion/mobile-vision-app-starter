@@ -1,104 +1,97 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchMultipleModelClasses } from '@/lib/huggingface/fetchModelClasses'
+import crypto from 'crypto'
 
 /**
  * /api/save-recommendations
- * Purpose: Save model recommendations after search
- * Stores all recommended models for a query with their classes
+ * Purpose: Save model recommendations to MongoDB for analytics
+ * Methods: POST
  */
 
 interface SaveRecommendationsRequest {
   query_id: string
+  query_text: string
+  keywords: string[]
+  task_type?: string
   models: Array<{
     name: string
-    model_id?: string
+    model_id: string
     source: 'Roboflow' | 'Hugging Face'
     task: string
-    metrics: {
-      mAP?: number
-      accuracy?: number
-      FPS?: number
-      modelSize?: string
-    }
     url: string
     selected: boolean
+    classes?: string[]
+    downloads?: number
+    likes?: number
+    tags?: string[]
+    supportsInference?: boolean
+    inferenceStatus?: string
+    isKnownWorking?: boolean
   }>
+}
+
+interface SaveRecommendationsResponse {
+  status: 'success' | 'error'
+  recommendation_id?: string
+  message?: string
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: SaveRecommendationsRequest = await request.json()
-    const { query_id, models } = body
+    const { query_id, query_text, keywords, task_type, models } = body
 
     // Validate required fields
-    if (!query_id || !models || models.length === 0) {
+    if (!query_id || !query_text || !keywords || !models) {
       return NextResponse.json(
-        { error: 'Missing required fields: query_id and models' },
+        {
+          status: 'error',
+          message: 'Missing required fields: query_id, query_text, keywords, models'
+        },
         { status: 400 }
       )
     }
 
-    // Generate recommendation ID
-    const recommendationId = `uuid-modelrec-${Date.now()}`
-
-    // Fetch classes for Hugging Face models
-    const hfModelIds = models
-      .filter(m => m.source === 'Hugging Face' && m.model_id)
-      .map(m => m.model_id!)
-    
-    let classesMap: Record<string, string[]> = {}
-    if (hfModelIds.length > 0) {
-      console.log(`🏷️  Fetching classes for ${hfModelIds.length} HF models...`)
-      const classesResults = await fetchMultipleModelClasses(hfModelIds)
-      
-      // Extract successful classes
-      Object.entries(classesResults).forEach(([modelId, result]) => {
-        if (result.success && result.classes) {
-          classesMap[modelId] = result.classes
-        }
-      })
-    }
-
-    // Add classes to models
-    const modelsWithClasses = models.map(model => ({
-      ...model,
-      classes: model.model_id && classesMap[model.model_id] 
-        ? classesMap[model.model_id]
-        : undefined
-    }))
+    // Generate unique recommendation ID
+    const recommendationId = `uuid-modelrec-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
 
     // Prepare recommendation record
     const recommendationRecord = {
       recommendation_id: recommendationId,
-      query_id: query_id,
-      models: modelsWithClasses,
+      query_id,
+      query_text,
+      keywords,
+      task_type: task_type || 'detection',
+      models,
       created_at: new Date().toISOString()
     }
 
     // Save to MongoDB
-    try {
-      const { getDatabase } = await import('@/lib/mongodb/connection')
-      const db = await getDatabase()
-      await db.collection('model_recommendations').insertOne(recommendationRecord)
-      console.log('Recommendations saved to MongoDB:', recommendationRecord)
-    } catch (mongoError) {
-      console.error('MongoDB save error:', mongoError)
-      // Continue without failing the request
-    }
+    const { getDatabase } = await import('@/lib/mongodb/connection')
+    const db = await getDatabase()
 
-    console.log('Recommendations saved:', recommendationRecord)
+    // Insert recommendation record
+    await db.collection('model_recommendations').insertOne(recommendationRecord)
 
-    return NextResponse.json({
-      success: true,
+    console.log('✅ Model recommendations saved:', {
       recommendation_id: recommendationId,
-      message: 'Recommendations saved successfully'
+      query_id,
+      models_count: models.length
     })
 
+    // Build response
+    const response: SaveRecommendationsResponse = {
+      status: 'success',
+      recommendation_id: recommendationId,
+      message: 'Model recommendations saved successfully'
+    }
+
+    return NextResponse.json(response)
   } catch (error) {
-    console.error('Save recommendations error:', error)
+    console.error('❌ Save recommendations error:', error)
     return NextResponse.json(
       {
-        error: 'Failed to save recommendations',
+        status: 'error',
+        message: 'Failed to save model recommendations',
         details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
@@ -107,7 +100,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * GET endpoint to retrieve recommendations for a query
+ * GET - Retrieve model recommendations by query_id
  */
 export async function GET(request: NextRequest) {
   try {
@@ -116,28 +109,35 @@ export async function GET(request: NextRequest) {
 
     if (!queryId) {
       return NextResponse.json(
-        { error: 'query_id parameter is required' },
+        { status: 'error', message: 'query_id is required' },
         { status: 400 }
       )
     }
 
-    const recommendations = null
+    const { getDatabase } = await import('@/lib/mongodb/connection')
+    const db = await getDatabase()
 
-    if (!recommendations) {
-      return NextResponse.json(
-        { error: 'No recommendations found for this query' },
-        { status: 404 }
-      )
-    }
+    const recommendations = await db
+      .collection('model_recommendations')
+      .find({ query_id: queryId })
+      .sort({ created_at: -1 })
+      .limit(10)
+      .toArray()
 
-    return NextResponse.json(recommendations)
-
+    return NextResponse.json({
+      status: 'success',
+      count: recommendations.length,
+      recommendations
+    })
   } catch (error) {
-    console.error('Get recommendations error:', error)
+    console.error('❌ Get recommendations error:', error)
     return NextResponse.json(
-      { error: 'Failed to retrieve recommendations' },
+      {
+        status: 'error',
+        message: 'Failed to retrieve recommendations',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }
 }
-

@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { extractKeywords } from '@/lib/keywordExtraction'
-import { advancedQueryRefine, mapAdvancedTaskToSimple } from '@/lib/advancedQueryRefine'
 
 /**
  * /api/query-refine
  * Purpose: Refine user text into optimized search keywords
- * Uses advanced NLP extraction with structured output
+ * Uses keyword extraction to identify CV tasks and objects
  */
 
 interface QueryRefineRequest {
   query: string
   userId?: string
-  useAdvanced?: boolean // Use advanced refinement with structured output
 }
 
 interface QueryRefineResponse {
@@ -20,21 +17,6 @@ interface QueryRefineResponse {
   task_type: string
   query_id: string
   refined_query: string
-  // Advanced fields (optional)
-  advanced?: {
-    task: string
-    media_type: string
-    realtime: boolean
-    input_constraints: {
-      resolution: string
-      fps: number | null
-      streaming: boolean
-    }
-    output_type: string
-    hardware_target: string
-    priority: string
-    summary: string
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -50,18 +32,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Use advanced refinement for better keyword extraction
-    const advancedResult = await advancedQueryRefine(query)
+    // Extract keywords using ChatGPT API
+    const extracted = await extractKeywordsWithChatGPT(query)
+    const allKeywords = extracted.keywords
     
-    // Also extract keywords using built-in NLP for backward compatibility
-    const extracted = extractKeywords(query)
-    
-    // Combine keywords from both methods
-    const combinedKeywords = [...advancedResult.keywords, ...extracted.allKeywords]
-    const allKeywords = Array.from(new Set(combinedKeywords))
-    
-    // Use advanced task mapping
-    const taskType = mapAdvancedTaskToSimple(advancedResult.task)
+    // Determine task type from ChatGPT response
+    const taskType = extracted.task_type || 'detection'
 
     // Generate use case identifier
     const useCase = allKeywords
@@ -82,18 +58,17 @@ export async function POST(request: NextRequest) {
       keywords: allKeywords,
       task_type: taskType,
       query_id: queryId,
-      refined_query: refinedQuery,
-      // Include advanced analysis
-      advanced: advancedResult
+      refined_query: refinedQuery
     }
 
     // Save to MongoDB using new schema
     const queryRecord = {
       query_id: queryId,
       user_id: userId || 'anonymous',
-      query_text: query,
-      keywords: extracted.allKeywords,
+      query: query, // User's original query text
+      keywords: allKeywords,
       task_type: taskType,
+      timestamp: new Date().toISOString(), // Using timestamp for consistency
       created_at: new Date().toISOString()
     }
 
@@ -123,27 +98,75 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Optional: Enhanced version with OpenAI GPT-mini
- * Uncomment when ready to use OpenAI
+ * Extract keywords using ChatGPT API (direct fetch)
  */
-/*
-async function refineWithOpenAI(query: string) {
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  
-  const completion = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo",
-    messages: [
-      {
-        role: "system",
-        content: "Extract computer vision keywords from user query. Return JSON with: use_case, keywords (array), task_type (detection/classification/segmentation)"
-      },
-      { role: "user", content: query }
-    ],
-    temperature: 0.3,
-    max_tokens: 200
-  })
+async function extractKeywordsWithChatGPT(query: string) {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      throw new Error('OpenAI API key not configured')
+    }
 
-  return JSON.parse(completion.choices[0].message.content || '{}')
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: "gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content: `You are a computer vision expert. Extract keywords from user queries for searching Hugging Face models.
+
+Return a JSON object with:
+- keywords: array of 3-5 most relevant keywords for model search
+- task_type: one of "detection", "classification", "segmentation", "object-detection", "image-classification"
+- use_case: brief description
+
+Focus on:
+- Main objects/subjects (e.g., "basketball", "cars", "people")
+- Computer vision tasks (e.g., "detection", "classification")
+- Domain-specific terms (e.g., "sports", "medical", "retail")
+
+Example input: "Identify basketball shots and player positions"
+Example output: {"keywords": ["basketball", "sports", "detection", "players", "positions"], "task_type": "object-detection", "use_case": "basketball player detection"}`
+          },
+          { role: "user", content: query }
+        ],
+        temperature: 0.3,
+        max_tokens: 200
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+
+    if (!content) {
+      throw new Error('No response content from ChatGPT')
+    }
+
+    return JSON.parse(content)
+  } catch (error) {
+    console.error('ChatGPT API error:', error)
+    
+    // Fallback to simple keyword extraction
+    const words = query.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 2)
+      .filter(word => !['identify', 'detect', 'find', 'locate', 'show', 'get'].includes(word))
+    
+    return {
+      keywords: words.slice(0, 5),
+      task_type: 'object-detection',
+      use_case: 'computer vision task'
+    }
+  }
 }
-*/
 

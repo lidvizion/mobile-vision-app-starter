@@ -2,7 +2,13 @@
 
 import { useState } from 'react'
 import { observer } from 'mobx-react-lite'
-import { Sparkles, ArrowRight, Lightbulb, Download, ExternalLink, Smartphone, ChevronDown, ChevronUp, Filter, Grid, Layers, Tag, AlertCircle, CheckCircle } from 'lucide-react'
+import { 
+  Sparkles, ArrowRight, ArrowRightLeft, Box, Lightbulb, Download, ExternalLink, 
+  Smartphone, ChevronDown, ChevronUp, Filter, Grid, Grid3X3, Image, Layers, 
+  Layers3, MapPin, Square, Tag, Target, Type, Video, VideoIcon, AlertCircle, 
+  CheckCircle, FileText, FileVideo, Zap, Eye, Scan, Focus, Camera, 
+  ScanLine, ScanFace, ScanBarcode, ScanEye, ScanSearch, ScanText
+} from 'lucide-react'
 import { EXAMPLE_QUERIES } from '@/lib/keywordExtraction'
 import { ModelMetadata } from '@/types/models'
 import { modelViewStore } from '@/stores/modelViewStore'
@@ -21,14 +27,47 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
 
   // React Query hooks
   const queryRefineMutation = useQueryRefine()
-  const modelSearchMutation = useModelSearch()
+  const searchModels = useModelSearch()  // Renamed for clarity
   const saveSelectionMutation = useSaveModelSelection()
 
   const taskIcons = {
-    detection: Grid,
-    classification: Tag,
-    segmentation: Layers
+    'detection': ScanEye, // Object Detection - eye scanning for detection
+    'classification': Tag, // Image Classification - tagging/labeling
+    'segmentation': ScanLine, // Image Segmentation - scanning lines for segmentation
+    'image-to-image': ArrowRightLeft, // Image to Image
+    'text-to-image': FileText, // Text to Image
+    'image-to-text': ScanText, // Image to Text - scanning text
+    'depth-estimation': Layers3, // Depth Estimation
+    'image-to-video': Video, // Image to Video
+    'zero-shot-classification': Target, // Zero-Shot Image Classification
+    'mask-generation': ScanFace, // Mask Generation - face scanning
+    'zero-shot-detection': Grid3X3, // Zero-Shot Object Detection
+    'feature-extraction': Zap, // Image Feature Extraction
+    'keypoint-detection': MapPin, // Keypoint Detection
+    'video-classification': VideoIcon, // Video Classification
+    'text-to-video': FileVideo, // Text to Video
+    'image-to-3d': Box, // Image to 3D
+    'text-to-3d': Type, // Text to 3D
+    // Legacy mappings for backward compatibility
+    'Object Detection': ScanEye,
+    'Image Classification': Tag,
+    'Image Segmentation': ScanLine,
+    'Image to Image': ArrowRightLeft,
+    'Text to Image': FileText,
+    'Image to Text': ScanText,
+    'Depth Estimation': Layers3,
+    'Image to Video': Video,
+    'Zero-Shot Image Classification': Target,
+    'Mask Generation': ScanFace,
+    'Zero-Shot Object Detection': Grid3X3,
+    'Image Feature Extraction': Zap,
+    'Keypoint Detection': MapPin,
+    'Video Classification': VideoIcon,
+    'Text to Video': FileVideo,
+    'Image to 3D': Box,
+    'Text to 3D': Type
   }
+
 
   const handleSearch = async () => {
     if (modelViewStore.queryText.length < 10) return
@@ -40,39 +79,21 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         userId: 'anonymous'
       })
 
-      // Store query_id globally for inference result saving
+      // Store query_id globally for inference result saving 
       if (typeof window !== 'undefined') {
         (window as any).__queryId = refineResult.query_id
       }
 
-      // Step 2: Search models with refined keywords
-      await modelSearchMutation.mutateAsync({
+      // Step 2: Search models with refined keywords (start with page 1)
+      await searchModels.mutateAsync({
         keywords: refineResult.keywords,
         task_type: refineResult.task_type,
-        limit: 20
+        limit: 20,
+        page: 1
       })
 
-      // Step 3: Save recommendations
-      if (modelViewStore.modelList.length > 0 && modelViewStore.queryId) {
-        await fetch('/api/save-recommendations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query_id: modelViewStore.queryId,
-            models: modelViewStore.modelList.slice(0, 10).map(m => ({
-              name: m.name,
-              source: m.source,
-              task: m.task,
-              metrics: {
-                mAP: 0,
-                FPS: 0
-              },
-              url: m.modelUrl,
-              selected: false
-            }))
-          })
-        })
-      }
+      // Step 3: Recommendations are now saved automatically by the backend 
+      // No need to call save-recommendations from frontend anymore
     } catch (error) {
       console.error('Search error:', error)
     }
@@ -84,17 +105,23 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
 
     // Save selection via API
     if (modelViewStore.queryId) {
-      await saveSelectionMutation.mutateAsync({
-        query_id: modelViewStore.queryId,
-        model: {
-          name: model.name,
-          source: model.source,
-          url: model.modelUrl,
-          task: model.task,
-          description: model.description
-        },
-        session_id: sessionId
-      })
+      try {
+        await saveSelectionMutation.mutateAsync({
+          query_id: modelViewStore.queryId,
+          model: {
+            name: model.name,
+            source: model.source,
+            url: model.modelUrl,
+            task: model.task,
+            description: model.description,
+            classes: model.classes // Add classes field
+          },
+          session_id: sessionId
+        })
+      } catch (error) {
+        console.error('❌ Error saving model selection:', error)
+        // Continue anyway - don't let API errors prevent model selection 
+      }
     }
 
     // Notify parent component
@@ -200,42 +227,47 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
             >
               All
             </button>
-            {(Object.keys(taskIcons) as Array<keyof typeof taskIcons>).map((task) => {
-              const Icon = taskIcons[task]
-              return (
-                <button
-                  key={task}
-                  onClick={() => modelViewStore.setActiveFilter(task)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                    modelViewStore.activeFilter === task
-                      ? 'bg-wells-dark-grey text-white'
-                      : 'bg-wells-warm-grey/10 text-wells-dark-grey hover:bg-wells-warm-grey/20'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span className="capitalize">{task}</span>
-                </button>
-              )
-            })}
+            {(() => {
+              // Get unique task types from current models
+              const uniqueTasks = Array.from(new Set(modelViewStore.displayedModels.map(model => model.task)))
+              
+              return uniqueTasks.map((task) => {
+                const Icon = taskIcons[task as keyof typeof taskIcons] || Grid
+                return (
+                  <button
+                    key={task}
+                    onClick={() => modelViewStore.setActiveFilter(task)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                      modelViewStore.activeFilter === task
+                        ? 'bg-wells-dark-grey text-white shadow-md'
+                        : 'bg-wells-warm-grey/10 text-wells-dark-grey hover:bg-wells-warm-grey/20 hover:shadow-sm'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="capitalize">{task.replace(/([A-Z])/g, ' $1').trim()}</span>
+                  </button>
+                )
+              })
+            })()}
           </div>
         </div>
 
-        {/* Model Cards - Top 3 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Model Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {modelViewStore.displayedModels.map((model, index) => {
             const TaskIcon = taskIcons[model.task as keyof typeof taskIcons] || Grid
-            const isTopThree = index < 3
+            const isTopThree = modelViewStore.currentPage === 1 && index < 3
             
             return (
               <div 
                 key={model.id} 
-                className={`card-floating p-6 hover:shadow-xl transition-all cursor-pointer group ${
+                className={`card-floating p-3 hover:shadow-xl transition-all cursor-pointer group flex flex-col h-[350px] ${
                   isTopThree ? 'border-2 border-wells-dark-grey/10' : ''
                 }`}
               >
                 {/* Rank Badge */}
                 {isTopThree && (
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-2">
                     <div className={`px-3 py-1 rounded-full text-xs font-bold ${
                       index === 0 ? 'bg-yellow-100 text-yellow-800' :
                       index === 1 ? 'bg-gray-100 text-gray-700' :
@@ -246,24 +278,44 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                   </div>
                 )}
                 
-                {/* Preview Image Placeholder */}
-                <div className="w-full h-32 bg-gradient-to-br from-wells-warm-grey/10 to-wells-warm-grey/20 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
-                  <TaskIcon className="w-12 h-12 text-wells-warm-grey/40" />
+                {/* Model Type Icon */}
+                <div className="flex items-center justify-center mb-2">
+                  <div className="w-12 h-12 bg-gradient-to-br from-wells-dark-grey/5 to-wells-dark-grey/10 rounded-xl flex items-center justify-center border border-wells-warm-grey/20">
+                    <TaskIcon className="w-6 h-6 text-wells-dark-grey" />
+                  </div>
                 </div>
 
                 {/* Model Info */}
-                <div className="mb-3">
+                <div className="mb-1">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className={`text-xs px-2 py-1 rounded font-medium ${
-                      model.source === 'roboflow' 
-                        ? 'bg-blue-50 text-blue-700' 
-                        : 'bg-orange-50 text-orange-700'
-                    }`}>
-                      {model.source}
-                    </span>
-                    <span className="text-xs px-2 py-1 bg-wells-warm-grey/10 text-wells-dark-grey rounded font-medium capitalize">
-                      {model.task}
-                    </span>
+                    {/* Source badge - hidden for now */}
+                    {false && (
+                      <span className={`text-xs px-2 py-1 rounded font-medium ${
+                        model.source === 'roboflow' 
+                          ? 'bg-blue-50 text-blue-700' 
+                          : 'bg-orange-50 text-orange-700'
+                      }`}>
+                        {model.source}
+                      </span>
+                    )}
+                    {/* Model Type Badge - hidden for now */}
+                    {false && model.modelTypeInfo && (
+                      <span className={`text-xs px-2 py-1 rounded font-medium ${
+                        model.modelTypeInfo?.type === 'custom' 
+                          ? 'bg-green-50 text-green-700' 
+                          : model.modelTypeInfo?.type === 'generative'
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'bg-gray-50 text-gray-700'
+                      }`}>
+                        {model.modelTypeInfo?.displayLabel}
+                      </span>
+                    )}
+                    {/* Fallback to task if no modelTypeInfo - hidden for now */}
+                    {false && !model.modelTypeInfo && (
+                      <span className="text-xs px-2 py-1 bg-wells-warm-grey/10 text-wells-dark-grey rounded font-medium capitalize">
+                        {model.task}
+                      </span>
+                    )}
                   </div>
                   <h3 className="font-bold text-lg text-wells-dark-grey line-clamp-1 mb-1 group-hover:text-wells-warm-grey transition-colors">
                     {model.name}
@@ -271,13 +323,15 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                   <p className="text-sm text-wells-warm-grey">by {model.author}</p>
                 </div>
 
-                {/* Description */}
-                <p className="text-sm text-wells-warm-grey line-clamp-3 mb-4 min-h-[60px]">
-                  {model.description || 'No description available'}
-                </p>
+                {/* Description - hidden for now */}
+                {false && (
+                  <p className="text-sm text-wells-warm-grey line-clamp-3 mb-4 flex-grow min-h-[80px]">
+                    {model.modelTypeInfo?.description || model.description || 'No description available'}
+                  </p>
+                )}
 
                 {/* Metrics */}
-                <div className="flex flex-wrap gap-2 mb-4">
+                <div className="flex flex-wrap gap-2 mb-2 flex-shrink-0">
                   <div className="flex items-center gap-1 px-2 py-1 bg-wells-warm-grey/5 rounded text-xs">
                     <Download className="w-3 h-3 text-wells-warm-grey" />
                     <span className="font-medium">{formatNumber(model.downloads)}</span>
@@ -291,6 +345,13 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                     <div className="flex items-center gap-1 px-2 py-1 bg-amber-50 text-amber-700 rounded text-xs font-medium" title="No Inference API support">
                       <AlertCircle className="w-3 h-3" />
                       <span>⚠️ No Inference</span>
+                    </div>
+                  )}
+                  {/* Warning for models without predefined classes - hidden for now */}
+                  {false && model.modelTypeInfo?.type === 'unspecified' && (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-yellow-50 text-yellow-700 rounded text-xs font-medium" title="No predefined labels — responses vary by prompt">
+                      <AlertCircle className="w-3 h-3" />
+                      <span>⚠️ Variable Output</span>
                     </div>
                   )}
                   {model.platforms.includes('mobile') && (
@@ -307,12 +368,12 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-2">
+                <div className="flex gap-2 mt-auto flex-shrink-0">
                   <button
                     onClick={() => handleSelectModel(model)}
                     className="flex-1 px-4 py-3 bg-wells-dark-grey text-white rounded-lg hover:bg-wells-warm-grey transition-colors font-semibold text-sm flex items-center justify-center gap-2 group-hover:scale-[1.02] transition-transform"
                   >
-                    Use this model
+                    Use Model
                     <ArrowRight className="w-4 h-4" />
                   </button>
                   <a
@@ -330,23 +391,129 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           })}
         </div>
 
-        {/* Show More Button */}
-        {modelViewStore.hasMoreResults && (
-          <div className="text-center">
-            <button
-              onClick={() => modelViewStore.setShowAllResults(true)}
-              className="px-8 py-4 bg-wells-warm-grey/10 hover:bg-wells-warm-grey/20 text-wells-dark-grey rounded-xl transition-all font-semibold flex items-center gap-2 mx-auto"
-            >
-              <span>Show {modelViewStore.remainingCount} more results</span>
-              <ChevronDown className="w-4 h-4" />
-            </button>
+        {/* Improved Pagination */}
+        {modelViewStore.totalPages > 1 && (
+          <div className="flex flex-col items-center gap-6 mt-8">
+            {/* Page Numbers with Smart Display */}
+            <div className="flex items-center gap-2 flex-wrap justify-center">
+              {/* Previous Button */}
+              {modelViewStore.currentPage > 1 && (
+                <button
+                  onClick={() => {
+                    modelViewStore.goToPreviousPage()
+                    searchModels.mutate({
+                      keywords: modelViewStore.refinedKeywords,
+                      task_type: modelViewStore.taskType,
+                      page: modelViewStore.currentPage - 1
+                    })
+                  }}
+                  className="px-5 py-2.5 bg-wells-dark-grey/10 hover:bg-wells-dark-grey/20 text-wells-dark-grey rounded-xl transition-all font-semibold flex items-center gap-2 shadow-sm hover:shadow-md"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  Previous
+                </button>
+              )}
+              
+              {/* Smart Page Number Display */}
+              {(() => {
+                const current = modelViewStore.currentPage
+                const total = modelViewStore.totalPages
+                const pages: (number | string)[] = []
+                
+                // Always show first page
+                pages.push(1)
+                
+                // Show pages around current page
+                if (current > 3) pages.push('...')
+                
+                for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) {
+                  pages.push(i)
+                }
+                
+                // Show last page
+                if (current < total - 2) pages.push('...')
+                if (total > 1) pages.push(total)
+                
+                return pages.map((pageNum, idx) => {
+                  if (pageNum === '...') {
+                    return (
+                      <span key={`ellipsis-${idx}`} className="px-2 text-wells-warm-grey">
+                        •••
+                      </span>
+                    )
+                  }
+                  
+                  const isCurrentPage = pageNum === current
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => {
+                        if (pageNum !== current) {
+                          modelViewStore.setCurrentPage(pageNum as number)
+                          searchModels.mutate({
+                            keywords: modelViewStore.refinedKeywords,
+                            task_type: modelViewStore.taskType,
+                            page: pageNum as number
+                          })
+                        }
+                      }}
+                      style={{ 
+                        cursor: pageNum === current ? 'default' : 'pointer',
+                        pointerEvents: pageNum === current ? 'none' : 'auto'
+                      }}
+                      className={`
+                        min-w-[44px] h-11 px-4 rounded-xl font-bold transition-all duration-200
+                        ${isCurrentPage 
+                          ? 'bg-wells-dark-grey text-white shadow-wells-lg scale-110' 
+                          : 'bg-wells-warm-grey/10 hover:bg-wells-warm-grey/20 text-wells-dark-grey hover:scale-105 shadow-sm'
+                        }
+                      `}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                })
+              })()}
+              
+              {/* Next Button */}
+              {modelViewStore.currentPage < modelViewStore.totalPages && (
+                <button
+                  onClick={() => {
+                    modelViewStore.goToNextPage()
+                    searchModels.mutate({
+                      keywords: modelViewStore.refinedKeywords,
+                      task_type: modelViewStore.taskType,
+                      page: modelViewStore.currentPage + 1
+                    })
+                  }}
+                  className="px-5 py-2.5 bg-wells-dark-grey/10 hover:bg-wells-dark-grey/20 text-wells-dark-grey rounded-xl transition-all font-semibold flex items-center gap-2 shadow-sm hover:shadow-md"
+                >
+                  Next
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            
+            {/* Results Count with Better Styling */}
+            <div className="flex items-center gap-3 px-6 py-3 bg-wells-warm-grey/10 rounded-full">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-wells-dark-grey rounded-full animate-pulse"></div>
+                <span className="text-sm font-semibold text-wells-dark-grey">
+                  Page {modelViewStore.currentPage} of {modelViewStore.totalPages}
+                </span>
+              </div>
+              <div className="w-px h-4 bg-wells-warm-grey/30"></div>
+              <span className="text-sm text-wells-warm-grey">
+                Showing {modelViewStore.displayedModels.length} models
+              </span>
+            </div>
           </div>
         )}
-
-        {/* Results Count */}
-        <div className="text-center text-sm text-wells-warm-grey">
-          Showing {modelViewStore.displayedModels.length} of {modelViewStore.filteredModels.length} models
-        </div>
       </div>
     )
   }
@@ -364,7 +531,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           What are you trying to detect?
         </h2>
         <p className="text-wells-warm-grey">
-          Example: Detect trash in river images or identify basketball shots
+          Example: Detect objects in images, classify scenes, or analyze visual content
         </p>
       </div>
 

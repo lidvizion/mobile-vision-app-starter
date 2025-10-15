@@ -6,17 +6,51 @@ export interface ModelMetadata {
   source: 'roboflow' | 'huggingface'
   author: string
   downloads: number
-  likes: number
-  updatedAt: string
+  likes?: number
+  views?: number
+  stars?: number
+  updatedAt?: string
+  lastUpdated?: string
   tags: string[]
   frameworks: string[]
   thumbnail?: string
+  image?: string
   modelUrl: string
   platforms: string[]
-  // Inference API support
-  supportsInference?: boolean
+  // Model metrics
+  metrics?: {
+    mAP?: number
+    accuracy?: number
+    precision?: number
+    recall?: number
+    FPS?: number
+    modelSize?: string
+  }
+  // Training data info
+  trainingImages?: number
+  modelId?: string // Roboflow model ID format (e.g., "basketball-sx8hz/1")
+  // Live Inference API support (hosted/warm models)
+  supportsInference?: boolean // True if model can run live via Inference API
   inferenceEndpoint?: string
-  inferenceStatus?: 'ready' | 'loading' | 'error' | 'unavailable'
+  inferenceStatus?: 'live' | 'loading' | 'error' | 'unavailable'
+  // Model classes/labels (e.g., ["cat", "dog", "bird"])
+  classes?: string[]
+  // Enhanced model type information
+  modelType?: 'custom' | 'generative' | 'unspecified'
+  modelTypeInfo?: {
+    type: 'custom' | 'generative' | 'unspecified'
+    tier: 1 | 2 | 3
+    displayLabel: string
+    description: string
+    taskType: 'object-detection' | 'classification' | 'segmentation' | 'captioning' | 'qa' | 'embedding' | 'general'
+    displayFormat: {
+      type: 'bounding-boxes' | 'labels' | 'masks' | 'text' | 'embeddings' | 'general'
+      requiresImage: boolean
+      requiresText: boolean
+      outputType: 'structured' | 'text' | 'numerical'
+      visualization: 'overlay' | 'sidebar' | 'modal' | 'inline'
+    }
+  }
 }
 
 export interface SearchFilters {

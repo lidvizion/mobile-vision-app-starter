@@ -1,8 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import { CVResponse } from '@/types'
 import { formatTimestamp, formatConfidence } from '@/lib/utils'
-import { Clock, Zap, Image as ImageIcon, BarChart3, Target, Tag, Palette } from 'lucide-react'
+import { Clock, Zap, Image as ImageIcon, BarChart3, Target, Tag, Palette, Code, List } from 'lucide-react'
 import OverlayRenderer from './OverlayRenderer'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
@@ -13,6 +14,8 @@ interface ResultsDisplayProps {
 }
 
 export default function ResultsDisplay({ response, selectedImage }: ResultsDisplayProps) {
+  const [viewMode, setViewMode] = useState<'json' | 'classes'>('classes')
+
   if (!response || !selectedImage) {
     return (
       <div className="card p-6">
@@ -81,14 +84,14 @@ export default function ResultsDisplay({ response, selectedImage }: ResultsDispl
         </div>
       </div>
 
-      {/* Image with overlays */}
-      <div className="relative mb-8 rounded-2xl overflow-hidden border border-wells-warm-grey/20 shadow-md">
+      {/* Image on its own row */}
+      <div className="relative rounded-2xl overflow-hidden border border-wells-warm-grey/20 shadow-md mb-6">
         <Image
           src={selectedImage}
           alt="Processed"
           width={800}
-          height={320}
-          className="w-full max-h-80 object-contain bg-wells-light-beige"
+          height={400}
+          className="w-full h-full object-contain bg-wells-light-beige"
         />
         <OverlayRenderer
           detections={response.results.detections}
@@ -99,8 +102,155 @@ export default function ResultsDisplay({ response, selectedImage }: ResultsDispl
         />
       </div>
 
+      {/* Output section with toggle */}
+      <div className="bg-wells-light-beige rounded-2xl border border-wells-warm-grey/20 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-wells-dark-grey rounded-lg flex items-center justify-center">
+              {viewMode === 'json' ? (
+                <Code className="w-4 h-4 text-white" />
+              ) : (
+                <List className="w-4 h-4 text-white" />
+              )}
+            </div>
+            <h4 className="text-lg font-serif font-semibold text-wells-dark-grey">
+              {viewMode === 'json' ? 'JSON Output' : 'Detection Results'}
+            </h4>
+          </div>
+          
+          {/* Toggle buttons */}
+          <div className="flex bg-wells-white rounded-lg border border-wells-warm-grey/20 p-1">
+            <button
+              onClick={() => setViewMode('classes')}
+              className={cn(
+                'px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2',
+                viewMode === 'classes'
+                  ? 'bg-wells-dark-grey text-white shadow-sm'
+                  : 'text-wells-warm-grey hover:text-wells-dark-grey'
+              )}
+            >
+              <List className="w-4 h-4" />
+              Classes
+            </button>
+            <button
+              onClick={() => setViewMode('json')}
+              className={cn(
+                'px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2',
+                viewMode === 'json'
+                  ? 'bg-wells-dark-grey text-white shadow-sm'
+                  : 'text-wells-warm-grey hover:text-wells-dark-grey'
+              )}
+            >
+              <Code className="w-4 h-4" />
+              JSON
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable content area */}
+        <div className="bg-wells-white rounded-xl border border-wells-warm-grey/20 p-4 overflow-auto max-h-96">
+          {viewMode === 'json' ? (
+            <pre className="text-sm text-wells-dark-grey whitespace-pre-wrap font-mono">
+              {JSON.stringify(response, null, 2)}
+            </pre>
+          ) : (
+            <div className="space-y-2">
+              {/* Detection Results */}
+              {response.results.detections && response.results.detections.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Target className="w-4 h-4 text-red-600" />
+                    <span className="text-sm font-medium text-wells-dark-grey">Detections</span>
+                    <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">
+                      {response.results.detections.length} objects
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {response.results.detections.map((detection, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-wells-light-beige rounded-lg border border-wells-warm-grey/20">
+                        <div className="flex items-center gap-3">
+                          <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                          <span className="font-medium text-wells-dark-grey capitalize">{detection.class}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-wells-dark-grey">{formatConfidence(detection.confidence)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Classification Results */}
+              {response.results.labels && response.results.labels.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Tag className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm font-medium text-wells-dark-grey">Classifications</span>
+                    <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                      {response.results.labels.length} items
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {response.results.labels.map((label, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-wells-light-beige rounded-lg border border-wells-warm-grey/20">
+                        <div className="flex items-center gap-3">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                          <span className="font-medium text-wells-dark-grey capitalize">{label.class}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-wells-dark-grey">{formatConfidence(label.score)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Segmentation Results */}
+              {response.results.segmentation && response.results.segmentation.regions && response.results.segmentation.regions.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Palette className="w-4 h-4 text-green-600" />
+                    <span className="text-sm font-medium text-wells-dark-grey">Segmentation</span>
+                    <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+                      {response.results.segmentation.regions.length} regions
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {response.results.segmentation.regions.map((region, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-wells-light-beige rounded-lg border border-wells-warm-grey/20">
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className="w-3 h-3 rounded border border-wells-warm-grey/30"
+                            style={{ backgroundColor: region.color }}
+                          ></div>
+                          <span className="font-medium text-wells-dark-grey capitalize">{region.class}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-wells-dark-grey">{Math.round(region.area * 100)}%</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* No results message */}
+              {(!response.results.detections || response.results.detections.length === 0) && 
+               (!response.results.labels || response.results.labels.length === 0) && 
+               (!response.results.segmentation || !response.results.segmentation.regions || response.results.segmentation.regions.length === 0) && (
+                <div className="text-center py-8 text-wells-warm-grey">
+                  <p>No detection results available</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Metadata */}
-      <div className="grid grid-cols-2 gap-4 mb-8">
+      <div className="grid grid-cols-2 gap-4 mb-8 mt-6">
         <div className="p-4 bg-wells-light-beige rounded-xl border border-wells-warm-grey/20 hover:bg-wells-white transition-colors duration-200">
           <div className="flex items-center gap-3 mb-2">
             <Clock className="w-4 h-4 text-wells-warm-grey" />
@@ -121,97 +271,6 @@ export default function ResultsDisplay({ response, selectedImage }: ResultsDispl
         </div>
       </div>
 
-      {/* Results */}
-      {response.results.labels && response.results.labels.length > 0 && (
-        <div className="mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <Tag className="w-5 h-5 text-blue-600" />
-            <h4 className="text-lg font-serif font-semibold text-wells-dark-grey">Classification Results</h4>
-            <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
-              {response.results.labels.length} items
-            </span>
-          </div>
-          <div className="space-y-3">
-            {response.results.labels.map((label, index) => (
-              <div key={index} className="flex items-center justify-between p-4 bg-wells-light-beige rounded-xl border border-wells-warm-grey/20 hover:bg-wells-white transition-colors duration-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                  <span className="font-medium text-wells-dark-grey">{label.class}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-wells-dark-grey">{formatConfidence(label.score)}</p>
-                    <p className="text-xs text-wells-warm-grey">confidence</p>
-                  </div>
-                  <span className={cn(
-                    'px-3 py-1 rounded-full text-xs font-medium',
-                    label.confidence === 'high' && 'bg-green-100 text-green-700',
-                    label.confidence === 'medium' && 'bg-yellow-100 text-yellow-700',
-                    label.confidence === 'low' && 'bg-red-100 text-red-700'
-                  )}>
-                    {label.confidence}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {response.results.detections && response.results.detections.length > 0 && (
-        <div className="mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <Target className="w-5 h-5 text-red-600" />
-            <h4 className="text-lg font-serif font-semibold text-wells-dark-grey">Detection Results</h4>
-            <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">
-              {response.results.detections.length} objects
-            </span>
-          </div>
-          <div className="space-y-3">
-            {response.results.detections.map((detection, index) => (
-              <div key={index} className="flex items-center justify-between p-4 bg-wells-light-beige rounded-xl border border-wells-warm-grey/20 hover:bg-wells-white transition-colors duration-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                  <span className="font-medium text-wells-dark-grey">{detection.class}</span>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-wells-dark-grey">{formatConfidence(detection.confidence)}</p>
-                  <p className="text-xs text-wells-warm-grey">confidence</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {response.results.segmentation && response.results.segmentation.regions && response.results.segmentation.regions.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-4">
-            <Palette className="w-5 h-5 text-green-600" />
-            <h4 className="text-lg font-serif font-semibold text-wells-dark-grey">Segmentation Results</h4>
-            <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
-              {response.results.segmentation.regions.length} regions
-            </span>
-          </div>
-          <div className="space-y-3">
-            {response.results.segmentation.regions.map((region, index) => (
-              <div key={index} className="flex items-center justify-between p-4 bg-wells-light-beige rounded-xl border border-wells-warm-grey/20 hover:bg-wells-white transition-colors duration-200">
-                <div className="flex items-center gap-3">
-                  <div 
-                    className="w-4 h-4 rounded border border-wells-warm-grey/30"
-                    style={{ backgroundColor: region.color }}
-                  ></div>
-                  <span className="font-medium text-wells-dark-grey">{region.class}</span>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-wells-dark-grey">{Math.round(region.area * 100)}%</p>
-                  <p className="text-xs text-wells-warm-grey">coverage</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

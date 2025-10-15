@@ -9,12 +9,14 @@ import ResultsDisplay from '@/components/ResultsDisplay'
 import ResultHistory from '@/components/ResultHistory'
 import { ResultHistoryItem } from '@/types'
 import { ModelMetadata } from '@/types/models'
+import { modelViewStore } from '@/stores/modelViewStore'
 import { Github, ExternalLink, Sparkles, ArrowRight } from 'lucide-react'
 import LidVizionIcon from '@/components/LidVizionIcon'
 
 export default function Home() {
   const [selectedModel, setSelectedModel] = useState<ModelMetadata | null>(null)
   const { currentTask, switchTask, processImage, isProcessing, lastResponse } = useCVTask(selectedModel)
+  
   const { history, addResult, clearHistory } = useResultHistory()
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [viewingHistoryItem, setViewingHistoryItem] = useState<ResultHistoryItem | null>(null)
@@ -142,6 +144,9 @@ export default function Home() {
                     processImage={processImage}
                     selectedImage={selectedImage}
                     setSelectedImage={setSelectedImage}
+                    selectedModel={selectedModel}
+                    onModelSelect={handleModelSelect}
+                    availableModels={modelViewStore.modelList}
                   />
                 </div>
 
