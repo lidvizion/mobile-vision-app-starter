@@ -2,36 +2,44 @@
   "name": "mobile-vision-app-starter",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "build:packages": "npm run build --workspaces",
+    "test:packages": "npm run test --workspaces",
+    "lint:packages": "npm run lint --workspaces",
+    "publish:packages": "npm publish --workspaces --access public",
+    "clean:packages": "npm run clean --workspaces || true"
   },
   "dependencies": {
-    "@next/bundle-analyzer": "^15.5.3",
-    "@tanstack/react-query": "^5.90.2",
+    "@next/bundle-analyzer": "^15.5.6",
+    "@tanstack/react-query": "^5.0.0",
     "@tanstack/react-query-devtools": "^5.90.2",
+    "clsx": "^2.0.0",
+    "lucide-react": "^0.300.0",
+    "mobx": "^6.12.0",
+    "mobx-react-lite": "^4.0.0",
+    "mongodb": "^6.20.0",
+    "next": "14.0.4",
+    "react": "^18",
+    "react-dom": "^18",
+    "tailwind-merge": "^2.0.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",
-    "clsx": "^2.0.0",
-    "lucide-react": "^0.294.0",
-    "mobx": "^6.15.0",
-    "mobx-react-lite": "^4.1.1",
-    "mongodb": "^6.20.0",
-    "next": "14.0.4",
-    "postcss": "^8",
-    "react": "^18",
-    "react-dom": "^18",
-    "tailwind-merge": "^2.0.0",
-    "tailwindcss": "^3.3.0",
-    "typescript": "^5",
-    "zod": "^4.1.11"
-  },
-  "devDependencies": {
     "eslint": "^8",
-    "eslint-config-next": "14.0.4"
+    "eslint-config-next": "14.0.4",
+    "postcss": "^8",
+    "tailwindcss": "^3.3.0",
+    "typescript": "^5"
   }
 }

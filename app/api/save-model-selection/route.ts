@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
 }
 
 // -------------------------
-// GET — Retrieve user selections
+// GET — Retrieve user selections 
 // -------------------------
 export async function GET(request: NextRequest) {
   try {

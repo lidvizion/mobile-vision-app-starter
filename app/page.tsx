@@ -54,7 +54,7 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <LidVizionIcon className="w-15 h-15" />
               <div>
-                {/* <h1 className="text-lg font-serif font-semibold text-wells-dark-grey">Lid Vizion</h1> */}
+                <h1 className="text-lg font-serif font-semibold text-wells-dark-grey">Lid Vizion</h1>
                 <p className="text-xs text-wells-warm-grey">Computer Vision Platform</p>
               </div>
             </div>

@@ -5,7 +5,8 @@ import { Camera, Upload, Loader2, X, Video, Image as ImageIcon, AlertCircle } fr
 import Image from 'next/image'
 import { CVTask, CVResponse } from '@/types'
 import { ModelMetadata } from '@/types/models'
-import { validateImageFile } from '@/lib/validation'
+import { validateMediaFile } from '@/lib/validation'
+import { extractVideoSnapshot, isVideoFile, formatFileSize } from '@/lib/videoUtils'
 import { logger, createLogContext } from '@/lib/logger'
 import { cn } from '@/lib/utils'
 
@@ -25,7 +26,9 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
   const [dragActive, setDragActive] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [currentImageFile, setCurrentImageFile] = useState<File | null>(null) // Store the File object for reprocessing
+  const [currentImageFile, setCurrentImageFile] = useState<File | null>(null) // Store the File object for reprocessing 
+  const [currentVideoFile, setCurrentVideoFile] = useState<File | null>(null) // Store the original video file
+  const [isVideo, setIsVideo] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -33,7 +36,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
   const fileClickInProgress = useRef(false)
   const autoProcessTriggered = useRef(false)
 
-  // Automatic processing when both image and model are selected (only once)
+  // Automatic processing when both image and model are selected (only once) 
   useEffect(() => {
     const autoProcess = async () => {
       if (currentImageFile && selectedModel && !isProcessing && selectedImage && !autoProcessTriggered.current) {
@@ -72,30 +75,74 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
       fileType: file.type
     })
 
-    // Validate file
-    const validation = validateImageFile(file)
+    // Validate file (supports both images and videos) 
+    const validation = validateMediaFile(file)
     if (!validation.isValid) {
-      setError(validation.error || 'Invalid file format')
+      // Provide more specific error messages for video files
+      let errorMessage = validation.error || 'Invalid file format'
+      if (validation.error?.includes('Video file size must be less than 100MB')) {
+        const fileSize = formatFileSize(file.size)
+        errorMessage = `Video file too large! Your file is ${fileSize} but the maximum allowed size is 100MB. 
+
+💡 Tips to reduce file size:
+• Compress your video using online tools
+• Select a shorter clip (we only need a snapshot)
+• Use a lower resolution or bitrate`
+      }
+      setError(errorMessage)
       logger.warn('File validation failed', context, { error: validation.error })
       return
     }
 
     setError(null)
-    setCurrentImageFile(file) // Store the File object for reprocessing
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      setSelectedImage(e.target?.result as string)
-    }
-    reader.readAsDataURL(file)
+    setIsVideo(validation.isVideo || false)
 
-    try {
-      const response = await processImage(file)
-      onImageProcessed(response)
-      logger.info('File processed successfully', context)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      logger.error('Error processing image', context, error as Error)
-      setError(`Failed to process image: ${errorMessage}`)
+    if (validation.isVideo) {
+      // Handle video file
+      setCurrentVideoFile(file)
+      logger.info('Processing video file', context, { fileName: file.name })
+      
+      try {
+        // Extract snapshot from video at 0.5 seconds
+        const snapshotFile = await extractVideoSnapshot(file, 0.5)
+        setCurrentImageFile(snapshotFile) // Store the snapshot for reprocessing
+        
+        // Display the snapshot
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          setSelectedImage(e.target?.result as string)
+        }
+        reader.readAsDataURL(snapshotFile)
+        
+        // Process the snapshot
+        const response = await processImage(snapshotFile)
+        onImageProcessed(response)
+        logger.info('Video snapshot processed successfully', context)
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        logger.error('Error processing video snapshot', context, error as Error)
+        setError(`Failed to process video: ${errorMessage}`)
+      }
+    } else {
+      // Handle image file (existing logic)
+      setCurrentImageFile(file)
+      setCurrentVideoFile(null)
+      
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setSelectedImage(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+
+      try {
+        const response = await processImage(file)
+        onImageProcessed(response)
+        logger.info('Image processed successfully', context)
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        logger.error('Error processing image', context, error as Error)
+        setError(`Failed to process image: ${errorMessage}`)
+      }
     }
   }
 
@@ -146,7 +193,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
       if (!blob) return
 
       const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' })
-      setCurrentImageFile(file) // Store the File object for reprocessing
+      setCurrentImageFile(file) // Store the File object for reprocessing 
       
       const reader = new FileReader()
       reader.onload = (e) => {
@@ -188,6 +235,9 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
   const handleNewImage = () => {
     setSelectedImage(null)
     setError(null)
+    setCurrentImageFile(null)
+    setCurrentVideoFile(null)
+    setIsVideo(false)
     stopCamera()
   }
 
@@ -349,14 +399,25 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
               
               <div className="text-center">
                 <h4 className="text-lg font-medium text-wells-dark-grey mb-1">
-                  {isProcessing ? 'Processing Image...' : error ? 'Processing Failed' : 'Image Ready'}
+                  {isProcessing 
+                    ? (isVideo ? 'Processing Video Snapshot...' : 'Processing Image...') 
+                    : error 
+                      ? 'Processing Failed' 
+                      : (isVideo ? 'Video Snapshot Ready' : 'Image Ready')
+                  }
                 </h4>
                 <p className="text-sm text-wells-warm-grey">
                   {isProcessing 
-                    ? 'Analyzing your image with computer vision models...'
+                    ? (isVideo 
+                        ? 'Extracting snapshot and analyzing with computer vision models...'
+                        : 'Analyzing your image with computer vision models...'
+                      )
                     : error
                       ? 'Try another model or view model details'
-                      : 'Your image is ready for analysis'
+                      : (isVideo 
+                          ? 'Video snapshot extracted and ready for analysis'
+                          : 'Your image is ready for analysis'
+                        )
                   }
                 </p>
               </div>
@@ -365,6 +426,23 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
                 <div className="flex items-center justify-center gap-2 text-sm text-wells-warm-grey">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>Processing with {currentTask} model...</span>
+                </div>
+              )}
+
+              {/* Video file information */}
+              {isVideo && currentVideoFile && (
+                <div className="bg-wells-light-beige rounded-xl p-4 border border-wells-warm-grey/20">
+                  <div className="flex items-center gap-3">
+                    <Video className="w-5 h-5 text-wells-dark-grey" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-wells-dark-grey">
+                        Video: {currentVideoFile.name}
+                      </p>
+                      <p className="text-xs text-wells-warm-grey">
+                        Size: {formatFileSize(currentVideoFile.size)} • Snapshot extracted at 0.5s
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -378,12 +456,12 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
               
               <div className="space-y-2">
                 <h4 className="text-xl font-serif font-semibold text-wells-dark-grey">
-                  {isProcessing ? 'Processing Image...' : 'Upload an Image'}
+                  {isProcessing ? 'Processing Image...' : 'Upload an Image or Video'}
                 </h4>
                 <p className="text-wells-warm-grey max-w-md mx-auto leading-relaxed">
                   {isProcessing 
                     ? 'Analyzing your image with computer vision models...'
-                    : 'Drag and drop an image here, or choose from the options below'
+                    : 'Drag and drop an image or video here, or choose from the options below'
                   }
                 </p>
               </div>
@@ -432,7 +510,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             onChange={(e) => {
               const file = e.target.files?.[0]
               if (file) handleFileSelect(file)

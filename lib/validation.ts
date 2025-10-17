@@ -10,6 +10,19 @@ export const ImageFileSchema = z.object({
   name: z.string().min(1, 'File name is required')
 });
 
+// Video file validation
+export const VideoFileSchema = z.object({
+  type: z.string().refine(
+    (type) => ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'].includes(type),
+    { message: 'Only MP4, WebM, MOV, and AVI files are supported' }
+  ),
+  size: z.number().max(100 * 1024 * 1024, 'Video file size must be less than 100MB. Please compress your video or choose a shorter clip.'),
+  name: z.string().min(1, 'File name is required')
+});
+
+// Combined media file validation
+export const MediaFileSchema = z.union([ImageFileSchema, VideoFileSchema]);
+
 // Bounding box schema
 export const BoundingBoxSchema = z.object({
   x: z.number().min(0),
@@ -36,7 +49,14 @@ export const ClassificationSchema = z.object({
 export const SegmentationRegionSchema = z.object({
   class: z.string(),
   area: z.number().min(0).max(1),
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Color must be a valid hex color')
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Color must be a valid hex color'),
+  mask: z.string().nullable().optional(), // Base64 mask data
+  bbox: z.object({
+    x: z.number().min(0),
+    y: z.number().min(0),
+    width: z.number().min(0),
+    height: z.number().min(0)
+  }).nullable().optional() // Bounding box for instance segmentation
 });
 
 // Segmentation schema
@@ -78,6 +98,42 @@ export const validateImageFile = (file: File): { isValid: boolean; error?: strin
       name: file.name
     });
     return { isValid: true };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return { isValid: false, error: error.issues[0].message };
+    }
+    return { isValid: false, error: 'Invalid file format' };
+  }
+};
+
+export const validateVideoFile = (file: File): { isValid: boolean; error?: string } => {
+  try {
+    VideoFileSchema.parse({
+      type: file.type,
+      size: file.size,
+      name: file.name
+    });
+    return { isValid: true };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return { isValid: false, error: error.issues[0].message };
+    }
+    return { isValid: false, error: 'Invalid file format' };
+  }
+};
+
+export const validateMediaFile = (file: File): { isValid: boolean; error?: string; isVideo?: boolean } => {
+  try {
+    MediaFileSchema.parse({
+      type: file.type,
+      size: file.size,
+      name: file.name
+    });
+    
+    // Determine if it's a video file
+    const isVideo = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'].includes(file.type);
+    
+    return { isValid: true, isVideo };
   } catch (error) {
     if (error instanceof z.ZodError) {
       return { isValid: false, error: error.issues[0].message };

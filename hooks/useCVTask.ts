@@ -111,7 +111,7 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
                 user_id: 'anonymous',
                 model_id: selectedModel.id,
                 query: modelViewStore.queryText || 'unknown',
-                image_url: base64, // Using base64 as image_url for now
+                image_url: base64, // Using base64 as image_url for now 
                 response: inferenceData.results
               })
             })
@@ -173,8 +173,14 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
 
 /**
  * Get image dimensions from a File object
+ * Only works in browser environment
  */
 function getImageDimensions(file: File): Promise<{ width: number; height: number }> {
+  // Check if we're in browser environment
+  if (typeof window === 'undefined' || typeof Image === 'undefined') {
+    return Promise.resolve({ width: 640, height: 480 })
+  }
+  
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => {
@@ -188,7 +194,7 @@ function getImageDimensions(file: File): Promise<{ width: number; height: number
 }
 
 /**
- * Transform Hugging Face Inference API response to CVResponse format
+ * Transform Hugging Face Inference API response to CVResponse format 
  */
 function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, imageDimensions?: { width: number; height: number }): CVResponse {
   const results = inferenceData.results || []
@@ -196,9 +202,26 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
   // Determine task type from model and results
   let task = model.task || 'detection'
   
-  // If we have bounding box data, force it to be detection
-  if (results.length > 0 && results[0].box) {
-    task = 'detection'
+  // Check for specific data types to determine task
+  if (results.length > 0) {
+    const firstResult = results[0]
+    
+    // Instance segmentation: has both box and mask
+    if (firstResult.box && firstResult.mask) {
+      task = 'segmentation'
+    }
+    // Object detection: has box but no mask
+    else if (firstResult.box) {
+      task = 'detection'
+    }
+    // Image segmentation: has mask but no box
+    else if (firstResult.mask) {
+      task = 'segmentation'
+    }
+    // Classification: has label and score but no spatial data
+    else if (firstResult.label && firstResult.score && !firstResult.box && !firstResult.mask) {
+      task = 'classification'
+    }
   }
   
   // Transform based on task type
@@ -228,7 +251,7 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
       }
     }
   } else if (task === 'classification' || task.includes('classification')) {
-    // Image Classification
+    // Image Classification 
     return {
       task: 'classification',
       model_version: model.name,
@@ -248,7 +271,9 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
       }
     }
   } else if (task === 'segmentation' || task.includes('segmentation')) {
-    // Segmentation
+    // Instance Segmentation or Image Segmentation
+    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
+    
     return {
       task: 'segmentation',
       model_version: model.name,
@@ -260,11 +285,31 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
         format: 'jpeg'
       },
       results: {
+        // For instance segmentation, include both detections and segmentation
+        detections: results.filter((seg: any) => seg.box).map((seg: any, index: number) => ({
+          class: seg.label,
+          confidence: seg.score || 0.9,
+          bbox: seg.box ? {
+            x: seg.box.xmin,
+            y: seg.box.ymin,
+            width: seg.box.xmax - seg.box.xmin,
+            height: seg.box.ymax - seg.box.ymin
+          } : { x: 0, y: 0, width: 0, height: 0 }
+        })),
         segmentation: {
-          regions: results.map((seg: any) => ({
+          regions: results.map((seg: any, index: number) => ({
             class: seg.label,
-            area: 0.1,
-            color: '#FF0000'
+            area: seg.area || (seg.box ? 
+              ((seg.box.xmax - seg.box.xmin) * (seg.box.ymax - seg.box.ymin)) / 
+              ((imageDimensions?.width || 640) * (imageDimensions?.height || 480)) : 0.1),
+            color: colors[index % colors.length],
+            mask: seg.mask || null, // Store mask data if available
+            bbox: seg.box ? {
+              x: seg.box.xmin,
+              y: seg.box.ymin,
+              width: seg.box.xmax - seg.box.xmin,
+              height: seg.box.ymax - seg.box.ymin
+            } : null
           }))
         }
       }
