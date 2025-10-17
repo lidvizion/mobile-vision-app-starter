@@ -114,23 +114,42 @@ export default function OverlayRenderer({
       <div className="absolute inset-0 pointer-events-none">
         {segmentation.map((region, index) => (
           <div key={index} className="animate-fade-in" style={{ animationDelay: `${index * 0.2}s` }}>
-            {/* Region overlay - simplified for area-based display */}
-                   <div
-                     className="absolute rounded border border-white/30"
-              style={{
-                backgroundColor: `${region.color}40`,
-                left: '10%',
-                top: '10%',
-                width: '80%',
-                height: '80%',
-              }}
-            />
+            {/* Instance segmentation: show bounding box if available */}
+            {region.bbox && (
+              <div
+                className="absolute border-2 rounded shadow-lg"
+                style={{
+                  borderColor: region.color,
+                  backgroundColor: `${region.color}15`,
+                  left: `${(region.bbox.x / imageWidth) * 100}%`,
+                  top: `${(region.bbox.y / imageHeight) * 100}%`,
+                  width: `${(region.bbox.width / imageWidth) * 100}%`,
+                  height: `${(region.bbox.height / imageHeight) * 100}%`,
+                }}
+              />
+            )}
+            
+            {/* Region overlay - for semantic segmentation or as fallback */}
+            {!region.bbox && (
+              <div
+                className="absolute rounded border border-white/30"
+                style={{
+                  backgroundColor: `${region.color}40`,
+                  left: '10%',
+                  top: '10%',
+                  width: '80%',
+                  height: '80%',
+                }}
+              />
+            )}
+            
             {/* Region label */}
-                   <div
-                     className="absolute bg-white text-gray-800 text-xs px-2 py-1 rounded font-medium border border-gray-200"
+            <div
+              className="absolute bg-white text-gray-800 text-xs px-2 py-1 rounded font-medium border border-gray-200 shadow-sm"
               style={{
-                left: '10px',
-                top: '10px',
+                left: region.bbox ? `${(region.bbox.x / imageWidth) * 100}%` : '10px',
+                top: region.bbox ? `${((region.bbox.y - 25) / imageHeight) * 100}%` : '10px',
+                transform: region.bbox ? 'translateX(-50%)' : 'none'
               }}
             >
               <div className="flex items-center gap-2">
@@ -138,7 +157,7 @@ export default function OverlayRenderer({
                   className="w-3 h-3 rounded-full border border-white/50 shadow-soft"
                   style={{ backgroundColor: region.color }}
                 />
-                <span>{region.class}</span>
+                <span className="capitalize">{region.class}</span>
                 <span className="opacity-70">({Math.round(region.area * 100)}%)</span>
               </div>
             </div>

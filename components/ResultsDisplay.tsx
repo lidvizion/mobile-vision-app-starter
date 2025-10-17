@@ -212,7 +212,9 @@ export default function ResultsDisplay({ response, selectedImage }: ResultsDispl
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <Palette className="w-4 h-4 text-green-600" />
-                    <span className="text-sm font-medium text-wells-dark-grey">Segmentation</span>
+                    <span className="text-sm font-medium text-wells-dark-grey">
+                      {response.results.segmentation.regions.some(r => r.bbox) ? 'Instance Segmentation' : 'Segmentation'}
+                    </span>
                     <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
                       {response.results.segmentation.regions.length} regions
                     </span>
@@ -225,10 +227,18 @@ export default function ResultsDisplay({ response, selectedImage }: ResultsDispl
                             className="w-3 h-3 rounded border border-wells-warm-grey/30"
                             style={{ backgroundColor: region.color }}
                           ></div>
-                          <span className="font-medium text-wells-dark-grey capitalize">{region.class}</span>
+                          <div className="flex flex-col">
+                            <span className="font-medium text-wells-dark-grey capitalize">{region.class}</span>
+                            {region.bbox && (
+                              <span className="text-xs text-wells-warm-grey">
+                                Box: {Math.round(region.bbox.width)}×{Math.round(region.bbox.height)}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-semibold text-wells-dark-grey">{Math.round(region.area * 100)}%</p>
+                          <p className="text-xs text-wells-warm-grey">coverage</p>
                         </div>
                       </div>
                     ))}

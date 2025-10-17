@@ -1,0 +1,58 @@
+{
+  "name": "@lidvizion/cv-display",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Computer Vision Display Component - Standalone visualization for bounding boxes, segmentation, and results",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rollup -c",
+    "dev": "rollup -c -w",
+    "test": "jest",
+    "lint": "eslint src --ext .ts,.tsx",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "computer-vision",
+    "display",
+    "visualization",
+    "bounding-box",
+    "segmentation",
+    "overlay",
+    "react-component"
+  ],
+  "author": "Lid Vizion",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "next": ">=14.0.0"
+  },
+  "dependencies": {
+    "lucide-react": "^0.300.0",
+    "clsx": "^2.0.0",
+    "tailwind-merge": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@rollup/plugin-typescript": "^11.0.0",
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "@rollup/plugin-commonjs": "^28.0.0",
+    "rollup": "^4.0.0",
+    "rollup-plugin-dts": "^6.0.0",
+    "typescript": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lidvizion/mobile-vision-app-starter.git",
+    "directory": "packages/cv-display"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

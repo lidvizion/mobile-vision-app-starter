@@ -1,0 +1,48 @@
+{
+  "name": "@lidvizion/cv-video-utils",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Computer Vision Video Utilities - Video processing, snapshot extraction, and file validation",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rollup -c",
+    "dev": "rollup -c -w",
+    "test": "jest",
+    "lint": "eslint src --ext .ts",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "computer-vision",
+    "video",
+    "snapshot",
+    "extraction",
+    "validation",
+    "file-processing"
+  ],
+  "author": "Lid Vizion",
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-typescript": "^11.0.0",
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "@rollup/plugin-commonjs": "^28.0.0",
+    "rollup": "^4.0.0",
+    "rollup-plugin-dts": "^6.0.0",
+    "typescript": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lidvizion/mobile-vision-app-starter.git",
+    "directory": "packages/cv-video-utils"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
