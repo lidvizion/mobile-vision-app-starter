@@ -15,7 +15,9 @@ import { modelViewStore } from '@/stores/modelViewStore'
 import { useQueryRefine } from '@/hooks/useQueryRefine'
 import { useModelSearch } from '@/hooks/useModelSearch'
 import { useSaveModelSelection } from '@/hooks/useSaveModelSelection'
+import { useRoboflowSearch } from '@/hooks/useRoboflowSearch'
 import ModelSearchSkeleton from './ModelSearchSkeleton'
+import { RoboflowSearchResults } from './RoboflowSearchResults'
 
 interface GuidedModelFlowProps {
   onModelSelect: (model: ModelMetadata) => void
@@ -24,16 +26,19 @@ interface GuidedModelFlowProps {
 const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
   const [showSearchBar, setShowSearchBar] = useState(false)
   const [sessionId] = useState(() => `session_${Date.now()}`)
+  const [showRoboflowResults, setShowRoboflowResults] = useState(false)
 
   // React Query hooks
   const queryRefineMutation = useQueryRefine()
   const searchModels = useModelSearch()  // Renamed for clarity
   const saveSelectionMutation = useSaveModelSelection()
+  const roboflowSearch = useRoboflowSearch()
 
   const taskIcons = {
     'detection': ScanEye, // Object Detection - eye scanning for detection
     'classification': Tag, // Image Classification - tagging/labeling
     'segmentation': ScanLine, // Image Segmentation - scanning lines for segmentation
+    'instance-segmentation': ScanFace, // Instance Segmentation - face scanning for individual instances
     'image-to-image': ArrowRightLeft, // Image to Image
     'text-to-image': FileText, // Text to Image
     'image-to-text': ScanText, // Image to Text - scanning text
@@ -52,6 +57,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
     'Object Detection': ScanEye,
     'Image Classification': Tag,
     'Image Segmentation': ScanLine,
+    'Instance Segmentation': ScanFace,
     'Image to Image': ArrowRightLeft,
     'Text to Image': FileText,
     'Image to Text': ScanText,
@@ -84,22 +90,103 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         (window as any).__queryId = refineResult.query_id
       }
 
-      // Step 2: Search models with refined keywords (start with page 1)
-      await searchModels.mutateAsync({
+      // Step 2: Search both Hugging Face and Roboflow models in parallel
+      const [hfResult, roboflowResult] = await Promise.allSettled([
+        // Search Hugging Face models
+        searchModels.mutateAsync({
         keywords: refineResult.keywords,
         task_type: refineResult.task_type,
         limit: 20,
         page: 1
-      })
+        }),
+        // Search Roboflow models
+        roboflowSearch.searchRoboflow({
+          query: modelViewStore.queryText,
+          taskType: refineResult.task_type,
+          userId: sessionId
+        })
+      ])
 
-      // Step 3: Recommendations are now saved automatically by the backend 
+      // Combine results from both sources
+      const combinedModels = []
+      
+      // Add Hugging Face models
+      if (hfResult.status === 'fulfilled' && hfResult.value?.models) {
+        combinedModels.push(...hfResult.value.models)
+      }
+      
+      // Add Roboflow models (convert to ModelMetadata format)
+      if (roboflowResult.status === 'fulfilled' && roboflowResult.value?.models) {
+        const roboflowModels = roboflowResult.value.models.map((roboflowModel: any) => ({
+          id: roboflowModel.id,
+          name: roboflowModel.name,
+          description: roboflowModel.description,
+          source: 'roboflow' as const,
+          modelUrl: roboflowModel.endpoint,
+          task: roboflowModel.task_type,
+          classes: roboflowModel.tags,
+          supportsInference: true,
+          inferenceEndpoint: roboflowModel.endpoint,
+          apiKey: roboflowModel.api_key,
+          author: roboflowModel.author,
+          downloads: roboflowModel.downloads, // Will be replaced with training images
+          tags: roboflowModel.tags,
+          frameworks: ['roboflow'],
+          platforms: ['web'],
+          // Roboflow-specific metrics
+          trainingImages: roboflowModel.downloads, // Use downloads as training images count
+          confidence: roboflowModel.confidence
+        }))
+        combinedModels.push(...roboflowModels)
+      }
+
+      // Update store with combined results
+      modelViewStore.setModelList(combinedModels)
+      modelViewStore.setCurrentPage(1)
+      modelViewStore.setTotalPages(Math.ceil(combinedModels.length / 6)) // 6 models per page
+
+      // Step 3: Recommendations are now saved automatically by the backend
       // No need to call save-recommendations from frontend anymore
     } catch (error) {
       console.error('Search error:', error)
     }
   }
 
-  const handleSelectModel = async (model: ModelMetadata) => {
+  const handleSearchRoboflow = async () => {
+    if (!modelViewStore.queryText) return
+
+    try {
+      setShowRoboflowResults(true)
+      await roboflowSearch.searchRoboflow({
+        query: modelViewStore.queryText,
+        taskType: 'detection',
+        userId: sessionId
+      })
+    } catch (error) {
+      console.error('Roboflow search error:', error)
+    }
+  }
+
+  const handleSelectRoboflowModel = async (roboflowModel: any) => {
+    // Convert Roboflow model to our ModelMetadata format
+    const model: ModelMetadata = {
+      id: roboflowModel.id,
+      name: roboflowModel.name,
+      description: roboflowModel.description,
+      source: 'roboflow',
+      modelUrl: roboflowModel.endpoint,
+      task: roboflowModel.task_type,
+      classes: roboflowModel.tags,
+      supportsInference: true,
+      inferenceEndpoint: roboflowModel.endpoint,
+      apiKey: roboflowModel.api_key,
+      author: roboflowModel.author,
+      downloads: roboflowModel.downloads,
+      tags: roboflowModel.tags,
+      frameworks: ['roboflow'],
+      platforms: ['web']
+    }
+
     // Set selected model in store
     modelViewStore.setSelectedModel(model)
 
@@ -114,10 +201,38 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
             url: model.modelUrl,
             task: model.task,
             description: model.description,
-            classes: model.classes // Add classes field
+            classes: model.classes
           },
           session_id: sessionId
         })
+      } catch (error) {
+        console.error('❌ Error saving Roboflow model selection:', error)
+      }
+    }
+
+    // Notify parent component
+    onModelSelect(model)
+  }
+
+  const handleSelectModel = async (model: ModelMetadata) => {
+    // Set selected model in store
+    modelViewStore.setSelectedModel(model)
+
+    // Save selection via API
+    if (modelViewStore.queryId) {
+      try {
+      await saveSelectionMutation.mutateAsync({
+        query_id: modelViewStore.queryId,
+        model: {
+          name: model.name,
+          source: model.source,
+          url: model.modelUrl,
+          task: model.task,
+          description: model.description,
+          classes: model.classes // Add classes field
+        },
+        session_id: sessionId
+      })
       } catch (error) {
         console.error('❌ Error saving model selection:', error)
         // Continue anyway - don't let API errors prevent model selection 
@@ -192,13 +307,13 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         <div className="text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-wells-warm-grey/10 rounded-full mb-4">
             <Sparkles className="w-4 h-4 text-wells-dark-grey" />
-            <span className="text-sm font-medium text-wells-dark-grey">Step 2</span>
+            <span className="text-sm font-medium text-wells-dark-grey">Step 3</span>
           </div>
           <h2 className="text-2xl font-serif font-bold text-wells-dark-grey mb-2">
-            We found models that match your use case!
+            Upload your image or video
           </h2>
           <p className="text-wells-warm-grey mb-4">
-            Choose one to start your workflow or view more
+            Choose a model and upload your media to get started
           </p>
           <p className="text-sm text-wells-warm-grey">
             Based on: "<strong className="text-wells-dark-grey">{modelViewStore.queryText}</strong>"
@@ -231,8 +346,16 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
               // Get unique task types from current models
               const uniqueTasks = Array.from(new Set(modelViewStore.displayedModels.map(model => model.task)))
               
-              return uniqueTasks.map((task) => {
+              // Define common CV task filters to always show
+              const commonTasks = ['detection', 'classification', 'segmentation']
+              
+              // Combine all tasks
+              const allTasks = Array.from(new Set([...uniqueTasks, ...commonTasks]))
+              
+              return allTasks.map((task) => {
                 const Icon = taskIcons[task as keyof typeof taskIcons] || Grid
+                const hasModels = uniqueTasks.includes(task) || (task === 'segmentation' && (uniqueTasks.includes('segmentation') || uniqueTasks.includes('instance-segmentation')))
+                
                 return (
                   <button
                     key={task}
@@ -240,11 +363,16 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
                       modelViewStore.activeFilter === task
                         ? 'bg-wells-dark-grey text-white shadow-md'
-                        : 'bg-wells-warm-grey/10 text-wells-dark-grey hover:bg-wells-warm-grey/20 hover:shadow-sm'
+                        : hasModels 
+                          ? 'bg-wells-warm-grey/10 text-wells-dark-grey hover:bg-wells-warm-grey/20 hover:shadow-sm'
+                          : 'bg-wells-warm-grey/5 text-wells-warm-grey/70 cursor-not-allowed opacity-60'
                     }`}
+                    disabled={!hasModels}
+                    title={!hasModels ? `No ${task} models found in current search` : `Filter by ${task}`}
                   >
                     <Icon className="w-4 h-4" />
                     <span className="capitalize">{task.replace(/([A-Z])/g, ' $1').trim()}</span>
+                    {!hasModels && <span className="text-xs opacity-50">(0)</span>}
                   </button>
                 )
               })
@@ -290,13 +418,13 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                   <div className="flex items-center gap-2 mb-2">
                     {/* Source badge - hidden for now */}
                     {false && (
-                      <span className={`text-xs px-2 py-1 rounded font-medium ${
-                        model.source === 'roboflow' 
-                          ? 'bg-blue-50 text-blue-700' 
-                          : 'bg-orange-50 text-orange-700'
-                      }`}>
-                        {model.source}
-                      </span>
+                    <span className={`text-xs px-2 py-1 rounded font-medium ${
+                      model.source === 'roboflow' 
+                        ? 'bg-blue-50 text-blue-700' 
+                        : 'bg-orange-50 text-orange-700'
+                    }`}>
+                      {model.source}
+                    </span>
                     )}
                     {/* Model Type Badge - hidden for now */}
                     {false && model.modelTypeInfo && (
@@ -325,17 +453,25 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
 
                 {/* Description - hidden for now */}
                 {false && (
-                  <p className="text-sm text-wells-warm-grey line-clamp-3 mb-4 flex-grow min-h-[80px]">
-                    {model.modelTypeInfo?.description || model.description || 'No description available'}
-                  </p>
+                <p className="text-sm text-wells-warm-grey line-clamp-3 mb-4 flex-grow min-h-[80px]">
+                  {model.modelTypeInfo?.description || model.description || 'No description available'}
+                </p>
                 )}
 
                 {/* Metrics */}
                 <div className="flex flex-wrap gap-2 mb-2 flex-shrink-0">
+                  {/* Show different metrics based on model source */}
+                  {model.source === 'roboflow' ? (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-wells-warm-grey/5 rounded text-xs">
+                      <Image className="w-3 h-3 text-wells-warm-grey" />
+                      <span className="font-medium">{formatNumber(model.trainingImages || model.downloads)} training images</span>
+                    </div>
+                  ) : (
                   <div className="flex items-center gap-1 px-2 py-1 bg-wells-warm-grey/5 rounded text-xs">
                     <Download className="w-3 h-3 text-wells-warm-grey" />
                     <span className="font-medium">{formatNumber(model.downloads)}</span>
                   </div>
+                  )}
                   {model.supportsInference ? (
                     <div className="flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 rounded text-xs font-medium">
                       <CheckCircle className="w-3 h-3" />
@@ -514,6 +650,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
             </div>
           </div>
         )}
+
       </div>
     )
   }

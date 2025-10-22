@@ -45,6 +45,27 @@ export const ClassificationSchema = z.object({
   confidence: z.enum(['high', 'medium', 'low', 'very_low'])
 });
 
+// Pixel strip data schema for segmentation visualization
+export const PixelStripSchema = z.object({
+  contourPoints: z.array(z.object({
+    x: z.number(),
+    y: z.number()
+  })).optional(),
+  centerLine: z.array(z.object({
+    x: z.number(),
+    y: z.number()
+  })).optional(),
+  boundaryPixels: z.array(z.object({
+    x: z.number(),
+    y: z.number(),
+    intensity: z.number().min(0).max(1)
+  })).optional(),
+  dimensions: z.object({
+    width: z.number().min(0),
+    height: z.number().min(0)
+  }).optional()
+}).nullable().optional();
+
 // Segmentation region schema
 export const SegmentationRegionSchema = z.object({
   class: z.string(),
@@ -56,7 +77,8 @@ export const SegmentationRegionSchema = z.object({
     y: z.number().min(0),
     width: z.number().min(0),
     height: z.number().min(0)
-  }).nullable().optional() // Bounding box for instance segmentation
+  }).nullable().optional(), // Bounding box for instance segmentation
+  pixelStrip: PixelStripSchema // Pixel strip data for visualization
 });
 
 // Segmentation schema
@@ -81,7 +103,7 @@ export const CVResultsSchema = z.object({
 
 // Main CV Response schema
 export const CVResponseSchema = z.object({
-  task: z.enum(['detection', 'classification', 'segmentation', 'multi-type']),
+  task: z.enum(['detection', 'classification', 'segmentation', 'instance-segmentation', 'multi-type']),
   timestamp: z.string(),
   model_version: z.string(),
   results: CVResultsSchema,

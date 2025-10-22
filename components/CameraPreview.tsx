@@ -26,8 +26,8 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
   const [dragActive, setDragActive] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [currentImageFile, setCurrentImageFile] = useState<File | null>(null) // Store the File object for reprocessing 
-  const [currentVideoFile, setCurrentVideoFile] = useState<File | null>(null) // Store the original video file
+  const [currentImageFile, setCurrentImageFile] = useState<File | null>(null) // Store the File object for reprocessing
+  const [currentVideoFile, setCurrentVideoFile] = useState<File | null>(null) // Store the original video 
   const [isVideo, setIsVideo] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -36,7 +36,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
   const fileClickInProgress = useRef(false)
   const autoProcessTriggered = useRef(false)
 
-  // Automatic processing when both image and model are selected (only once) 
+  // Automatic processing when both image and model are selected (only once)
   useEffect(() => {
     const autoProcess = async () => {
       if (currentImageFile && selectedModel && !isProcessing && selectedImage && !autoProcessTriggered.current) {
@@ -78,7 +78,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
     // Validate file (supports both images and videos) 
     const validation = validateMediaFile(file)
     if (!validation.isValid) {
-      // Provide more specific error messages for video files
+      // Provide more specific error messages for video files 
       let errorMessage = validation.error || 'Invalid file format'
       if (validation.error?.includes('Video file size must be less than 100MB')) {
         const fileSize = formatFileSize(file.size)
@@ -103,7 +103,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
       logger.info('Processing video file', context, { fileName: file.name })
       
       try {
-        // Extract snapshot from video at 0.5 seconds
+        // Extract snapshot from video at 0.5 seconds 
         const snapshotFile = await extractVideoSnapshot(file, 0.5)
         setCurrentImageFile(snapshotFile) // Store the snapshot for reprocessing
         
@@ -193,7 +193,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
       if (!blob) return
 
       const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' })
-      setCurrentImageFile(file) // Store the File object for reprocessing 
+      setCurrentImageFile(file) // Store the File object for reprocessing
       
       const reader = new FileReader()
       reader.onload = (e) => {

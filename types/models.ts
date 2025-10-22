@@ -33,6 +33,7 @@ export interface ModelMetadata {
   supportsInference?: boolean // True if model can run live via Inference API
   inferenceEndpoint?: string
   inferenceStatus?: 'live' | 'loading' | 'error' | 'unavailable'
+  apiKey?: string // API key for Roboflow models
   // Model classes/labels (e.g., ["cat", "dog", "bird"])
   classes?: string[]
   // Enhanced model type information
@@ -53,25 +54,4 @@ export interface ModelMetadata {
   }
 }
 
-export interface SearchFilters {
-  task?: string
-  source?: 'roboflow' | 'huggingface' | 'all'
-  framework?: string
-  sortBy?: 'relevance' | 'downloads' | 'recent'
-}
-
-export interface ModelSearchResult {
-  models: ModelMetadata[]
-  total: number
-  query: string
-  keywords: string[]
-}
-
-export interface ExtractedKeywords {
-  objects: string[]
-  actions: string[]
-  tasks: string[]
-  domain: string | null
-  allKeywords: string[]
-}
 

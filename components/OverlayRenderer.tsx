@@ -2,6 +2,7 @@
 
 import { Detection, SegmentationRegion } from '@/types'
 import { formatConfidence } from '@/lib/utils'
+import SegmentationMaskRenderer from './SegmentationMaskRenderer'
 
 interface OverlayRendererProps {
   detections?: Detection[]
@@ -18,8 +19,8 @@ export default function OverlayRenderer({
   imageHeight, 
   task 
 }: OverlayRendererProps) {
-  // Show detection overlays if we have detections, regardless of task type
-  if (detections && detections.length > 0) {
+  // Show detection overlays only for detection tasks, not for segmentation
+  if (task === 'detection' && detections && detections.length > 0) {
     return (
       <div className="absolute inset-0 pointer-events-none">
         {detections.map((detection, index) => {
@@ -109,41 +110,22 @@ export default function OverlayRenderer({
     )
   }
 
-  if (task === 'segmentation' && segmentation) {
+  if ((task === 'segmentation' || task === 'instance-segmentation') && segmentation) {
     return (
       <div className="absolute inset-0 pointer-events-none">
+        {/* Render pixel-level segmentation masks */}
+        <SegmentationMaskRenderer
+          regions={segmentation}
+          imageWidth={imageWidth}
+          imageHeight={imageHeight}
+          containerWidth={imageWidth}
+          containerHeight={imageHeight}
+        />
+        
+        {/* Render labels for each region */}
         {segmentation.map((region, index) => (
           <div key={index} className="animate-fade-in" style={{ animationDelay: `${index * 0.2}s` }}>
-            {/* Instance segmentation: show bounding box if available */}
-            {region.bbox && (
-              <div
-                className="absolute border-2 rounded shadow-lg"
-                style={{
-                  borderColor: region.color,
-                  backgroundColor: `${region.color}15`,
-                  left: `${(region.bbox.x / imageWidth) * 100}%`,
-                  top: `${(region.bbox.y / imageHeight) * 100}%`,
-                  width: `${(region.bbox.width / imageWidth) * 100}%`,
-                  height: `${(region.bbox.height / imageHeight) * 100}%`,
-                }}
-              />
-            )}
-            
-            {/* Region overlay - for semantic segmentation or as fallback */}
-            {!region.bbox && (
-              <div
-                className="absolute rounded border border-white/30"
-                style={{
-                  backgroundColor: `${region.color}40`,
-                  left: '10%',
-                  top: '10%',
-                  width: '80%',
-                  height: '80%',
-                }}
-              />
-            )}
-            
-            {/* Region label */}
+            {/* Region label positioned at the center of the region */}
             <div
               className="absolute bg-white text-gray-800 text-xs px-2 py-1 rounded font-medium border border-gray-200 shadow-sm"
               style={{

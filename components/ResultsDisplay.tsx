@@ -46,6 +46,7 @@ export default function ResultsDisplay({ response, selectedImage }: ResultsDispl
       detection: Target,
       classification: Tag,
       segmentation: Palette,
+      'instance-segmentation': Palette,
       'multi-type': BarChart3
     }
     return icons[task as keyof typeof icons] || BarChart3
@@ -56,6 +57,7 @@ export default function ResultsDisplay({ response, selectedImage }: ResultsDispl
       detection: 'bg-red-50 text-red-700 border-red-200',
       classification: 'bg-blue-50 text-blue-700 border-blue-200',
       segmentation: 'bg-green-50 text-green-700 border-green-200',
+      'instance-segmentation': 'bg-emerald-50 text-emerald-700 border-emerald-200',
       'multi-type': 'bg-purple-50 text-purple-700 border-purple-200'
     }
     return colors[task as keyof typeof colors] || 'bg-wells-light-beige text-wells-warm-grey border-wells-warm-grey/20'
@@ -213,10 +215,17 @@ export default function ResultsDisplay({ response, selectedImage }: ResultsDispl
                   <div className="flex items-center gap-2 mb-3">
                     <Palette className="w-4 h-4 text-green-600" />
                     <span className="text-sm font-medium text-wells-dark-grey">
-                      {response.results.segmentation.regions.some(r => r.bbox) ? 'Instance Segmentation' : 'Segmentation'}
+                      {response.task === 'instance-segmentation' || response.results.segmentation.regions.some(r => r.bbox) ? 'Instance Segmentation' : 'Segmentation'}
                     </span>
-                    <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
-                      {response.results.segmentation.regions.length} regions
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                      response.task === 'instance-segmentation' || response.results.segmentation.regions.some(r => r.bbox)
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-green-100 text-green-700'
+                    }`}>
+                      {response.results.segmentation.regions.length} {response.task === 'instance-segmentation' || response.results.segmentation.regions.some(r => r.bbox) ? 'instances' : 'regions'}
+                    </span>
+                    <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-700">
+                      Pixel-level masks
                     </span>
                   </div>
                   <div className="space-y-2">
@@ -229,11 +238,18 @@ export default function ResultsDisplay({ response, selectedImage }: ResultsDispl
                           ></div>
                           <div className="flex flex-col">
                             <span className="font-medium text-wells-dark-grey capitalize">{region.class}</span>
-                            {region.bbox && (
-                              <span className="text-xs text-wells-warm-grey">
-                                Box: {Math.round(region.bbox.width)}×{Math.round(region.bbox.height)}
-                              </span>
-                            )}
+                            <div className="flex items-center gap-2 text-xs text-wells-warm-grey">
+                              {region.mask && (
+                                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
+                                  ✓ Pixel mask
+                                </span>
+                              )}
+                              {region.bbox && (
+                                <span className="text-xs">
+                                  Box: {Math.round(region.bbox.width)}×{Math.round(region.bbox.height)}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <div className="text-right">

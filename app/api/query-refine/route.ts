@@ -34,10 +34,18 @@ export async function POST(request: NextRequest) {
 
     // Extract keywords using ChatGPT API
     const extracted = await extractKeywordsWithChatGPT(query)
-    const allKeywords = extracted.keywords
+    let allKeywords = extracted.keywords
     
     // Determine task type from ChatGPT response
     const taskType = extracted.task_type || 'detection'
+    
+    // Enhance keywords for specific task types
+    if (taskType === 'segmentation') {
+      // For segmentation, prioritize segmentation-specific keywords over domain-specific ones
+      // This ensures we find segmentation models rather than domain-specific models
+      const segmentationKeywords = ['segformer', 'image-segmentation', 'segmentation']
+      allKeywords = Array.from(new Set([...segmentationKeywords, ...allKeywords]))
+    }
 
     // Generate use case identifier
     const useCase = allKeywords
@@ -155,7 +163,7 @@ Example output: {"keywords": ["basketball", "sports", "detection", "players", "p
   } catch (error) {
     console.error('ChatGPT API error:', error)
     
-    // Fallback to simple keyword extraction
+    // Fallback to simple keyword extraction 
     const words = query.toLowerCase()
       .replace(/[^\w\s]/g, ' ')
       .split(/\s+/)

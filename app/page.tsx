@@ -15,7 +15,7 @@ import LidVizionIcon from '@/components/LidVizionIcon'
 
 export default function Home() {
   const [selectedModel, setSelectedModel] = useState<ModelMetadata | null>(null)
-  const { currentTask, switchTask, processImage, isProcessing, lastResponse } = useCVTask(selectedModel)
+  const { currentTask, processImage, isProcessing, lastResponse } = useCVTask(selectedModel)
   
   const { history, addResult, clearHistory } = useResultHistory()
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
@@ -36,10 +36,6 @@ export default function Home() {
     setSelectedImage(item.image_url)
   }
 
-  const handleNewImage = () => {
-    setViewingHistoryItem(null)
-    setSelectedImage(null)
-  }
 
   const handleModelSelect = (model: ModelMetadata) => {
     setSelectedModel(model)

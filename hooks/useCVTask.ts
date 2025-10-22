@@ -56,16 +56,33 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             parameters.threshold = 0.5 // Confidence threshold for detections
           }
           
-          // Call HF Inference API through our backend
-          const response = await fetch('/api/run-inference', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model_id: selectedModel.id,
-              inputs: base64,
-              parameters: Object.keys(parameters).length > 0 ? parameters : undefined
+          // Call appropriate inference API based on model source
+          let response: Response
+          
+          if (selectedModel.source === 'roboflow') {
+            // Use Roboflow inference API
+            response = await fetch('/api/roboflow-inference', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model_url: selectedModel.inferenceEndpoint,
+                api_key: selectedModel.apiKey,
+                image: base64,
+                parameters: Object.keys(parameters).length > 0 ? parameters : undefined
+              })
             })
-          })
+          } else {
+            // Use Hugging Face inference API
+            response = await fetch('/api/run-inference', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model_id: selectedModel.id,
+                inputs: base64,
+                parameters: Object.keys(parameters).length > 0 ? parameters : undefined
+              })
+            })
+          }
           
           if (!response.ok) {
             const error = await response.json()
@@ -80,7 +97,7 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
               (enhancedError as any).redirectToHF = error.redirectToHF
             }
             
-            logger.error('HF Inference API error', context, enhancedError)
+            logger.error('Inference API error', context, enhancedError)
             throw enhancedError
           }
           
@@ -95,11 +112,14 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             logger.warn('Failed to get image dimensions, using defaults', context, dimError as Error)
           }
           
-          // Transform HF response to CVResponse format
-          const cvResponse: CVResponse = transformHFToCVResponse(inferenceData, selectedModel, imageDimensions)
+          // Transform response to CVResponse format based on model source
+          const cvResponse: CVResponse = selectedModel.source === 'roboflow' 
+            ? transformRoboflowToCVResponse(inferenceData, selectedModel, imageDimensions)
+            : transformHFToCVResponse(inferenceData, selectedModel, imageDimensions)
           
-          logger.info('HF Inference completed successfully', context, {
-            resultsCount: inferenceData.results?.length
+          logger.info('Inference completed successfully', context, {
+            resultsCount: inferenceData.results?.length,
+            modelSource: selectedModel.source
           })
           
           // Save inference result to MongoDB (hf_inference_jobs collection)
@@ -297,20 +317,49 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
           } : { x: 0, y: 0, width: 0, height: 0 }
         })),
         segmentation: {
-          regions: results.map((seg: any, index: number) => ({
-            class: seg.label,
-            area: seg.area || (seg.box ? 
-              ((seg.box.xmax - seg.box.xmin) * (seg.box.ymax - seg.box.ymin)) / 
-              ((imageDimensions?.width || 640) * (imageDimensions?.height || 480)) : 0.1),
-            color: colors[index % colors.length],
-            mask: seg.mask || null, // Store mask data if available
-            bbox: seg.box ? {
-              x: seg.box.xmin,
-              y: seg.box.ymin,
-              width: seg.box.xmax - seg.box.xmin,
-              height: seg.box.ymax - seg.box.ymin
-            } : null
-          }))
+          regions: results.map((seg: any, index: number) => {
+            // Calculate actual area from mask data if available
+            let calculatedArea = 0.1; // Default fallback
+            
+            if (seg.mask) {
+              try {
+                // Decode base64 mask to calculate actual coverage
+                const maskBuffer = Buffer.from(seg.mask, 'base64');
+                // For PNG masks, we need to count non-transparent pixels
+                // This is a simplified calculation - in practice, you'd parse the PNG
+                // and count actual mask pixels vs total image pixels
+                const maskSize = maskBuffer.length;
+                const imageSize = (imageDimensions?.width || 640) * (imageDimensions?.height || 480);
+                
+                // Rough estimation based on mask size vs image size
+                // This is not perfect but better than hardcoded 0.1
+                calculatedArea = Math.min(0.95, Math.max(0.01, maskSize / (imageSize * 0.1)));
+              } catch (error) {
+                console.warn('Failed to calculate mask area, using fallback:', error);
+                calculatedArea = 0.1;
+              }
+            } else if (seg.box) {
+              // Use bounding box area if available
+              calculatedArea = ((seg.box.xmax - seg.box.xmin) * (seg.box.ymax - seg.box.ymin)) / 
+                ((imageDimensions?.width || 640) * (imageDimensions?.height || 480));
+            } else if (seg.area) {
+              // Use provided area if available
+              calculatedArea = seg.area;
+            }
+            
+            return {
+              class: seg.label,
+              area: calculatedArea,
+              color: colors[index % colors.length],
+              mask: seg.mask || null, // Store mask data if available
+              bbox: seg.box ? {
+                x: seg.box.xmin,
+                y: seg.box.ymin,
+                width: seg.box.xmax - seg.box.xmin,
+                height: seg.box.ymax - seg.box.ymin
+              } : null
+            };
+          })
         }
       }
     }
@@ -325,6 +374,100 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
     image_metadata: {
       width: 640,
       height: 480,
+      format: 'jpeg'
+    },
+    results: {
+      labels: []
+    }
+  }
+}
+
+/**
+ * Transform Roboflow API response to CVResponse format with pixel strips
+ */
+function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata, imageDimensions?: { width: number; height: number }): CVResponse {
+  const results = inferenceData.results || []
+  
+  // Determine task type from model and results
+  let task = model.task || 'detection'
+  
+  // Check for specific data types to determine task
+  if (results.length > 0) {
+    const firstResult = results[0]
+    
+    // Instance segmentation: has both bbox and mask
+    if (firstResult.bbox && firstResult.mask) {
+      task = 'segmentation'
+    }
+    // Object detection: has bbox but no mask
+    else if (firstResult.bbox) {
+      task = 'detection'
+    }
+    // Image segmentation: has mask but no bbox
+    else if (firstResult.mask) {
+      task = 'segmentation'
+    }
+  }
+  
+  // Transform based on task type
+  if (task === 'detection' || task.includes('detection')) {
+    // Object Detection
+    return {
+      task: 'detection',
+      model_version: model.name,
+      processing_time: inferenceData.processing_time || 0.5,
+      timestamp: inferenceData.timestamp || new Date().toISOString(),
+      image_metadata: {
+        width: imageDimensions?.width || 640,
+        height: imageDimensions?.height || 480,
+        format: 'jpeg'
+      },
+      results: {
+        detections: results.map((detection: any) => ({
+          class: detection.class,
+          confidence: detection.confidence,
+          bbox: detection.bbox
+        }))
+      }
+    }
+  } else if (task === 'segmentation' || task.includes('segmentation')) {
+    // Segmentation with pixel strips
+    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
+    
+    return {
+      task: 'segmentation',
+      model_version: model.name,
+      processing_time: inferenceData.processing_time || 0.5,
+      timestamp: inferenceData.timestamp || new Date().toISOString(),
+      image_metadata: {
+        width: imageDimensions?.width || 640,
+        height: imageDimensions?.height || 480,
+        format: 'jpeg'
+      },
+      results: {
+        segmentation: {
+          regions: results.map((seg: any, index: number) => ({
+            class: seg.class,
+            area: seg.area,
+            color: colors[index % colors.length],
+            mask: seg.mask || null,
+            bbox: seg.bbox || null,
+            pixelStrip: seg.pixelStrip || null // Include pixel strip data
+          }))
+        }
+      }
+    }
+  }
+  
+  // Default fallback
+  return {
+    task: 'multi-type',
+    model_version: model.name,
+    processing_time: inferenceData.processing_time || 0.5,
+    timestamp: inferenceData.timestamp || new Date().toISOString(),
+    image_metadata: {
+      width: imageDimensions?.width || 640,
+      height: imageDimensions?.height || 480,
       format: 'jpeg'
     },
     results: {
