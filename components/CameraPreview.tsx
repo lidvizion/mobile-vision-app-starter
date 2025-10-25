@@ -59,7 +59,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
     }
 
     autoProcess()
-  }, [currentImageFile, selectedModel, isProcessing, selectedImage])
+  }, [currentImageFile, selectedModel, isProcessing, selectedImage, currentTask, onImageProcessed, processImage])
 
   // Reset auto-process trigger when image changes
   useEffect(() => {

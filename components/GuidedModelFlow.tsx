@@ -15,9 +15,7 @@ import { modelViewStore } from '@/stores/modelViewStore'
 import { useQueryRefine } from '@/hooks/useQueryRefine'
 import { useModelSearch } from '@/hooks/useModelSearch'
 import { useSaveModelSelection } from '@/hooks/useSaveModelSelection'
-import { useRoboflowSearch } from '@/hooks/useRoboflowSearch'
 import ModelSearchSkeleton from './ModelSearchSkeleton'
-import { RoboflowSearchResults } from './RoboflowSearchResults'
 
 interface GuidedModelFlowProps {
   onModelSelect: (model: ModelMetadata) => void
@@ -26,13 +24,11 @@ interface GuidedModelFlowProps {
 const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
   const [showSearchBar, setShowSearchBar] = useState(false)
   const [sessionId] = useState(() => `session_${Date.now()}`)
-  const [showRoboflowResults, setShowRoboflowResults] = useState(false)
 
   // React Query hooks
   const queryRefineMutation = useQueryRefine()
   const searchModels = useModelSearch()  // Renamed for clarity
   const saveSelectionMutation = useSaveModelSelection()
-  const roboflowSearch = useRoboflowSearch()
 
   const taskIcons = {
     'detection': ScanEye, // Object Detection - eye scanning for detection
@@ -90,55 +86,16 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         (window as any).__queryId = refineResult.query_id
       }
 
-      // Step 2: Search both Hugging Face and Roboflow models in parallel
-      const [hfResult, roboflowResult] = await Promise.allSettled([
-        // Search Hugging Face models
-        searchModels.mutateAsync({
+      // Step 2: Search for models using the unified endpoint (includes both HF and Roboflow)
+      const searchResult = await searchModels.mutateAsync({
         keywords: refineResult.keywords,
         task_type: refineResult.task_type,
         limit: 20,
         page: 1
-        }),
-        // Search Roboflow models
-        roboflowSearch.searchRoboflow({
-          query: modelViewStore.queryText,
-          taskType: refineResult.task_type,
-          userId: sessionId
-        })
-      ])
+      })
 
-      // Combine results from both sources
-      const combinedModels = []
-      
-      // Add Hugging Face models
-      if (hfResult.status === 'fulfilled' && hfResult.value?.models) {
-        combinedModels.push(...hfResult.value.models)
-      }
-      
-      // Add Roboflow models (convert to ModelMetadata format)
-      if (roboflowResult.status === 'fulfilled' && roboflowResult.value?.models) {
-        const roboflowModels = roboflowResult.value.models.map((roboflowModel: any) => ({
-          id: roboflowModel.id,
-          name: roboflowModel.name,
-          description: roboflowModel.description,
-          source: 'roboflow' as const,
-          modelUrl: roboflowModel.endpoint,
-          task: roboflowModel.task_type,
-          classes: roboflowModel.tags,
-          supportsInference: true,
-          inferenceEndpoint: roboflowModel.endpoint,
-          apiKey: roboflowModel.api_key,
-          author: roboflowModel.author,
-          downloads: roboflowModel.downloads, // Will be replaced with training images
-          tags: roboflowModel.tags,
-          frameworks: ['roboflow'],
-          platforms: ['web'],
-          // Roboflow-specific metrics
-          trainingImages: roboflowModel.downloads, // Use downloads as training images count
-          confidence: roboflowModel.confidence
-        }))
-        combinedModels.push(...roboflowModels)
-      }
+      // The unified search already returns both Hugging Face and Roboflow models
+      const combinedModels = searchResult?.models || []
 
       // Update store with combined results
       modelViewStore.setModelList(combinedModels)
@@ -152,67 +109,6 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
     }
   }
 
-  const handleSearchRoboflow = async () => {
-    if (!modelViewStore.queryText) return
-
-    try {
-      setShowRoboflowResults(true)
-      await roboflowSearch.searchRoboflow({
-        query: modelViewStore.queryText,
-        taskType: 'detection',
-        userId: sessionId
-      })
-    } catch (error) {
-      console.error('Roboflow search error:', error)
-    }
-  }
-
-  const handleSelectRoboflowModel = async (roboflowModel: any) => {
-    // Convert Roboflow model to our ModelMetadata format
-    const model: ModelMetadata = {
-      id: roboflowModel.id,
-      name: roboflowModel.name,
-      description: roboflowModel.description,
-      source: 'roboflow',
-      modelUrl: roboflowModel.endpoint,
-      task: roboflowModel.task_type,
-      classes: roboflowModel.tags,
-      supportsInference: true,
-      inferenceEndpoint: roboflowModel.endpoint,
-      apiKey: roboflowModel.api_key,
-      author: roboflowModel.author,
-      downloads: roboflowModel.downloads,
-      tags: roboflowModel.tags,
-      frameworks: ['roboflow'],
-      platforms: ['web']
-    }
-
-    // Set selected model in store
-    modelViewStore.setSelectedModel(model)
-
-    // Save selection via API
-    if (modelViewStore.queryId) {
-      try {
-        await saveSelectionMutation.mutateAsync({
-          query_id: modelViewStore.queryId,
-          model: {
-            name: model.name,
-            source: model.source,
-            url: model.modelUrl,
-            task: model.task,
-            description: model.description,
-            classes: model.classes
-          },
-          session_id: sessionId
-        })
-      } catch (error) {
-        console.error('❌ Error saving Roboflow model selection:', error)
-      }
-    }
-
-    // Notify parent component
-    onModelSelect(model)
-  }
 
   const handleSelectModel = async (model: ModelMetadata) => {
     // Set selected model in store
@@ -256,7 +152,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
             Searching for the perfect models
           </h2>
           <p className="text-wells-warm-grey">
-            Searching Roboflow Universe and Hugging Face Hub...
+            Searching for the perfect models...
           </p>
         </div>
         <ModelSearchSkeleton count={3} />
@@ -463,6 +359,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                   {/* Show different metrics based on model source */}
                   {model.source === 'roboflow' ? (
                     <div className="flex items-center gap-1 px-2 py-1 bg-wells-warm-grey/5 rounded text-xs">
+                      {/* eslint-disable-next-line jsx-a11y/alt-text */}
                       <Image className="w-3 h-3 text-wells-warm-grey" />
                       <span className="font-medium">{formatNumber(model.trainingImages || model.downloads)} training images</span>
                     </div>

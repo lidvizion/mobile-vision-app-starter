@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { spawn } from 'child_process'
+import path from 'path'
 
 /**
  * /api/roboflow-inference
- * Purpose: Run inference on Roboflow models using their serverless API
- * Based on the Roboflow API documentation and examples provided
+ * Purpose: Run inference on Roboflow models using Python SDK with serverless API
+ * Uses the official Roboflow Python SDK for better authentication and reliability
  */
 
 interface RoboflowInferenceRequest {
@@ -45,62 +47,103 @@ export async function POST(request: NextRequest) {
 
     const startTime = Date.now()
 
-    // Prepare the request parameters
-    const requestParams = {
+    // Use Python script for inference with proper SDK authentication
+    const pythonScript = path.join(process.cwd(), 'roboflow_inference.py')
+    const venvPython = path.join(process.cwd(), 'venv', 'bin', 'python')
+    
+    const pythonProcess = spawn(venvPython, [
+      pythonScript,
+      model_url,
       api_key,
-      ...parameters
-    }
+      image,
+      JSON.stringify(parameters)
+    ], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 30000 // 30 second timeout
+    })
 
-    // Remove the 'image' parameter from params since we'll send it in the body
-    delete (requestParams as any).image
+    let stdout = ''
+    let stderr = ''
 
-    // Make the request to Roboflow serverless API
-    const response = await fetch(model_url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        ...Object.fromEntries(Object.entries(requestParams).map(([key, value]) => [key, String(value)])),
-        image: image // Send image as form data
+    pythonProcess.stdout.on('data', (data) => {
+      stdout += data.toString()
+    })
+
+    pythonProcess.stderr.on('data', (data) => {
+      stderr += data.toString()
+    })
+
+    const exitCode = await new Promise<number>((resolve) => {
+      pythonProcess.on('close', (code) => {
+        resolve(code || 0)
       })
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('Roboflow API error:', response.status, errorText)
+    if (exitCode !== 0) {
+      console.error('Python script failed:', stderr)
       return NextResponse.json(
         { 
-          error: 'Roboflow inference failed', 
-          details: errorText,
-          status: response.status 
+          error: 'Inference failed', 
+          details: stderr || 'Python script execution failed'
         },
-        { status: response.status }
+        { status: 500 }
       )
     }
 
-    const results = await response.json()
-    const processingTime = Date.now() - startTime
+    try {
+      // Extract JSON from stdout (handle Roboflow loading messages)
+      const jsonMatch = stdout.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        throw new Error('No JSON found in Python output')
+      }
+      
+      const result = JSON.parse(jsonMatch[0])
+      
+      if (!result.success) {
+        return NextResponse.json(
+          { 
+            error: 'Inference failed', 
+            details: result.error || 'Unknown error'
+          },
+          { status: 500 }
+        )
+      }
 
-    // Extract model info from the URL
-    const urlParts = model_url.split('/')
-    const modelName = urlParts[urlParts.length - 2] || 'Unknown Model'
-    const version = urlParts[urlParts.length - 1] || '1'
+      const processingTime = Date.now() - startTime
 
-    const responseData: RoboflowInferenceResponse = {
-      success: true,
-      results: results.predictions || results.detections || results,
-      model_info: {
-        name: modelName,
-        url: model_url,
-        version: version
-      },
-      processing_time: processingTime,
-      timestamp: new Date().toISOString()
+      // Extract model info from the URL
+      const urlParts = model_url.split('/')
+      const modelName = urlParts[urlParts.length - 2] || 'Unknown Model'
+      const version = urlParts[urlParts.length - 1] || '1'
+
+      const responseData: RoboflowInferenceResponse = {
+        success: true,
+        results: result.predictions || [],
+        model_info: {
+          name: modelName,
+          url: model_url,
+          version: version
+        },
+        processing_time: processingTime,
+        timestamp: new Date().toISOString()
+      }
+
+      console.log(`✅ Roboflow inference completed in ${processingTime}ms`)
+      return NextResponse.json(responseData)
+
+    } catch (parseError) {
+      console.error('Failed to parse Python output:', parseError)
+      console.error('Python stdout:', stdout)
+      console.error('Python stderr:', stderr)
+      
+      return NextResponse.json(
+        { 
+          error: 'Failed to parse inference results', 
+          details: 'Invalid JSON from Python script'
+        },
+        { status: 500 }
+      )
     }
-
-    console.log(`✅ Roboflow inference completed in ${processingTime}ms`)
-    return NextResponse.json(responseData)
 
   } catch (error) {
     console.error('Roboflow inference error:', error)
@@ -119,8 +162,8 @@ export async function POST(request: NextRequest) {
  * 
  * POST /api/roboflow-inference
  * {
- *   "model_url": "https://serverless.roboflow.com/motorcycle_traffic_intersection_model-9zgnv/26",
- *   "api_key": "KJWhVAnYok8rniIdzCbZ",
+ *   "model_url": "https://universe.roboflow.com/dataset-uda7h/car-detection-rbao0/model/1",
+ *   "api_key": "KJWhVAnYok8rniIdzCbZ", 
  *   "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD...",
  *   "parameters": {
  *     "confidence": 0.5,
@@ -128,4 +171,8 @@ export async function POST(request: NextRequest) {
  *     "max_detections": 100
  *   }
  * }
+ * 
+ * The API will automatically convert:
+ * - universe.roboflow.com URLs → serverless.roboflow.com URLs
+ * - detect.roboflow.com URLs → serverless.roboflow.com URLs
  */

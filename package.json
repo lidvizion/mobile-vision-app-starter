@@ -17,6 +17,7 @@
     "clean:packages": "npm run clean --workspaces || true"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@next/bundle-analyzer": "^15.5.6",
     "@tanstack/react-query": "^5.0.0",
     "@tanstack/react-query-devtools": "^5.90.2",
@@ -28,6 +29,8 @@
     "mongodb": "^6.20.0",
     "next": "14.0.4",
     "openai": "^6.6.0",
+    "playwright": "^1.56.1",
+    "puppeteer": "^24.26.0",
     "react": "^18",
     "react-dom": "^18",
     "sharp": "^0.34.4",

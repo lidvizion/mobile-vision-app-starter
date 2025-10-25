@@ -458,469 +458,162 @@ interface NormalizedModel {
   }
 }
 
-/**
- * Search Roboflow Universe dynamically using OpenAI Computer Use
- */
-async function searchRoboflowUniverseAPI(
-  keywords: string[],
-  taskType: string,
-  maxModels: number
-): Promise<any[]> {
-  try {
-    console.log(`🤖 Using OpenAI Computer Use to browse Roboflow Universe for: ${keywords.join(' ')}`);
+import { spawn } from "child_process";
+import path from "path";
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      console.error('❌ OPENAI_API_KEY environment variable is required for Computer Use');
+async function searchRoboflowModelsPython(keywords: string[], taskType: string): Promise<any[]> {
+  try {
+    console.log(`🐍 Starting Roboflow Python search for: ${keywords.join(" ")}`);
+
+    const searchQuery = keywords.join(" ");
+    const venvPython = path.join(process.cwd(), "venv", "bin", "python");
+    const pythonScript = path.join(process.cwd(), "roboflow_search_agent.py");
+
+    const pythonProcess = spawn(venvPython, [pythonScript], {
+      env: {
+        ...process.env,
+        SEARCH_KEYWORDS: searchQuery,
+        MAX_MODELS: "5",
+      },
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    pythonProcess.stdout.on("data", (data) => (stdout += data.toString()));
+    pythonProcess.stderr.on("data", (data) => (stderr += data.toString()));
+
+    const exitCode = await new Promise<number>((resolve) => {
+      pythonProcess.on("close", (code) => resolve(code ?? 0));
+    });
+
+    if (exitCode !== 0) {
+      console.error(`❌ Python script exited with code ${exitCode}`);
+      console.error(stderr);
       return [];
     }
 
-    const { OpenAI } = await import('openai');
-    const client = new OpenAI({ apiKey });
-
-    const searchQuery = keywords.join(' ');
-
-     // ✅ Convert to string format as required by computer-use-preview
-     const prompt = `You are an OpenAI Computer Agent. Search Roboflow Universe for ${searchQuery} models and return structured JSON.
-
-Please follow these exact steps:
-
-1. Open https://universe.roboflow.com in the browser
-2. Wait for the page to load fully
-3. Click the search box at the top
-4. Type "${searchQuery}" and press Enter
-5. Enable any "Has a Model" filter if available
-6. Scan search results and click the ${maxModels} most relevant projects
-7. For each project:
-   - In the left sidebar, click "Deploy" > "Model"
-   - Copy the model identifier from the "Switch Model" field (e.g., basketball-sx8hz/1)
-   - Note metrics on the page: mAP, precision, recall, training images, tags, and classes
-8. Return everything in JSON format as an array of objects
-
-Important: Only gather real data by browsing the site. Do not invent model IDs or metrics. Return only JSON.`;
-
-    // ✅ Correct Computer Use call
-    const response = await client.completions.create({
-      model: "computer-use-preview",
-      prompt: prompt,  // must be a string, not messages
-      max_tokens: 3000,
-    });
-
-    console.log('🧠 OpenAI Computer Use response received');
-
-    // Extract the text from response
-    const outputText =
-      response?.choices?.[0]?.text ||
-      JSON.stringify(response, null, 2);
-
-    console.log('🧠 Extracted raw output (first 500 chars):', outputText.substring(0, 500));
-
-    // Parse the models from the response
-    let models = parseModelDataFromResponse(outputText, keywords, taskType, maxModels);
-
-    // Fallback: extract Roboflow URLs if JSON parsing failed
-    if (models.length === 0) {
-      console.log('⚠️ No models found in structured JSON, trying alternative URL extraction...');
-      models = extractModelsFromResponseContent(response, keywords, taskType, maxModels);
+    // ---------------- Robust JSON extraction ----------------
+    // Look for first "[" and last "]" to extract JSON array
+    const jsonStart = stdout.indexOf("[");
+    const jsonEnd = stdout.lastIndexOf("]");
+    if (jsonStart === -1 || jsonEnd === -1) {
+      console.warn("⚠️ No JSON array found in Python stdout, checking stderr as fallback");
+      // Fallback: try stderr
+      const errJsonStart = stderr.indexOf("[");
+      const errJsonEnd = stderr.lastIndexOf("]");
+      if (errJsonStart === -1 || errJsonEnd === -1) {
+        console.error("❌ No JSON found in Python output at all");
+        console.log("Python stdout preview:", stdout.slice(0, 500));
+        console.log("Python stderr preview:", stderr.slice(0, 500));
+        return [];
+      }
+      return parsePythonJson(stderr.slice(errJsonStart, errJsonEnd + 1), keywords, searchQuery, taskType);
     }
 
-    console.log(`📊 Computer Use found ${models.length} Roboflow models`);
-    return models.slice(0, maxModels);
+    return parsePythonJson(stdout.slice(jsonStart, jsonEnd + 1), keywords, searchQuery, taskType);
+
   } catch (error) {
-    console.error('❌ OpenAI Computer Use error:', error);
+    console.error("❌ Python Roboflow search failed:", error);
     return [];
   }
 }
 
-
-/**
- * Extract model information from OpenAI Computer Use response
- */
-function extractModelsFromComputerUseResponse(
-  response: any, 
-  keywords: string[], 
-  taskType: string, 
-  maxModels: number
-): any[] {
+// ---------------- Helper function to normalize JSON ----------------
+function parsePythonJson(jsonString: string, keywords: string[], searchQuery: string, taskType: string) {
   try {
-    console.log('🔍 Extracting models from Computer Use response...')
-    
-    // Parse the Computer Use response to extract model information
-    const models: any[] = []
-    
-    // Extract model information from the Computer Use response
-    // The response should contain the browsing results with model URLs and metadata
-    console.log('🔍 Checking Computer Use response structure...')
-    console.log('Response keys:', Object.keys(response || {}))
-    
-    // Check for completions response first
-    if (response && response.choices && response.choices[0] && response.choices[0].text) {
-      console.log('📊 Parsing Computer Use completions response...')
-      console.log('Text content:', response.choices[0].text)
+    // First, try to parse as-is
+    const modelData = JSON.parse(jsonString);
+    console.log(`✅ Parsed ${modelData.length} models from Python output`);
 
-      const extractedModels = parseModelDataFromResponse(response.choices[0].text, keywords, taskType, maxModels)
-      console.log(`📊 Extracted ${extractedModels.length} models from completions`)
-      return extractedModels
-    }
-
-    // Check for chat completions response (legacy)
-    if (response && response.choices && response.choices[0] && response.choices[0].message && response.choices[0].message.content) {
-      console.log('📊 Parsing Computer Use chat completions response...')
-      console.log('Message content:', response.choices[0].message.content)
-
-      const extractedModels = parseModelDataFromResponse(response.choices[0].message.content, keywords, taskType, maxModels)
-      console.log(`📊 Extracted ${extractedModels.length} models from chat completions`)
-      return extractedModels
-    }
-
-    // Check for output_text (legacy format)
-    if (response && response.output_text) {
-      console.log('📊 Parsing Computer Use output_text...')
-      console.log('Output text:', response.output_text)
-
-      const extractedModels = parseModelDataFromResponse(response.output_text, keywords, taskType, maxModels)
-      console.log(`📊 Extracted ${extractedModels.length} models from output_text`)
-      return extractedModels
-    }
-    
-    // Check for output array (Computer Use actions)
-    if (response && response.output && Array.isArray(response.output)) {
-      console.log('📊 Parsing Computer Use output actions...')
-      console.log('Output actions:', response.output.length)
-      
-      // Look for any text content in the output actions
-      let textContent = ''
-      for (const action of response.output) {
-        if (action.text) {
-          textContent += action.text + ' '
-        }
-        if (action.content) {
-          textContent += action.content + ' '
-        }
-      }
-      
-      if (textContent.trim()) {
-        console.log('📊 Found text content in output actions:', textContent.substring(0, 200))
-        const extractedModels = parseModelDataFromResponse(textContent, keywords, taskType, maxModels)
-        console.log(`📊 Extracted ${extractedModels.length} models from output actions`)
-        return extractedModels
-      }
-    }
-    
-    // Check for content property
-    if (response && response.content) {
-      console.log('📊 Parsing Computer Use response content...')
-      console.log('Content type:', typeof response.content)
-      console.log('Content preview:', JSON.stringify(response.content).substring(0, 500))
-      
-      const extractedModels = parseModelDataFromResponse(response.content, keywords, taskType, maxModels)
-      console.log(`📊 Extracted ${extractedModels.length} models from Computer Use response`)
-      return extractedModels
-    }
-    
-    console.log('⚠️ No content found in Computer Use response')
-    console.log('Available response properties:', Object.keys(response || {}))
-    console.log('Response status:', response?.status)
-    console.log('Response output_text:', response?.output_text)
-    return []
-    
-  } catch (error) {
-    console.error('Error extracting models from Computer Use response:', error)
-      return []
-  }
-}
-
-
-/**
- * Alternative model extraction from response content
- */
-function extractModelsFromResponseContent(
-  response: any, 
-  keywords: string[], 
-  taskType: string, 
-  maxModels: number
-): any[] {
-  try {
-    console.log('🔍 Trying alternative model extraction...')
-    
-    const models: any[] = []
-    
-    // Try to extract from any text content in the response
-    const responseText = JSON.stringify(response)
-    
-    // Look for any Roboflow URLs in the entire response
-    const roboflowUrlPattern = /https:\/\/universe\.roboflow\.com\/[^\s"']+/g
-    const foundUrls = responseText.match(roboflowUrlPattern) || []
-    
-    console.log(`🔗 Found ${foundUrls.length} potential Roboflow URLs in response`)
-    
-    // Create models from found URLs
-    for (let i = 0; i < Math.min(foundUrls.length, maxModels); i++) {
-      const modelUrl = foundUrls[i]
-      console.log(`📝 Processing alternative model URL: ${modelUrl}`)
-      
-      // Extract model name from URL
-      const urlParts = modelUrl.split('/')
-      const modelName = urlParts[urlParts.length - 1] || 'Unknown Model'
-      
-      const model = {
-        name: modelName.replace(/-/g, ' ').replace(/_/g, ' '),
-        description: `Roboflow model found for ${keywords.join(' ')} ${taskType} tasks`,
-        model_url: modelUrl,
-        author: "Roboflow Universe",
-        task_type: taskType,
-        classes: [],
-        frameworks: ["Roboflow"],
-        platforms: ["web", "mobile"],
-        downloads: 0,
-        tags: keywords,
-        api_key: process.env.ROBOFLOW_API_KEY || "your_actual_roboflow_api_key_here",
-        source: "roboflow"
-      }
-      
-      models.push(model)
-      console.log(`✅ Alternative model: ${model.name} - ${model.model_url}`)
-    }
-    
-    return models.slice(0, maxModels)
-    
-  } catch (error) {
-    console.error('Error in alternative model extraction:', error)
-      return []
-  }
-}
-
-/**
- * Parse model data from Computer Use response content
- */
-function parseModelDataFromResponse(
-  content: any, 
-  keywords: string[], 
-  taskType: string, 
-  maxModels: number
-): any[] {
-  try {
-    console.log('🔍 Parsing model data from Computer Use response...')
-    
-    const models: any[] = []
-    
-    // Parse the Computer Use response to extract model information
-    if (content && typeof content === 'string') {
-      console.log('📊 Parsing text content from Computer Use response...')
-      console.log('Content:', content)
-      
-      // Look for JSON format in the response (array or single object)
-      try {
-        // Try to parse as JSON array first
-        const arrayMatch = content.match(/\[[\s\S]*\]/)
-        if (arrayMatch) {
-          const jsonArray = JSON.parse(arrayMatch[0])
-          console.log(`📝 Found JSON array with ${jsonArray.length} models:`, jsonArray)
-          
-          // Process each model in the array
-          for (const jsonContent of jsonArray) {
-            if (jsonContent.project_name && jsonContent.model_id) {
-              const model = {
-                name: jsonContent.project_name,
-                description: `Roboflow model for ${jsonContent.query} - mAP: ${jsonContent.mAP}, Precision: ${jsonContent.precision}`,
-                model_url: `https://universe.roboflow.com/${jsonContent.model_id}`,
-                author: "Roboflow Universe",
-                task_type: taskType,
-                classes: jsonContent.classes || [],
-                frameworks: ["Roboflow"],
-                platforms: ["web", "mobile"],
-                downloads: 0,
-                tags: jsonContent.tags || keywords,
-                api_key: process.env.ROBOFLOW_API_KEY || "your_actual_roboflow_api_key_here",
-                source: "roboflow",
-                // Additional metrics
-                mAP: jsonContent.mAP,
-                precision: jsonContent.precision,
-                recall: jsonContent.recall,
-                training_images: jsonContent.training_images
-              }
-              
-              models.push(model)
-              console.log(`✅ Extracted JSON model: ${model.name} - ${model.model_url}`)
-            }
-          }
-        } else {
-          // Try to parse as single JSON object (legacy format)
-          const jsonMatch = content.match(/\{[\s\S]*\}/)
-          if (jsonMatch) {
-            const jsonContent = JSON.parse(jsonMatch[0])
-            console.log(`📝 Found JSON object:`, jsonContent)
-            
-            if (jsonContent.project_name && jsonContent.model_id) {
-              const model = {
-                name: jsonContent.project_name,
-                description: `Roboflow model for ${jsonContent.query} - mAP: ${jsonContent.mAP}, Precision: ${jsonContent.precision}`,
-                model_url: `https://universe.roboflow.com/${jsonContent.model_id}`,
-                author: "Roboflow Universe",
-                task_type: taskType,
-                classes: jsonContent.classes || [],
-                frameworks: ["Roboflow"],
-                platforms: ["web", "mobile"],
-                downloads: 0,
-                tags: jsonContent.tags || keywords,
-                api_key: process.env.ROBOFLOW_API_KEY || "your_actual_roboflow_api_key_here",
-                source: "roboflow",
-                // Additional metrics
-                mAP: jsonContent.mAP,
-                precision: jsonContent.precision,
-                recall: jsonContent.recall,
-                training_images: jsonContent.training_images
-              }
-              
-              models.push(model)
-              console.log(`✅ Extracted JSON model: ${model.name} - ${model.model_url}`)
-            }
-          }
-        }
-      } catch (jsonError) {
-        console.log('📝 No valid JSON found, trying alternative parsing...')
-        
-        // Fallback to the old format parsing
-        const modelPattern = /Model \d+:\s*([^-]+)\s*-\s*([^\s]+)\s*-\s*([^\n]+)/g
-        let match
-        
-        while ((match = modelPattern.exec(content)) !== null) {
-          const modelName = match[1].trim()
-          const modelUrl = match[2].trim()
-          const modelDescription = match[3].trim()
-          
-          console.log(`📝 Found model: ${modelName} - ${modelUrl}`)
-          
-          const model = {
-            name: modelName,
-            description: modelDescription,
-            model_url: modelUrl,
-            author: "Roboflow Universe",
-            task_type: taskType,
-            classes: [], // Would be extracted from model page
-            frameworks: ["Roboflow"],
-            platforms: ["web", "mobile"],
-            downloads: 0, // Would be extracted from model page
-            tags: keywords,
-            api_key: process.env.ROBOFLOW_API_KEY || "your_actual_roboflow_api_key_here",
-            source: "roboflow"
-          }
-          
-          models.push(model)
-          console.log(`✅ Extracted model: ${model.name} - ${model.model_url}`)
-        }
-      }
-      
-      // If no structured format found, look for Roboflow URLs
-      if (models.length === 0) {
-        console.log('📝 No structured format found, looking for Roboflow URLs...')
-        const roboflowUrlPattern = /https:\/\/universe\.roboflow\.com\/[^\s\)]+/g
-        const foundUrls = content.match(roboflowUrlPattern) || []
-        
-        console.log(`🔗 Found ${foundUrls.length} potential Roboflow URLs in response`)
-        
-        // Extract model information from each URL
-        for (let i = 0; i < Math.min(foundUrls.length, maxModels); i++) {
-          const modelUrl = foundUrls[i]
-          console.log(`📝 Processing model URL: ${modelUrl}`)
-          
-          // Extract model name from URL
-          const urlParts = modelUrl.split('/')
-          const modelName = urlParts[urlParts.length - 1] || 'Unknown Model'
-          
-          // Create model object with extracted information
-          const model = {
-            name: modelName.replace(/-/g, ' ').replace(/_/g, ' '),
-            description: `Roboflow model found for ${keywords.join(' ')} ${taskType} tasks`,
-            model_url: modelUrl,
-            author: "Roboflow Universe",
-            task_type: taskType,
-            classes: [], // Would be extracted from model page
-            frameworks: ["Roboflow"],
-            platforms: ["web", "mobile"],
-            downloads: 0, // Would be extracted from model page
-          tags: keywords,
-          api_key: process.env.ROBOFLOW_API_KEY || "your_actual_roboflow_api_key_here",
-          source: "roboflow"
-        }
-        
-        models.push(model)
-        console.log(`✅ Extracted model: ${model.name} - ${model.model_url}`)
-      }
-      }
-    } else if (content && typeof content === 'object') {
-      console.log('📊 Parsing structured content from Computer Use response...')
-      
-      // Handle structured response content
-      // This would parse the actual Computer Use response structure
-      console.log('📝 Structured content parsing would extract model URLs and metadata')
-    }
-    
-    console.log(`📊 Successfully parsed ${models.length} models from Computer Use response`)
-    return models.slice(0, maxModels)
-    
-  } catch (error) {
-    console.error('Error parsing model data from response:', error)
-    return []
-  }
-}
-
-/**
- * Search Roboflow Universe using Computer Use
- * Since Roboflow Universe doesn't have a public search API, we use Computer Use
- * to actually browse the website and extract model information
- */
-async function searchRoboflowModels(
-  keywords: string[], 
-  taskType?: string
-): Promise<NormalizedModel[]> {
-  try {
-    console.log(`🤖 Using OpenAI Computer Use to browse Roboflow Universe: ${keywords.join(' ')}`)
-    
-    // Call Computer Use function directly instead of HTTP request
-    console.log(`📞 Calling Computer Use function for Roboflow models...`)
-    
-    // Search Roboflow Universe using dynamic API
-    console.log(`🔍 Calling searchRoboflowUniverseAPI with:`, { keywords, taskType, maxModels: 5 })
-    const roboflowModels = await searchRoboflowUniverseAPI(keywords, taskType || 'detection', 5)
-    console.log(`📊 searchRoboflowUniverseAPI returned:`, roboflowModels.length, 'models')
-    console.log(`📊 Roboflow models from API:`, JSON.stringify(roboflowModels, null, 2))
-    
-    // Transform to NormalizedModel format
-    const normalizedModels: NormalizedModel[] = roboflowModels.map((model: any, index: number) => ({
-      id: model.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-      name: model.name,
-      source: 'roboflow' as const,
-      description: model.description,
-      url: model.model_url,
-      modelUrl: model.model_url,
-      task: model.task_type || 'detection',
-      author: model.author || 'Roboflow Universe',
-      downloads: model.downloads || 0,
-      tags: model.tags || [],
+    return modelData.map((model: any) => ({
+      id: model.model_identifier || `roboflow-${Date.now()}`,
+      name: model.model_name || "Roboflow Model",
+      source: "roboflow",
+      description: model.description || `Roboflow model for ${searchQuery}`,
+      url: model.model_url || "https://universe.roboflow.com",
+      modelUrl: model.model_url || "https://universe.roboflow.com",
+      task: taskType,
+      author: model.author || "Roboflow Universe",
+      downloads: 0,
+      tags: model.tags || keywords,
       classes: model.classes || [],
-      frameworks: model.frameworks || ['Roboflow'],
-      platforms: model.platforms || ['web', 'mobile'],
+      frameworks: ["Roboflow"],
+      platforms: ["web", "mobile"],
       supportsInference: true,
-      inferenceEndpoint: model.model_url, // Use the model URL as inference endpoint
-      isKnownWorking: true, // Assume Computer Use found working models
+      inferenceEndpoint: model.api_endpoint || model.model_url,
+      apiKey: process.env.ROBOFLOW_API_KEY,
+      isKnownWorking: true,
+      mAP: model.mAP,
+      precision: model.precision,
+      recall: model.recall,
+      trainingImages: model.training_images,
+    }));
+  } catch (e) {
+    console.error("❌ Failed to parse Python JSON:", e);
+    console.log("Raw JSON string preview:", jsonString.slice(0, 500));
+    
+    // Try to repair incomplete JSON by extracting complete objects 
+    try {
+      console.log("🔧 Attempting to repair incomplete JSON...");
       
-      // ✅ Include metrics explicitly
-      mAP: model.mAP || 'N/A',
-      precision: model.precision || 'N/A',
-      recall: model.recall || 'N/A',
-      trainingImages: model.training_images || 'N/A'
-    }))
-
-    console.log(`📊 Computer Use found ${normalizedModels.length} Roboflow models`)
-    console.log(`🔍 Roboflow models details:`, JSON.stringify(normalizedModels, null, 2))
-    return normalizedModels
-
-  } catch (error) {
-    console.error('Roboflow Computer Use search error:', error)
-    return []
+      // Find all complete JSON objects in the string
+      const objectMatches = jsonString.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
+      if (objectMatches && objectMatches.length > 0) {
+        const validModels = [];
+        
+        for (const objectStr of objectMatches) {
+          try {
+            const model = JSON.parse(objectStr);
+            // Only include if it has required fields
+            if (model.model_identifier && model.model_name) {
+              validModels.push(model);
+            }
+          } catch (objError) {
+            console.log("⚠️ Skipping invalid object:", objError);
+          }
+        }
+        
+        if (validModels.length > 0) {
+          console.log(`✅ Repaired JSON: extracted ${validModels.length} valid models`);
+          
+          return validModels.map((model: any) => ({
+            id: model.model_identifier || `roboflow-${Date.now()}`,
+            name: model.model_name || "Roboflow Model",
+            source: "roboflow",
+            description: model.description || `Roboflow model for ${searchQuery}`,
+            url: model.model_url || "https://universe.roboflow.com",
+            modelUrl: model.model_url || "https://universe.roboflow.com",
+            task: taskType,
+            author: model.author || "Roboflow Universe",
+            downloads: 0,
+            tags: model.tags || keywords,
+            classes: model.classes || [],
+            frameworks: ["Roboflow"],
+            platforms: ["web", "mobile"],
+            supportsInference: true,
+            inferenceEndpoint: model.api_endpoint || model.model_url,
+            apiKey: process.env.ROBOFLOW_API_KEY,
+            isKnownWorking: true,
+            mAP: model.mAP,
+            precision: model.precision,
+            recall: model.recall,
+            trainingImages: model.training_images,
+          }));
+        }
+      }
+      
+      console.log("❌ Could not repair JSON - no valid objects found");
+      return [];
+      
+    } catch (repairError) {
+      console.error("❌ JSON repair also failed:", repairError);
+      return [];
+    }
   }
 }
+
+
 
 /**
  * Filter out models that we know have failed in the past
@@ -1845,7 +1538,7 @@ export async function POST(request: NextRequest) {
     // Search both Hugging Face and Roboflow models
     const [huggingFaceModels, roboflowModels] = await Promise.allSettled([
       searchHFModels(keywords, task_type, true),
-      searchRoboflowModels(keywords, task_type)
+      searchRoboflowModelsPython(keywords, task_type || 'detection')
     ])
     
     const hfModels = huggingFaceModels.status === 'fulfilled' ? huggingFaceModels.value : []

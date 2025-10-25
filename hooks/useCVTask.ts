@@ -49,14 +49,23 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
           // Prepare task-specific parameters for better compatibility
           const parameters: Record<string, any> = {}
           
-          // Add parameters based on task type
-          if (selectedModel.task?.toLowerCase().includes('classification')) {
-            parameters.top_k = 5 // Return top 5 predictions
-          } else if (selectedModel.task?.toLowerCase().includes('detection')) {
-            parameters.threshold = 0.5 // Confidence threshold for detections
+          // Add parameters based on task type and model source
+          if (selectedModel.source === 'roboflow') {
+            // Roboflow models work better with lower confidence thresholds
+            if (selectedModel.task?.toLowerCase().includes('detection')) {
+              parameters.confidence = 0.3 // Lower confidence for more detections 
+              parameters.overlap = 0.3 // Standard overlap threshold
+            }
+          } else {
+            // Hugging Face models
+            if (selectedModel.task?.toLowerCase().includes('classification')) {
+              parameters.top_k = 5 // Return top 5 predictions
+            } else if (selectedModel.task?.toLowerCase().includes('detection')) {
+              parameters.threshold = 0.5 // Confidence threshold for detections
+            }
           }
           
-          // Call appropriate inference API based on model source
+          // Call appropriate inference API based on model source 
           let response: Response
           
           if (selectedModel.source === 'roboflow') {
