@@ -33,7 +33,6 @@ This repository includes a Next.js web demo that simulates the mobile app experi
 | **Detection** | Object detection with bounding boxes | Bounding boxes, confidence scores |
 | **Classification** | Image classification into categories | Labels, confidence scores |
 | **Segmentation** | Image segmentation into regions | Masks, region polygons |
-| **Multi-Type** | Runtime task switching | Dynamic based on selection |
 
 ## 🛠️ Quick Start
 
