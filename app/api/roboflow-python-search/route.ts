@@ -1,131 +1,164 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { spawn } from 'child_process';
-import path from 'path';
+import { NextRequest, NextResponse } from 'next/server'
+import { spawn } from 'child_process'
+import path from 'path'
+
+// Simple JSON parsing function for Python output
+function parsePythonJson(stdout: string): any[] {
+  try {
+    // Try to parse as JSON directly first
+    const parsed = JSON.parse(stdout)
+    if (Array.isArray(parsed)) {
+      return parsed
+    }
+    return [parsed]
+  } catch (e) {
+    // If direct parsing fails, try to extract JSON from the output
+    const lines = stdout.split('\n')
+    const jsonLines: string[] = []
+    let inJson = false
+    let braceCount = 0
+    
+    for (const line of lines) {
+      if (line.includes('[') || line.includes('{')) {
+        inJson = true
+      }
+      
+      if (inJson) {
+        jsonLines.push(line)
+        braceCount += (line.match(/[\[\{]/g) || []).length
+        braceCount -= (line.match(/[\]\}]/g) || []).length
+        
+        if (braceCount === 0 && (line.includes(']') || line.includes('}'))) {
+          break
+        }
+      }
+    }
+    
+    if (jsonLines.length > 0) {
+      try {
+        const jsonStr = jsonLines.join('\n')
+        const parsed = JSON.parse(jsonStr)
+        return Array.isArray(parsed) ? parsed : [parsed]
+      } catch (e) {
+        console.warn('Failed to parse JSON from Python output:', e)
+        return []
+      }
+    }
+    
+    return []
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const { keywords, maxModels = 1 } = await request.json();
+    const body = await request.json()
+    const { keywords, max_models = 5 } = body
 
     if (!keywords || !Array.isArray(keywords)) {
       return NextResponse.json(
         { error: 'Keywords array is required' },
         { status: 400 }
-      );
+      )
     }
 
-    const searchQuery = keywords.join(' ');
+    console.log(`🤖 Starting embedded Roboflow search for: ${keywords.join(' ')}`)
 
-    console.log(`🐍 Starting Python Roboflow search for: ${searchQuery}`);
+    // Use the regular Roboflow search agent (embedded browser is handled by frontend modal)
+    const searchQuery = keywords.join(' ')
+    const venvPython = path.join(process.cwd(), 'venv', 'bin', 'python')
+    const pythonScript = path.join(process.cwd(), 'roboflow_search_agent.py')
+    
+    console.log(`🤖 Using Roboflow search agent for: ${searchQuery}`)
 
-    // Run the Python script
-    const pythonScript = path.join(process.cwd(), 'roboflow_search_agent.py');
-    const pythonProcess = spawn('python3', [pythonScript], {
+    const pythonProcess = spawn(venvPython, [pythonScript], {
       env: {
         ...process.env,
         SEARCH_KEYWORDS: searchQuery,
-        MAX_MODELS: maxModels.toString()
-      }
-    });
+        MAX_MODELS: max_models.toString(),
+        // Set environment for embedded browser
+        DISPLAY: process.env.DISPLAY || ':0',
+        // Prevent new window opening
+        BROWSER_EMBEDDED: 'true'
+      },
+    })
 
-    let stdout = '';
-    let stderr = '';
+    let stdout = ''
+    let stderr = ''
 
     pythonProcess.stdout.on('data', (data) => {
-      stdout += data.toString();
-      console.log(`Python stdout: ${data.toString()}`);
-    });
+      stdout += data.toString()
+    })
 
     pythonProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-      console.error(`Python stderr: ${data.toString()}`);
-    });
+      stderr += data.toString()
+    })
 
-    // Wait for the process to complete
     const exitCode = await new Promise<number>((resolve) => {
-      pythonProcess.on('close', (code) => {
-        resolve(code || 0);
-      });
-    });
+      pythonProcess.on('close', (code) => resolve(code ?? 0))
+    })
 
     if (exitCode !== 0) {
-      console.error(`❌ Python script failed with exit code ${exitCode}`);
-      console.error(`stderr: ${stderr}`);
-      
-      // Return fallback models if Python script fails
-      return NextResponse.json({
-        success: true,
-        models: [
-          {
-            model_identifier: "basketball-detection-fallback/1",
-            model_name: "Basketball Detection Model (Fallback)",
-            model_url: "https://universe.roboflow.com/fallback/basketball-detection",
-            author: "Roboflow Universe",
-            mAP: "85.2%",
-            precision: "87.1%",
-            recall: "83.8%",
-            training_images: "250",
-            tags: ["object detection", "sports", "basketball"],
-            classes: ["ball", "player"],
-            description: "Fallback basketball detection model for when Python agent is unavailable",
-            api_endpoint: "https://detect.roboflow.com/basketball-detection-fallback/1"
-          }
-        ],
-        source: "python_fallback"
-      });
+      console.error(`❌ Python script exited with code ${exitCode}`)
+      console.error('Stderr:', stderr)
+      return NextResponse.json(
+        { error: 'Search failed', details: stderr },
+        { status: 500 }
+      )
     }
 
-    // Try to parse the Python output
-    try {
-      // Look for JSON in the stdout
-      const jsonMatch = stdout.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const modelData = JSON.parse(jsonMatch[0]);
-        console.log('✅ Successfully extracted model data from Python script');
-        
-        return NextResponse.json({
-          success: true,
-          models: Array.isArray(modelData) ? modelData : [modelData],
-          source: "python_agent"
-        });
-      } else {
-        console.log('⚠️ No JSON found in Python output');
-        throw new Error('No JSON found in Python output');
-      }
-    } catch (parseError) {
-      console.error('❌ Failed to parse Python output:', parseError);
-      
-      // Return fallback models if parsing fails
-      return NextResponse.json({
-        success: true,
-        models: [
-          {
-            model_identifier: "basketball-detection-fallback/1",
-            model_name: "Basketball Detection Model (Fallback)",
-            model_url: "https://universe.roboflow.com/fallback/basketball-detection",
-            author: "Roboflow Universe",
-            mAP: "85.2%",
-            precision: "87.1%",
-            recall: "83.8%",
-            training_images: "250",
-            tags: ["object detection", "sports", "basketball"],
-            classes: ["ball", "player"],
-            description: "Fallback basketball detection model for when Python parsing fails",
-            api_endpoint: "https://detect.roboflow.com/basketball-detection-fallback/1"
-          }
-        ],
-        source: "python_parse_fallback"
-      });
-    }
-
-  } catch (error: any) {
-    console.error('❌ Python Roboflow search error:', error);
+    // Parse results using the robust JSON parser
+    console.log('🔍 Raw Python output length:', stdout.length)
+    console.log('🔍 Raw Python output preview:', stdout.slice(0, 500))
     
+    const models = parsePythonJson(stdout)
+    
+    if (models.length === 0) {
+      console.log('⚠️ No models found in Python output')
+      console.log('Raw output preview:', stdout.slice(0, 200))
+    }
+
+    console.log(`✅ Found ${models.length} models using Roboflow search agent`)
+
+    // Normalize models to ModelMetadata format
+    const normalizedModels = models.map((model: any) => ({
+      id: model.model_identifier || `roboflow-${Date.now()}`,
+      name: model.model_name || 'Roboflow Model',
+      source: 'roboflow',
+      description: model.description || `Roboflow model for ${searchQuery}`,
+      url: model.model_url || 'https://universe.roboflow.com',
+      modelUrl: model.model_url || 'https://universe.roboflow.com',
+      task: 'detection', // Assuming detection for Roboflow Universe models
+      author: model.author || 'Roboflow Universe',
+      downloads: 0, // Roboflow Universe doesn't always provide downloads directly
+      tags: model.tags || keywords,
+      classes: model.classes || [],
+      frameworks: ['Roboflow'],
+      platforms: ['web', 'mobile'],
+      supportsInference: true,
+      inferenceEndpoint: model.api_endpoint || model.model_url,
+      apiKey: process.env.ROBOFLOW_API_KEY,
+      isKnownWorking: true, // Assume working if found by agent
+      mAP: model.mAP,
+      precision: model.precision,
+      recall: model.recall,
+      trainingImages: model.training_images,
+    }))
+
+    return NextResponse.json({
+      success: true,
+      models: normalizedModels,
+      search_method: 'roboflow_agent',
+      total_found: normalizedModels.length
+    })
+
+  } catch (error) {
+    console.error('❌ Roboflow embedded search failed:', error)
     return NextResponse.json(
       { 
-        error: 'Python Roboflow search failed',
-        details: error.message 
+        error: 'Search failed', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
       },
       { status: 500 }
-    );
+    )
   }
 }

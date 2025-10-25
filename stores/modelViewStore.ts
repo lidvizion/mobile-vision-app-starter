@@ -57,6 +57,13 @@ class ModelViewStore {
     this.modelList = models
   }
 
+  addModels(models: ModelMetadata[]) {
+    // Add new models to existing list, avoiding duplicates
+    const existingIds = new Set(this.modelList.map(m => m.id))
+    const newModels = models.filter(m => !existingIds.has(m.id))
+    this.modelList = [...this.modelList, ...newModels]
+  }
+
   setIsSearching(isSearching: boolean) {
     this.isSearching = isSearching
   }

@@ -7,7 +7,7 @@ import {
   Smartphone, ChevronDown, ChevronUp, Filter, Grid, Grid3X3, Image, Layers, 
   Layers3, MapPin, Square, Tag, Target, Type, Video, VideoIcon, AlertCircle, 
   CheckCircle, FileText, FileVideo, Zap, Eye, Scan, Focus, Camera, 
-  ScanLine, ScanFace, ScanBarcode, ScanEye, ScanSearch, ScanText
+  ScanLine, ScanFace, ScanBarcode, ScanEye, ScanSearch, ScanText, Globe
 } from 'lucide-react'
 import { EXAMPLE_QUERIES } from '@/lib/keywordExtraction'
 import { ModelMetadata } from '@/types/models'
@@ -16,6 +16,7 @@ import { useQueryRefine } from '@/hooks/useQueryRefine'
 import { useModelSearch } from '@/hooks/useModelSearch'
 import { useSaveModelSelection } from '@/hooks/useSaveModelSelection'
 import ModelSearchSkeleton from './ModelSearchSkeleton'
+import RoboflowSearchModal from './RoboflowSearchModal'
 
 interface GuidedModelFlowProps {
   onModelSelect: (model: ModelMetadata) => void
@@ -24,6 +25,7 @@ interface GuidedModelFlowProps {
 const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
   const [showSearchBar, setShowSearchBar] = useState(false)
   const [sessionId] = useState(() => `session_${Date.now()}`)
+  const [isRoboflowSearchModalOpen, setIsRoboflowSearchModalOpen] = useState(false)
 
   // React Query hooks
   const queryRefineMutation = useQueryRefine()
@@ -70,6 +72,12 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
     'Text to 3D': Type
   }
 
+
+  const handleRoboflowModelsFound = (models: ModelMetadata[]) => {
+    // Add Roboflow models to the current model list
+    modelViewStore.addModels(models)
+    setIsRoboflowSearchModalOpen(false)
+  }
 
   const handleSearch = async () => {
     if (modelViewStore.queryText.length < 10) return
@@ -590,27 +598,42 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
             {modelViewStore.queryText.length < 10 && ` (${10 - modelViewStore.queryText.length} more needed)`}
           </span>
           
-          <button
-            onClick={handleSearch}
-            disabled={modelViewStore.queryText.length < 10 || modelViewStore.isSearching}
-            className={`px-6 py-3 rounded-xl font-semibold flex items-center gap-2 transition-all ${
-              modelViewStore.queryText.length >= 10 && !modelViewStore.isSearching
-                ? 'bg-wells-dark-grey text-white hover:bg-wells-warm-grey shadow-lg hover:shadow-xl'
-                : 'bg-wells-warm-grey/20 text-wells-warm-grey cursor-not-allowed'
-            }`}
-          >
-            {modelViewStore.isSearching ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Analyzing your use case...
-              </>
-            ) : (
-              <>
-                <span>Continue</span>
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleSearch}
+              disabled={modelViewStore.queryText.length < 10 || modelViewStore.isSearching}
+              className={`px-6 py-3 rounded-xl font-semibold flex items-center gap-2 transition-all ${
+                modelViewStore.queryText.length >= 10 && !modelViewStore.isSearching
+                  ? 'bg-wells-dark-grey text-white hover:bg-wells-warm-grey shadow-lg hover:shadow-xl'
+                  : 'bg-wells-warm-grey/20 text-wells-warm-grey cursor-not-allowed'
+              }`}
+            >
+              {modelViewStore.isSearching ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Analyzing your use case...
+                </>
+              ) : (
+                <>
+                  <span>Continue</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+            
+            <button
+              onClick={() => setIsRoboflowSearchModalOpen(true)}
+              disabled={modelViewStore.queryText.length < 10 || modelViewStore.isSearching}
+              className={`px-6 py-3 rounded-xl font-semibold flex items-center gap-2 transition-all ${
+                modelViewStore.queryText.length >= 10 && !modelViewStore.isSearching
+                  ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg hover:shadow-xl'
+                  : 'bg-wells-warm-grey/20 text-wells-warm-grey cursor-not-allowed'
+              }`}
+            >
+              <Globe className="w-4 h-4" />
+              <span>Search Roboflow</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -633,6 +656,14 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           ))}
         </div>
       </div>
+      
+      {/* Roboflow Search Modal */}
+      <RoboflowSearchModal
+        isOpen={isRoboflowSearchModalOpen}
+        onClose={() => setIsRoboflowSearchModalOpen(false)}
+        onModelsFound={handleRoboflowModelsFound}
+        initialKeywords={modelViewStore.refinedKeywords}
+      />
     </div>
   )
 })

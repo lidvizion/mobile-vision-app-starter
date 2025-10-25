@@ -949,12 +949,52 @@ async function searchHFModels(
       'google/vit-large-patch16-224',
       'facebook/detr-resnet-50',
       'facebook/detr-resnet-101',
+      'microsoft/beit-base-patch16-224',
+      'microsoft/beit-large-patch16-224',
+      'facebook/convnext-tiny-224',
+      'facebook/convnext-base-224',
       'openai/clip-vit-base-patch32',
-      'openai/clip-vit-large-patch14'
+      'openai/clip-vit-large-patch14',
+      'facebook/detr-resnet-50-panoptic',
+      'facebook/detr-resnet-101-panoptic'
     ]
+    
+    // Define known failed models to exclude
+    const knownFailedModels = [
+      'asadimtiazmalik/my_traffic_dataset_model',
+      'rohansaraswat/TrafficSignsDetection',
+      'taufeeq28/vehicles',
+      'Charansaiponnada/blip-traffic-rr',
+      'Charansaiponnada/blip-indian-traffic-captioning',
+      'Charansaiponnada/vijayawada-traffic-accessibility-v2-fixed',
+      'dima806/traffic_sign_detection',
+      'josephlyr/detr-resnet-50_finetuned_road_traffic'
+    ]
+
+    console.log(`🔍 Starting filtering on ${data.length} models...`)
 
     const filteredData = data
       .filter((model: any) => {
+        // ✅ EXCLUDE KNOWN FAILED MODELS
+        if (knownFailedModels.includes(model.id)) {
+          console.log(`🚫 Excluding known failed model: ${model.id}`)
+          return false
+        }
+        
+        // ✅ EXCLUDE VERY LOW-QUALITY MODELS (relaxed thresholds)
+        const minDownloads = 100 // Lower threshold to allow more models
+        if ((model.downloads || 0) < minDownloads) {
+          
+          return false
+        }
+        
+        // ✅ EXCLUDE MODELS WITH ZERO LIKES (quality indicator)
+        const minLikes = 1 // Very low threshold to allow more models
+        if ((model.likes || 0) < minLikes) {
+          
+          return false
+        }
+        
         // ✅ EXCLUDE INAPPROPRIATE CONTENT
         const modelId = model.id.toLowerCase()
         const inappropriateTerms = ['nsfw', 'porn', 'adult', 'explicit', 'sexual', 'nude']
@@ -969,12 +1009,34 @@ async function searchHFModels(
         // ✅ COMPUTER VISION FILTERING: Only include CV models for image tasks
         const hasTransformersLibrary = model.library_name === 'transformers'
         const hasEndpointsCompatible = (model.tags || []).includes('endpoints_compatible')
-        // With router endpoint, all models support inference through automatic provider selection
-        const hasInferenceSupport = true
         
         // ✅ CRITICAL: Only include computer vision models for image processing
         const pipelineTag = model.pipeline_tag
         const modelIdLower = model.id.toLowerCase()
+        
+        // ✅ RELAXED VALIDATION: Include models with CV pipeline tags or keywords
+        // For CV tasks, be more inclusive with model selection
+        const hasInferenceSupport = hasTransformersLibrary && 
+                                   (hasEndpointsCompatible || 
+                                    model.inference || 
+                                    model.pipeline_tag === 'object-detection' ||
+                                    model.pipeline_tag === 'image-classification' ||
+                                    model.pipeline_tag === 'image-segmentation' ||
+                                    model.pipeline_tag === 'image-to-text' ||
+                                    model.pipeline_tag === 'zero-shot-image-classification' ||
+                                    model.pipeline_tag === 'zero-shot-object-detection' ||
+                                    // Also include models that have CV keywords in their names
+                                    modelIdLower.includes('detection') ||
+                                    modelIdLower.includes('traffic') ||
+                                    modelIdLower.includes('signal') ||
+                                    modelIdLower.includes('vision') ||
+                                    modelIdLower.includes('image') ||
+                                    modelIdLower.includes('classify') ||
+                                    modelIdLower.includes('object') ||
+                                    modelIdLower.includes('cv') ||
+                                    modelIdLower.includes('yolo') ||
+                                    modelIdLower.includes('resnet') ||
+                                    modelIdLower.includes('detr'))
         const modelName = (model.model_name || '').toLowerCase()
         const modelDescription = (model.description || '').toLowerCase()
         
@@ -1089,8 +1151,11 @@ async function searchHFModels(
         // AND they are not text or speech models
         return hasTransformersLibrary && isComputerVisionModel && !isTextOrSpeechModel
       })
-      // Sort: Downloads first (highest to lowest), then trusted organizations, then known working
-      .sort((a: any, b: any) => {
+    
+    console.log(`📊 After filtering: ${filteredData.length} models remaining`)
+    
+    // Sort: Downloads first (highest to lowest), then trusted organizations, then known working
+    const sortedData = filteredData.sort((a: any, b: any) => {
         // Priority 1: Downloads (highest first) - this is the main sorting criteria
         const downloadDiff = (b.downloads || 0) - (a.downloads || 0)
         if (downloadDiff !== 0) return downloadDiff
@@ -1123,10 +1188,10 @@ async function searchHFModels(
         return (b.likes || 0) - (a.likes || 0)
       })
     
-    console.log(`🎯 Filtered to ${filteredData.length} CV models using intelligent filtering (trusted orgs + high downloads + relevant specialized models)`)
+    console.log(`🎯 Filtered to ${sortedData.length} CV models using intelligent filtering (trusted orgs + high downloads + relevant specialized models)`)
     
     // Log top filtered models for debugging
-    const topFiltered = filteredData.slice(0, 5).map(m => ({
+    const topFiltered = sortedData.slice(0, 5).map(m => ({
       id: m.id,
       downloads: m.downloads,
       inference: m.inference,
@@ -1135,7 +1200,7 @@ async function searchHFModels(
     console.log(`🏆 Top filtered models:`, topFiltered)
     
     // Add trusted models if search is detection-related
-    const trustedEnhancedData = await addTrustedModels(filteredData, keywords)
+    const trustedEnhancedData = await addTrustedModels(sortedData, keywords)
     
     // Additional validation: Check against our MongoDB database of failed models
     const validatedData = await filterOutKnownFailedModels(trustedEnhancedData)
@@ -1197,8 +1262,18 @@ async function searchHFModels(
         // Mark models based on known working status
         
         const isKnownWorking = verifiedWorkingModels.includes(model.id)
-        // With router endpoint, all models support inference through automatic provider selection
-        const supportsInference = true
+        // Only mark as supporting inference if it actually does
+        const modelHasTransformersLibrary = model.library_name === 'transformers'
+        const modelHasEndpointsCompatible = (model.tags || []).includes('endpoints_compatible')
+        const supportsInference = modelHasTransformersLibrary && 
+                                 (modelHasEndpointsCompatible || 
+                                  model.inference || 
+                                  model.pipeline_tag === 'object-detection' ||
+                                  model.pipeline_tag === 'image-classification' ||
+                                  model.pipeline_tag === 'image-segmentation' ||
+                                  model.pipeline_tag === 'image-to-text' ||
+                                  model.pipeline_tag === 'zero-shot-image-classification' ||
+                                  model.pipeline_tag === 'zero-shot-object-detection')
         
         // Enhanced model type determination for better categorization
         const modelTypeInfo = determineModelType(model, model.classes)
@@ -1612,9 +1687,11 @@ export async function POST(request: NextRequest) {
       console.log(`🔍 First page - performing full search for: ${searchKeywords}`)
     
     // Search both Hugging Face and Roboflow models
+    // Note: Roboflow search now uses embedded browser modal in frontend
     const [huggingFaceModels, roboflowModels] = await Promise.allSettled([
       searchHFModels(keywords, task_type, true),
-      searchRoboflowModelsPython(keywords, task_type || 'detection')
+      // Roboflow search will be handled by embedded browser modal in frontend
+      Promise.resolve([])
     ])
     
     const hfModels = huggingFaceModels.status === 'fulfilled' ? huggingFaceModels.value : []
@@ -1622,6 +1699,17 @@ export async function POST(request: NextRequest) {
     
     console.log(`📊 Found ${hfModels.length} Hugging Face models`)
     console.log(`📊 Found ${rfModels.length} Roboflow models`)
+    
+    // Debug: Show first few models before filtering
+    if (hfModels.length > 0) {
+      console.log(`🔍 Sample HF models before filtering:`, hfModels.slice(0, 3).map((m: any) => ({
+        id: m.id,
+        pipeline_tag: m.pipeline_tag || 'unknown',
+        library_name: m.library_name || 'unknown',
+        inference: m.inference || false,
+        tags: m.tags || []
+      })))
+    }
     
     // Debug Roboflow search status
     if (roboflowModels.status === 'rejected') {
@@ -1688,7 +1776,8 @@ export async function POST(request: NextRequest) {
         // Fallback to search if cache miss
         const [huggingFaceModels, roboflowModels] = await Promise.allSettled([
           searchHFModels(keywords, task_type, true),
-          searchRoboflowModelsPython(keywords, task_type || 'detection')
+          // Roboflow search will be handled by embedded browser modal in frontend
+          Promise.resolve([])
         ])
         
         const hfModels = huggingFaceModels.status === 'fulfilled' ? huggingFaceModels.value : []
