@@ -1158,7 +1158,7 @@ async function searchHFModels(
           platforms: [],
           supportsInference,
           isKnownWorking,
-          inferenceEndpoint: `https://api-inference.huggingface.co/models/${model.id}`,
+          inferenceEndpoint: `https://router.huggingface.co/hf-inference/models/${model.id}`,
           // Enhanced model type information for better categorization
           modelType: modelTypeInfo.type,
           modelTypeInfo: modelTypeInfo
@@ -1334,7 +1334,7 @@ async function validateModelsInBackground(models: any[]): Promise<void> {
       const taskType = model.task || model.pipeline_tag || 'unknown'
       
       // Quick warmup precheck
-      const headResponse = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
+      const headResponse = await fetch(`https://router.huggingface.co/hf-inference/models/${modelId}`, {
         method: 'HEAD',
         headers: { 'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}` },
         signal: AbortSignal.timeout(5000) // 5 second timeout
@@ -1348,7 +1348,7 @@ async function validateModelsInBackground(models: any[]): Promise<void> {
       
       // Try actual inference
       const testInputs = getTestInputForTask(taskType)
-      const response = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
+      const response = await fetch(`https://router.huggingface.co/hf-inference/models/${modelId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,

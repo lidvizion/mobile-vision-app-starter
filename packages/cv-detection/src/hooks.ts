@@ -117,7 +117,7 @@ export function useModelDetection(config: DetectionConfig) {
         });
 
         // Build inference endpoint
-        const inferenceEndpoint = `https://api-inference.huggingface.co/models/${config.modelId}`;
+        const inferenceEndpoint = `https://router.huggingface.co/hf-inference/models/${config.modelId}`;
 
         // Call Hugging Face Inference API
         const response = await fetch(inferenceEndpoint, {

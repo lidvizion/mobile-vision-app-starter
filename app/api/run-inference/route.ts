@@ -6,7 +6,7 @@ import { markModelAsWorking, markModelAsFailed } from '@/lib/mongodb/validatedMo
  * /api/run-inference
  * Purpose: Run inference on a Hugging Face model
  * 
- * Endpoint: POST https://api-inference.huggingface.co/models/<model_id>
+ * Endpoint: POST https://router.huggingface.co/hf-inference/models/<model_id>
  * 
  * Example Request:
  * POST /api/run-inference
@@ -243,7 +243,7 @@ async function tryAlternativeInputFormats(
         requestBody = format.input
       }
       
-      const response = await fetch(`https://api-inference.huggingface.co/models/${model_id}`, {
+      const response = await fetch(`https://router.huggingface.co/hf-inference/models/${model_id}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -357,7 +357,7 @@ export async function POST(request: NextRequest) {
       inputPreview: inputs.substring(0, 50) + '...'
     })
 
-    const inferenceEndpoint = `https://api-inference.huggingface.co/models/${model_id}`
+    const inferenceEndpoint = `https://router.huggingface.co/hf-inference/models/${model_id}`
 
     // HF Inference API supports two main formats:
     // 1. HTTP/HTTPS URLs (most reliable)
