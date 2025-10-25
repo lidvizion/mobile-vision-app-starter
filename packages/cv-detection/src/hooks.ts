@@ -40,17 +40,21 @@ export function useCVDetection(selectedModel?: ModelMetadata | null) {
         parameters.top_k = 5;
       }
 
-      // Call Hugging Face Inference API
-      const response = await fetch(selectedModel.inferenceEndpoint, {
+      // Use Hugging Face router endpoint directly
+      const modelId = selectedModel.inferenceEndpoint.split('/').pop() || selectedModel.id;
+      const inferenceEndpoint = `https://router.huggingface.co/hf-inference/models/${modelId}`;
+      
+      // Call Hugging Face Inference API with router endpoint
+      const response = await fetch(inferenceEndpoint, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${process.env.NEXT_PUBLIC_HF_TOKEN || ''}`,
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           inputs: base64,
-          parameters,
-        }),
+          parameters
+        })
       });
 
       if (!response.ok) {

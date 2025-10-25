@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 
+// Extend globalThis to include our cache
+declare global {
+  var searchCache: Map<string, any[]> | undefined
+}
+
 /**
  * Fetch model description from Hugging Face README.md
  */
@@ -468,7 +473,7 @@ async function searchRoboflowModelsPython(keywords: string[], taskType: string):
     const searchQuery = keywords.join(" ");
     const venvPython = path.join(process.cwd(), "venv", "bin", "python");
     const pythonScript = path.join(process.cwd(), "roboflow_search_agent.py");
-
+    
     const pythonProcess = spawn(venvPython, [pythonScript], {
       env: {
         ...process.env,
@@ -527,26 +532,26 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
     console.log(`✅ Parsed ${modelData.length} models from Python output`);
 
     return modelData.map((model: any) => ({
-      id: model.model_identifier || `roboflow-${Date.now()}`,
+          id: model.model_identifier || `roboflow-${Date.now()}`,
       name: model.model_name || "Roboflow Model",
       source: "roboflow",
-      description: model.description || `Roboflow model for ${searchQuery}`,
+          description: model.description || `Roboflow model for ${searchQuery}`,
       url: model.model_url || "https://universe.roboflow.com",
       modelUrl: model.model_url || "https://universe.roboflow.com",
-      task: taskType,
+          task: taskType,
       author: model.author || "Roboflow Universe",
-      downloads: 0,
-      tags: model.tags || keywords,
-      classes: model.classes || [],
+          downloads: 0,
+          tags: model.tags || keywords,
+          classes: model.classes || [],
       frameworks: ["Roboflow"],
       platforms: ["web", "mobile"],
-      supportsInference: true,
-      inferenceEndpoint: model.api_endpoint || model.model_url,
+          supportsInference: true,
+          inferenceEndpoint: model.api_endpoint || model.model_url,
       apiKey: process.env.ROBOFLOW_API_KEY,
-      isKnownWorking: true,
-      mAP: model.mAP,
-      precision: model.precision,
-      recall: model.recall,
+          isKnownWorking: true,
+          mAP: model.mAP,
+          precision: model.precision,
+          recall: model.recall,
       trainingImages: model.training_images,
     }));
   } catch (e) {
@@ -605,10 +610,10 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
       
       console.log("❌ Could not repair JSON - no valid objects found");
       return [];
-      
+
     } catch (repairError) {
       console.error("❌ JSON repair also failed:", repairError);
-      return [];
+    return [];
     }
   }
 }
@@ -884,7 +889,7 @@ async function searchHFModels(
     
     const url = `https://huggingface.co/api/models?search=${encodeURIComponent(searchQuery)}&sort=downloads&limit=500`
     
-    console.log(`🔍 HF Search:`, {
+    console.log(`🔍 HF Search with router endpoint:`, {
       keywords,
       searchQuery,
       url
@@ -900,7 +905,7 @@ async function searchHFModels(
       headers['Authorization'] = `Bearer ${apiKey}`
     }
 
-    console.log('🔍 Searching Hugging Face:', searchQuery)
+    console.log('🔍 Searching Hugging Face with router endpoint:', searchQuery)
     const response = await fetch(url, { headers })
     
     if (!response.ok) {
@@ -961,10 +966,107 @@ async function searchHFModels(
           return false
         }
         
-        // ✅ INTELLIGENT FILTERING: Prioritize Microsoft/Facebook models + good general models + specialized models
+        // ✅ COMPUTER VISION FILTERING: Only include CV models for image tasks
         const hasTransformersLibrary = model.library_name === 'transformers'
         const hasEndpointsCompatible = (model.tags || []).includes('endpoints_compatible')
-        const hasInferenceSupport = model.inference === true || model.inference === 'hosted' || model.inference === 'warm' || hasEndpointsCompatible
+        // With router endpoint, all models support inference through automatic provider selection
+        const hasInferenceSupport = true
+        
+        // ✅ CRITICAL: Only include computer vision models for image processing
+        const pipelineTag = model.pipeline_tag
+        const modelIdLower = model.id.toLowerCase()
+        const modelName = (model.model_name || '').toLowerCase()
+        const modelDescription = (model.description || '').toLowerCase()
+        
+        // Check pipeline tag for CV models
+        const hasCVPipelineTag = pipelineTag === 'object-detection' ||
+                                pipelineTag === 'image-classification' ||
+                                pipelineTag === 'image-segmentation' ||
+                                pipelineTag === 'image-to-text' ||
+                                pipelineTag === 'zero-shot-image-classification' ||
+                                pipelineTag === 'zero-shot-object-detection'
+        
+        // Check model name/description for CV keywords (fallback for models without proper pipeline tags)
+        const hasCVKeywords = modelIdLower.includes('resnet') ||
+                             modelIdLower.includes('detr') ||
+                             modelIdLower.includes('yolo') ||
+                             modelIdLower.includes('vit') ||
+                             modelIdLower.includes('efficientnet') ||
+                             modelIdLower.includes('mobilenet') ||
+                             modelIdLower.includes('inception') ||
+                             modelIdLower.includes('densenet') ||
+                             modelIdLower.includes('swin') ||
+                             modelIdLower.includes('convnext') ||
+                             modelIdLower.includes('segmentation') ||
+                             modelIdLower.includes('segment') ||
+                             modelIdLower.includes('mask') ||
+                             modelIdLower.includes('unet') ||
+                             modelIdLower.includes('deeplab') ||
+                             modelName.includes('vision') ||
+                             modelName.includes('image') ||
+                             modelName.includes('detection') ||
+                             modelName.includes('classification') ||
+                             modelName.includes('segmentation') ||
+                             modelName.includes('segment') ||
+                             modelDescription.includes('vision') ||
+                             modelDescription.includes('image') ||
+                             modelDescription.includes('detection') ||
+                             modelDescription.includes('classification') ||
+                             modelDescription.includes('segmentation') ||
+                             modelDescription.includes('segment')
+        
+        const isComputerVisionModel = hasCVPipelineTag || hasCVKeywords
+        
+        // ✅ EXCLUDE TEXT-BASED AND SPEECH MODELS: Don't include text/speech models for image tasks
+        const isTextOrSpeechModel = pipelineTag === 'text-classification' ||
+                                   pipelineTag === 'question-answering' ||
+                                   pipelineTag === 'text-generation' ||
+                                   pipelineTag === 'token-classification' ||
+                                   pipelineTag === 'text2text-generation' ||
+                                   pipelineTag === 'fill-mask' ||
+                                   pipelineTag === 'summarization' ||
+                                   pipelineTag === 'translation' ||
+                                   pipelineTag === 'conversational' ||
+                                   pipelineTag === 'feature-extraction' ||
+                                   pipelineTag === 'text-to-speech' ||
+                                   pipelineTag === 'automatic-speech-recognition' ||
+                                   // Additional text model exclusions based on model names
+                                   modelIdLower.includes('bert') ||
+                                   modelIdLower.includes('gpt') ||
+                                   modelIdLower.includes('t5') ||
+                                   modelIdLower.includes('roberta') ||
+                                   modelIdLower.includes('distilbert') ||
+                                   modelIdLower.includes('xlm') ||
+                                   modelIdLower.includes('electra') ||
+                                   modelIdLower.includes('albert') ||
+                                   modelIdLower.includes('deberta') ||
+                                   modelIdLower.includes('bart') ||
+                                   modelIdLower.includes('pegasus') ||
+                                   modelIdLower.includes('marian') ||
+                                   modelIdLower.includes('mbart') ||
+                                   modelIdLower.includes('blenderbot') ||
+                                   modelIdLower.includes('dialo') ||
+                                   modelIdLower.includes('conversational') ||
+                                   modelIdLower.includes('qa') ||
+                                   modelIdLower.includes('question') ||
+                                   modelIdLower.includes('answer') ||
+                                   modelIdLower.includes('summarization') ||
+                                   modelIdLower.includes('translation') ||
+                                   modelIdLower.includes('sentiment') ||
+                                   modelIdLower.includes('emotion') ||
+                                   modelIdLower.includes('language') ||
+                                   modelIdLower.includes('text') ||
+                                   modelIdLower.includes('nlp') ||
+                                   modelIdLower.includes('natural') ||
+                                   modelIdLower.includes('processing') ||
+                                   modelIdLower.includes('speech') ||
+                                   modelIdLower.includes('voice') ||
+                                   modelIdLower.includes('audio')
+        
+        // If it's a text or speech model, exclude it for CV tasks
+        if (isTextOrSpeechModel) {
+          return false
+        }
         
         // Check if model is from trusted organizations (Microsoft, Facebook/Meta, Google, etc.)
         const isTrustedOrganization = model.id.toLowerCase().includes('microsoft/') ||
@@ -983,29 +1085,17 @@ async function searchHFModels(
           (keyword === 'classification' && modelText.includes('classify'))
         )
         
-        // Different thresholds based on relevance and model type
-        const hasHighDownloads = (model.downloads || 0) >= 50000 // High threshold for general models
-        const hasReasonableDownloads = (model.downloads || 0) >= 1000 // Medium threshold
-        const hasAnyDownloads = (model.downloads || 0) >= 1 // Low threshold for specialized models
-        
-        // Show models if they meet any of these criteria:
-        // 1. Trusted organization models (Microsoft, Facebook, etc.) - ALWAYS include
-        // 2. High downloads + transformers
-        // 3. Relevant to search + reasonable downloads + transformers  
-        // 4. Relevant to search + any downloads + transformers (for specialized models)
-        return hasTransformersLibrary && (
-          isTrustedOrganization ||
-          (hasHighDownloads) ||
-          (isRelevantToSearch && hasReasonableDownloads) ||
-          (isRelevantToSearch && hasAnyDownloads)
-        )
+        // Show models if they are computer vision models with transformers library
+        // AND they are not text or speech models
+        return hasTransformersLibrary && isComputerVisionModel && !isTextOrSpeechModel
       })
-      // Sort: Trusted organizations first, then known working models, then by downloads
+      // Sort: Downloads first (highest to lowest), then trusted organizations, then known working
       .sort((a: any, b: any) => {
-        const aIsWorking = verifiedWorkingModels.includes(a.id)
-        const bIsWorking = verifiedWorkingModels.includes(b.id)
+        // Priority 1: Downloads (highest first) - this is the main sorting criteria
+        const downloadDiff = (b.downloads || 0) - (a.downloads || 0)
+        if (downloadDiff !== 0) return downloadDiff
         
-        // Check if models are from trusted organizations
+        // Priority 2: Trusted organizations (as tiebreaker for same downloads)
         const aIsTrusted = a.id.toLowerCase().includes('microsoft/') ||
                           a.id.toLowerCase().includes('facebook/') ||
                           a.id.toLowerCase().includes('meta/') ||
@@ -1020,19 +1110,16 @@ async function searchHFModels(
                           b.id.toLowerCase().includes('huggingface/') ||
                           b.id.toLowerCase().includes('openai/')
         
-        // Priority 1: Trusted organization models first
         if (aIsTrusted && !bIsTrusted) return -1
         if (!aIsTrusted && bIsTrusted) return 1
         
-        // Priority 2: Known working models second
+        // Priority 3: Known working models (as final tiebreaker)
+        const aIsWorking = verifiedWorkingModels.includes(a.id)
+        const bIsWorking = verifiedWorkingModels.includes(b.id)
         if (aIsWorking && !bIsWorking) return -1
         if (!aIsWorking && bIsWorking) return 1
         
-        // Priority 3: Among same type, sort by downloads (highest first)
-        const downloadDiff = b.downloads - a.downloads
-        if (downloadDiff !== 0) return downloadDiff
-        
-        // Priority 4: If downloads are equal, sort by likes (highest first)
+        // Priority 4: If everything is equal, sort by likes (highest first)
         return (b.likes || 0) - (a.likes || 0)
       })
     
@@ -1053,12 +1140,13 @@ async function searchHFModels(
     // Additional validation: Check against our MongoDB database of failed models
     const validatedData = await filterOutKnownFailedModels(trustedEnhancedData)
     
-    // Re-sort after adding trusted models to ensure they appear first
+    // Re-sort after adding trusted models - prioritize downloads first
     const reSortedData = validatedData.sort((a: any, b: any) => {
-      const aIsWorking = verifiedWorkingModels.includes(a.id)
-      const bIsWorking = verifiedWorkingModels.includes(b.id)
+      // Priority 1: Downloads (highest first) - main sorting criteria
+      const downloadDiff = (b.downloads || 0) - (a.downloads || 0)
+      if (downloadDiff !== 0) return downloadDiff
       
-      // Check if models are from trusted organizations
+      // Priority 2: Trusted organizations (as tiebreaker for same downloads)
       const aIsTrusted = a.id.toLowerCase().includes('microsoft/') ||
                         a.id.toLowerCase().includes('facebook/') ||
                         a.id.toLowerCase().includes('meta/') ||
@@ -1073,38 +1161,17 @@ async function searchHFModels(
                         b.id.toLowerCase().includes('huggingface/') ||
                         b.id.toLowerCase().includes('openai/')
       
-      // Check if search is detection-related
-      const searchText = keywords.join(' ').toLowerCase()
-      const isDetectionSearch = searchText.includes('detection') || 
-                               searchText.includes('detect') ||
-                               searchText.includes('object') ||
-                               searchText.includes('vehicles') ||
-                               searchText.includes('traffic') ||
-                               searchText.includes('basketball') ||
-                               searchText.includes('sports')
-      
-      // Priority 1: For detection searches, prioritize detection models
-      if (isDetectionSearch) {
-        const aIsDetection = a.pipeline_tag === 'object-detection' || a.task === 'detection'
-        const bIsDetection = b.pipeline_tag === 'object-detection' || b.task === 'detection'
-        
-        if (aIsDetection && !bIsDetection) return -1
-        if (!aIsDetection && bIsDetection) return 1
-      }
-      
-      // Priority 2: Trusted organization models
       if (aIsTrusted && !bIsTrusted) return -1
       if (!aIsTrusted && bIsTrusted) return 1
       
-      // Priority 3: Known working models
+      // Priority 3: Known working models (as final tiebreaker)
+      const aIsWorking = verifiedWorkingModels.includes(a.id)
+      const bIsWorking = verifiedWorkingModels.includes(b.id)
+      
       if (aIsWorking && !bIsWorking) return -1
       if (!aIsWorking && bIsWorking) return 1
       
-      // Priority 4: Among same type, sort by downloads (highest first)
-      const downloadDiff = b.downloads - a.downloads
-      if (downloadDiff !== 0) return downloadDiff
-      
-      // Priority 5: If downloads are equal, sort by likes (highest first)
+      // Priority 4: If everything is equal, sort by likes (highest first)
       return (b.likes || 0) - (a.likes || 0)
     })
     
@@ -1130,13 +1197,8 @@ async function searchHFModels(
         // Mark models based on known working status
         
         const isKnownWorking = verifiedWorkingModels.includes(model.id)
-        // More permissive inference support detection for transformers models
-        const hasEndpointsCompatible = (model.tags || []).includes('endpoints_compatible')
-        const hasExplicitInference = model.inference === true || model.inference === 'hosted' || model.inference === 'warm'
-        const isTransformersModel = model.library_name === 'transformers'
-        
-        // For transformers models, assume they support inference unless explicitly marked otherwise
-        const supportsInference = hasExplicitInference || hasEndpointsCompatible || (isTransformersModel && model.inference !== false)
+        // With router endpoint, all models support inference through automatic provider selection
+        const supportsInference = true
         
         // Enhanced model type determination for better categorization
         const modelTypeInfo = determineModelType(model, model.classes)
@@ -1535,6 +1597,20 @@ export async function POST(request: NextRequest) {
     // Generate unique query ID for tracking
     const queryId = `uuid-query-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     
+    // Create a cache key based on search parameters (no time window for simplicity)
+    const cacheKey = `search-${keywords.join('-')}-${task_type}`
+    
+    console.log(`🔑 Cache key: ${cacheKey}`)
+    
+    let allModels: any[] = []
+    
+    // Check if we should search or use cached results
+    const shouldSearch = page === 1 // Only search on first page
+    const searchKeywords = keywords.join(' ')
+    
+    if (shouldSearch) {
+      console.log(`🔍 First page - performing full search for: ${searchKeywords}`)
+    
     // Search both Hugging Face and Roboflow models
     const [huggingFaceModels, roboflowModels] = await Promise.allSettled([
       searchHFModels(keywords, task_type, true),
@@ -1555,8 +1631,73 @@ export async function POST(request: NextRequest) {
     }
     
     // Combine and prioritize Roboflow models (they're more specific and valuable)
-    const allModels = [...rfModels, ...hfModels]
+      allModels = [...rfModels, ...hfModels]
     console.log(`🔍 Total models before pagination: ${allModels.length} (HF: ${hfModels.length}, RF: ${rfModels.length})`)
+      
+      // Store in cache for subsequent pages (in a real implementation, use Redis or similar)
+      // For now, we'll store in memory - in production, use proper caching
+      if (!globalThis.searchCache) {
+        globalThis.searchCache = new Map()
+      }
+      globalThis.searchCache.set(cacheKey, allModels)
+      
+      // Clean up old cache entries (keep only last 10 searches)
+      if (globalThis.searchCache && globalThis.searchCache.size > 10) {
+        const keysToDelete: string[] = []
+        let count = 0
+        globalThis.searchCache.forEach((value, key) => {
+          if (count < globalThis.searchCache!.size - 10) {
+            keysToDelete.push(key)
+          }
+          count++
+        })
+        keysToDelete.forEach(key => globalThis.searchCache!.delete(key))
+      }
+      
+      console.log(`💾 Cached ${allModels.length} models for future pagination`)
+      
+    } else {
+      console.log(`📄 Page ${page} - using cached results for: ${searchKeywords}`)
+      
+      // Use cached results for pagination
+      if (!globalThis.searchCache) {
+        globalThis.searchCache = new Map()
+      }
+      
+      console.log(`🔍 Looking for cache key: ${cacheKey}`)
+      console.log(`📊 Available cache keys:`, Array.from(globalThis.searchCache.keys()))
+      console.log(`🔍 Cache size: ${globalThis.searchCache.size}`)
+      
+      // Clear old cache entries with old format (temporary fix)
+      const oldKeys = Array.from(globalThis.searchCache.keys()).filter(key => key.includes('-') && /\d+$/.test(key))
+      if (oldKeys.length > 0) {
+        console.log(`🧹 Clearing ${oldKeys.length} old cache entries:`, oldKeys)
+        oldKeys.forEach(key => globalThis.searchCache!.delete(key))
+      }
+      
+      // Also clear all cache if we have old format keys (nuclear option)
+      if (Array.from(globalThis.searchCache.keys()).some(key => /\d+$/.test(key))) {
+        console.log(`🧹 Nuclear option: clearing all cache due to old format keys`)
+        globalThis.searchCache.clear()
+      }
+      
+      allModels = globalThis.searchCache.get(cacheKey) || []
+      
+      if (allModels.length === 0) {
+        console.log(`⚠️ No cached results found, falling back to search`)
+        // Fallback to search if cache miss
+        const [huggingFaceModels, roboflowModels] = await Promise.allSettled([
+          searchHFModels(keywords, task_type, true),
+          searchRoboflowModelsPython(keywords, task_type || 'detection')
+        ])
+        
+        const hfModels = huggingFaceModels.status === 'fulfilled' ? huggingFaceModels.value : []
+        const rfModels = roboflowModels.status === 'fulfilled' ? roboflowModels.value : []
+        allModels = [...rfModels, ...hfModels]
+      }
+      
+      console.log(`📊 Using ${allModels.length} cached models for pagination`)
+    }
     
     // Apply pagination
     const startIndex = (page - 1) * limit

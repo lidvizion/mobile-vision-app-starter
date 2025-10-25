@@ -15,7 +15,7 @@ export function useCVDetection(selectedModel) {
     }, []);
     var processImageMutation = useMutation({
         mutationFn: function (imageFile) { return __awaiter(_this, void 0, void 0, function () {
-            var imageDimensions, base64, parameters, response, inferenceData, cvResponse, validation;
+            var imageDimensions, base64, parameters, modelId, inferenceEndpoint, response, inferenceData, cvResponse, validation;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -40,16 +40,18 @@ export function useCVDetection(selectedModel) {
                         else if (currentTask === 'classification') {
                             parameters.top_k = 5;
                         }
-                        return [4 /*yield*/, fetch(selectedModel.inferenceEndpoint, {
+                        modelId = selectedModel.inferenceEndpoint.split('/').pop() || selectedModel.id;
+                        inferenceEndpoint = "https://router.huggingface.co/hf-inference/models/".concat(modelId);
+                        return [4 /*yield*/, fetch(inferenceEndpoint, {
                                 method: 'POST',
                                 headers: {
-                                    'Content-Type': 'application/json',
                                     'Authorization': "Bearer ".concat(process.env.NEXT_PUBLIC_HF_TOKEN || ''),
+                                    'Content-Type': 'application/json'
                                 },
                                 body: JSON.stringify({
                                     inputs: base64,
-                                    parameters: parameters,
-                                }),
+                                    parameters: parameters
+                                })
                             })];
                     case 3:
                         response = _a.sent();
