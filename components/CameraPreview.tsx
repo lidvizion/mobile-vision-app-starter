@@ -484,6 +484,8 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
                     <Upload className="w-5 h-5" />
                     <span>Choose File</span>
                   </button>
+                  {/* Camera functionality temporarily disabled - no inference support */}
+                  {false && (
                   <button 
                     onClick={(e) => {
                       e.preventDefault()
@@ -495,6 +497,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
                     <Video className="w-5 h-5" />
                     <span>Use Camera</span>
                   </button>
+                  )}
                 </div>
               )}
               
