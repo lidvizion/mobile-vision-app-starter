@@ -259,11 +259,11 @@ export default function Home() {
               Cross-platform mobile starter kit for camera-based CV apps. Built with modern design principles and professional-grade components.
             </p>
             <div className="flex items-center justify-center gap-6 text-sm text-wells-warm-grey">
-              <span>© 2024 Lid Vizion</span>
+              <span>© 2025 Lid Vizion</span>
+              {/* <span>•</span> */}
+              {/* <span>MIT License</span>
               <span>•</span>
-              <span>MIT License</span>
-              <span>•</span>
-              <span>Made for developers</span>
+              <span>Made for developers</span> */}
             </div>
           </div>
         </div>
