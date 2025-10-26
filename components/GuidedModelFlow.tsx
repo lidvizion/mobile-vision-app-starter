@@ -661,8 +661,8 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
       <RoboflowSearchModal
         isOpen={isRoboflowSearchModalOpen}
         onClose={() => setIsRoboflowSearchModalOpen(false)}
-        onModelsFound={handleRoboflowModelsFound}
-        initialKeywords={modelViewStore.refinedKeywords}
+        onResults={handleRoboflowModelsFound}
+        searchKeywords={modelViewStore.refinedKeywords}
       />
     </div>
   )

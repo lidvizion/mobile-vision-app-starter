@@ -55,55 +55,23 @@ def extract_percentage(text: str) -> Optional[str]:
 
 def extract_api_endpoint(page) -> Optional[str]:
     """Extract API endpoint with multiple strategies"""
-    
-    # Strategy 1: Look for input field with API URL
-    for selector in ["input[value*='https://detect.roboflow.com']", 
-                    "input[value*='https://classify.roboflow.com']",
-                    "input[value*='https://segment.roboflow.com']",
-                    "input[value*='roboflow.com']"]:
+    # Strategy 1: Look for input field
+    for selector in ["input[value*='https://detect.roboflow.com']", "input[value*='roboflow.com']"]:
         el = page.query_selector(selector)
         if el:
             val = el.get_attribute("value")
-            if val and "roboflow.com" in val and ("detect" in val or "classify" in val or "segment" in val):
+            if val and "roboflow.com" in val:
                 return val
     
-    # Strategy 2: Look in code blocks and pre tags
-    code_blocks = page.query_selector_all("code, pre, textarea")
+    # Strategy 2: Look in code blocks
+    code_blocks = page.query_selector_all("code, pre")
     for block in code_blocks:
-        try:
-            text = block.inner_text()
-            if not text:
-                continue
-            # Look for API endpoint pattern
-            match = re.search(r'https://(detect|classify|segment)\.roboflow\.com/[^\s\'"<>]+', text)
+        text = block.inner_text()
+        if "detect.roboflow.com" in text or "classify.roboflow.com" in text:
+            # Extract URL from text
+            match = re.search(r'https://[^\s\'"<>]+roboflow\.com[^\s\'"<>]*', text)
             if match:
                 return match.group(0)
-        except:
-            continue
-    
-    # Strategy 3: Look for the endpoint in the page HTML
-    try:
-        html = page.content()
-        match = re.search(r'https://(detect|classify|segment)\.roboflow\.com/[^\s\'"<>]+', html)
-        if match:
-            return match.group(0)
-    except:
-        pass
-    
-    # Strategy 4: Construct from workspace/project if we can find version info
-    try:
-        url_parts = page.url.split('/')
-        if len(url_parts) >= 2:
-            workspace = url_parts[-2]
-            project = url_parts[-1]
-            # Look for version number in page
-            page_text = page.inner_text("body")
-            version_match = re.search(r'Version\s+(\d+)', page_text)
-            if version_match:
-                version = version_match.group(1)
-                return f"https://detect.roboflow.com/{project}/{version}"
-    except:
-        pass
     
     return None
 
@@ -151,32 +119,17 @@ def extract_model_details(page) -> Dict:
     page_text = page.inner_text("body")
     page_html = page.content()
     
-    # Try to click API Docs to reveal endpoint (try multiple selectors)
+    # Try to click API Docs to reveal endpoint
     api_endpoint = None
     try:
-        # Try multiple ways to find and click API Docs
-        api_selectors = [
-            "a:has-text('API Docs')",
-            "button:has-text('API Docs')",
-            "[href*='api'], [href*='API']",
-            "text=API Docs"
-        ]
-        
-        for selector in api_selectors:
-            try:
-                api_link = page.query_selector(selector)
-                if api_link and api_link.is_visible():
-                    api_link.click()
-                    page.wait_for_timeout(3000)  # Wait longer for API content to load
-                    print(f"      → Clicked API Docs")
-                    break
-            except:
-                continue
-        
-        # Update page text after clicking
-        page_text = page.inner_text("body")
-        page_html = page.content()
-    except Exception as e:
+        api_docs_link = page.query_selector("a:has-text('API Docs'), button:has-text('API Docs')")
+        if api_docs_link:
+            api_docs_link.click()
+            page.wait_for_timeout(2000)
+            # Update page text after clicking
+            page_text = page.inner_text("body")
+            page_html = page.content()
+    except:
         pass
     
     # Extract title

@@ -120,16 +120,15 @@ export async function POST(request: NextRequest) {
     console.log(`✅ Found ${models.length} models using Roboflow search agent`)
 
     // Normalize models to ModelMetadata format
-    const normalizedModels = models.map((model: any) => ({
-      id: model.model_identifier || `roboflow-${Date.now()}`,
-      name: model.model_name || 'Roboflow Model',
-      source: 'roboflow',
+    const normalizedModels = models.map((model: any, index: number) => ({
+      id: model.model_identifier || `roboflow-${Date.now()}-${index}`,
+      name: model.project_title || model.model_name || 'Roboflow Model',
+      source: 'roboflow' as const,
       description: model.description || `Roboflow model for ${searchQuery}`,
-      url: model.model_url || 'https://universe.roboflow.com',
-      modelUrl: model.model_url || 'https://universe.roboflow.com',
-      task: 'detection', // Assuming detection for Roboflow Universe models
+      modelUrl: model.url || model.model_url || 'https://universe.roboflow.com',
+      task: model.project_type?.toLowerCase().replace(' ', '-') || 'object-detection',
       author: model.author || 'Roboflow Universe',
-      downloads: 0, // Roboflow Universe doesn't always provide downloads directly
+      downloads: 0, // Roboflow Universe doesn't provide downloads directly
       tags: model.tags || keywords,
       classes: model.classes || [],
       frameworks: ['Roboflow'],
@@ -137,11 +136,31 @@ export async function POST(request: NextRequest) {
       supportsInference: true,
       inferenceEndpoint: model.api_endpoint || model.model_url,
       apiKey: process.env.ROBOFLOW_API_KEY,
-      isKnownWorking: true, // Assume working if found by agent
-      mAP: model.mAP,
-      precision: model.precision,
-      recall: model.recall,
-      trainingImages: model.training_images,
+      // Model metrics
+      metrics: {
+        mAP: parseFloat(model.mAP?.replace('%', '') || '0'),
+        precision: parseFloat(model.precision?.replace('%', '') || '0'),
+        recall: parseFloat(model.recall?.replace('%', '') || '0'),
+      },
+      // Training data info
+      trainingImages: parseInt(model.training_images || '0'),
+      modelId: model.model_identifier,
+      // Model type information
+      modelType: 'custom' as const,
+      modelTypeInfo: {
+        type: 'custom' as const,
+        tier: 1 as const,
+        displayLabel: 'Object Detection',
+        description: 'Custom trained object detection model',
+        taskType: 'object-detection' as const,
+        displayFormat: {
+          type: 'bounding-boxes' as const,
+          requiresImage: true,
+          requiresText: false,
+          outputType: 'structured' as const,
+          visualization: 'overlay' as const,
+        }
+      }
     }))
 
     return NextResponse.json({

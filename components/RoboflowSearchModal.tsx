@@ -12,19 +12,18 @@ interface RoboflowSearchModalProps {
   maxModels?: number
 }
 
-interface ModelResult {
-  model_identifier: string
-  model_name: string
-  model_url: string
-  author: string
-  mAP: string
-  precision: string
-  recall: string
-  training_images: string
-  tags: string[]
-  classes: string[]
-  description: string
-  api_endpoint: string
+import { ModelMetadata } from '@/types/models'
+
+interface ModelResult extends ModelMetadata {
+  // Keep backward compatibility with old format
+  model_identifier?: string
+  model_name?: string
+  model_url?: string
+  mAP?: string
+  precision?: string
+  recall?: string
+  training_images?: string
+  api_endpoint?: string
 }
 
 export default function RoboflowSearchModal({ 
@@ -86,17 +85,19 @@ export default function RoboflowSearchModal({
 
   const exportResults = () => {
     const resultsText = searchResults.map((model, index) => 
-      `${index + 1}. ${model.model_name}
+      `${index + 1}. ${model.name}
    Author: ${model.author}
-   mAP: ${model.mAP}
-   Precision: ${model.precision}
-   Recall: ${model.recall}
-   Training Images: ${model.training_images}
-   URL: ${model.model_url}
-   API Endpoint: ${model.api_endpoint}
+   mAP: ${model.metrics?.mAP?.toFixed(1) || 'N/A'}%
+   Precision: ${model.metrics?.precision?.toFixed(1) || 'N/A'}%
+   Recall: ${model.metrics?.recall?.toFixed(1) || 'N/A'}%
+   Training Images: ${model.trainingImages?.toLocaleString() || 'N/A'}
+   URL: ${model.modelUrl}
+   API Endpoint: ${model.inferenceEndpoint || 'N/A'}
    Tags: ${model.tags.join(', ')}
-   Classes: ${model.classes.join(', ')}
+   Classes: ${model.classes?.join(', ') || 'N/A'}
    Description: ${model.description}
+   Task: ${model.task}
+   Frameworks: ${model.frameworks.join(', ')}
 `
     ).join('\n')
 
@@ -200,11 +201,15 @@ export default function RoboflowSearchModal({
                     <h4 className="font-medium">Found Models ({searchResults.length})</h4>
                     {searchResults.map((model, index) => (
                       <div key={index} className="bg-white p-3 rounded border">
-                        <div className="font-medium text-sm">{model.model_name}</div>
+                        <div className="font-medium text-sm">{model.name}</div>
                         <div className="text-xs text-gray-500 mb-1">by {model.author}</div>
                         <div className="text-xs space-y-1">
-                          <div>mAP: {model.mAP}</div>
-                          <div>Training Images: {model.training_images}</div>
+                          {model.metrics?.mAP && (
+                            <div>mAP: {model.metrics.mAP.toFixed(1)}%</div>
+                          )}
+                          {model.trainingImages && (
+                            <div>Training Images: {model.trainingImages.toLocaleString()}</div>
+                          )}
                           <div className="flex items-center space-x-1">
                             <span>Tags:</span>
                             <div className="flex flex-wrap gap-1">
@@ -215,9 +220,24 @@ export default function RoboflowSearchModal({
                               ))}
                             </div>
                           </div>
+                          {model.classes && model.classes.length > 0 && (
+                            <div className="flex items-center space-x-1">
+                              <span>Classes:</span>
+                              <div className="flex flex-wrap gap-1">
+                                {model.classes.slice(0, 3).map((cls, i) => (
+                                  <span key={i} className="bg-green-100 text-green-800 text-xs px-1 rounded">
+                                    {cls}
+                                  </span>
+                                ))}
+                                {model.classes.length > 3 && (
+                                  <span className="text-xs text-gray-500">+{model.classes.length - 3} more</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <a
-                          href={model.model_url}
+                          href={model.modelUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-blue-600 hover:underline flex items-center mt-1"
