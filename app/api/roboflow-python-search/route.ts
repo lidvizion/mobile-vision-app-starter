@@ -52,7 +52,7 @@ function parsePythonJson(stdout: string): any[] {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { keywords, max_models = 5 } = body
+    const { keywords, max_models = 4 } = body
 
     if (!keywords || !Array.isArray(keywords)) {
       return NextResponse.json(
@@ -61,25 +61,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`🤖 Starting embedded Roboflow search for: ${keywords.join(' ')}`)
+    console.log(`🤖 Starting Roboflow search for: ${keywords.join(' ')}`)
 
-    // Use the regular Roboflow search agent (embedded browser is handled by frontend modal)
     const searchQuery = keywords.join(' ')
     const venvPython = path.join(process.cwd(), 'venv', 'bin', 'python')
     const pythonScript = path.join(process.cwd(), 'roboflow_search_agent.py')
     
-    console.log(`🤖 Using Roboflow search agent for: ${searchQuery}`)
+    console.log(`🐍 Python path: ${venvPython}`)
+    console.log(`📜 Script path: ${pythonScript}`)
 
     const pythonProcess = spawn(venvPython, [pythonScript], {
       env: {
         ...process.env,
         SEARCH_KEYWORDS: searchQuery,
-        MAX_MODELS: max_models.toString(),
-        // Set environment for embedded browser
-        DISPLAY: process.env.DISPLAY || ':0',
-        // Prevent new window opening
-        BROWSER_EMBEDDED: 'true'
+        MAX_PROJECTS: max_models.toString(),
+        OUTPUT_JSON: 'true',  // 🔑 Key fix: Enable JSON stdout mode
+        HEADLESS: 'true',
+        // Ensure virtual environment is used
+        VIRTUAL_ENV: path.join(process.cwd(), 'venv'),
+        PATH: `${path.join(process.cwd(), 'venv', 'bin')}:${process.env.PATH}`
       },
+      cwd: process.cwd()
     })
 
     let stdout = ''
@@ -95,6 +97,12 @@ export async function POST(request: NextRequest) {
 
     const exitCode = await new Promise<number>((resolve) => {
       pythonProcess.on('close', (code) => resolve(code ?? 0))
+      
+      // Add timeout to prevent hanging
+      setTimeout(() => {
+        pythonProcess.kill('SIGTERM')
+        resolve(1) // Exit with error code
+      }, 120000) // 30 second timeout
     })
 
     if (exitCode !== 0) {
@@ -114,7 +122,14 @@ export async function POST(request: NextRequest) {
     
     if (models.length === 0) {
       console.log('⚠️ No models found in Python output')
-      console.log('Raw output preview:', stdout.slice(0, 200))
+      console.log('Raw output:', stdout.slice(0, 500))
+      return NextResponse.json({
+        success: true,
+        models: [],
+        search_method: 'roboflow_agent',
+        total_found: 0,
+        message: 'No models found matching your search criteria'
+      })
     }
 
     console.log(`✅ Found ${models.length} models using Roboflow search agent`)
@@ -128,7 +143,7 @@ export async function POST(request: NextRequest) {
       modelUrl: model.url || model.model_url || 'https://universe.roboflow.com',
       task: model.project_type?.toLowerCase().replace(' ', '-') || 'object-detection',
       author: model.author || 'Roboflow Universe',
-      downloads: 0, // Roboflow Universe doesn't provide downloads directly
+      downloads: 0,
       tags: model.tags || keywords,
       classes: model.classes || [],
       frameworks: ['Roboflow'],
@@ -171,7 +186,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('❌ Roboflow embedded search failed:', error)
+    console.error('❌ Roboflow search failed:', error)
     return NextResponse.json(
       { 
         error: 'Search failed', 

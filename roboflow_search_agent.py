@@ -329,7 +329,7 @@ def extract_model_details(page) -> Dict:
     
     return data
 
-def open_model_with_retry(context, url) -> Optional[Dict]:
+def open_model_with_retry(context, url, quiet_mode=False) -> Optional[Dict]:
     """Try opening a model page with retries"""
     for attempt in range(1, RETRY_COUNT + 1):
         model_page = context.new_page()
@@ -340,7 +340,8 @@ def open_model_with_retry(context, url) -> Optional[Dict]:
             model_page.close()
             return data
         except Exception as e:
-            print(f"⚠️ Attempt {attempt} failed: {str(e)[:50]}")
+            if not quiet_mode:
+                print(f"⚠️ Attempt {attempt} failed: {str(e)[:50]}")
             model_page.close()
             if attempt < RETRY_COUNT:
                 time.sleep(RETRY_WAIT)
@@ -350,15 +351,50 @@ def open_model_with_retry(context, url) -> Optional[Dict]:
 def search_roboflow_models(keywords: str, max_projects: int = 10, headless=True) -> List[Dict]:
     playwright, browser, context, page = connect_browser(headless=headless)
     models = []
+    
+    # Check if we should suppress logs (API mode)
+    quiet_mode = os.getenv("OUTPUT_JSON", "false").lower() == "true"
 
     try:
-        print("🌐 Connecting to Roboflow Universe…")
+        if not quiet_mode:
+            print("🌐 Connecting to Roboflow Universe…")
+            print(f"🔗 {BASE_URL}/search?q={keywords.replace(' ', '+')}")
+        
         search_url = f"{BASE_URL}/search?q={keywords.replace(' ', '+')}"
-        print(f"🔗 {search_url}")
         
         page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
-        print("✅ Page loaded")
+        if not quiet_mode:
+            print("✅ Page loaded")
         page.wait_for_timeout(5000)
+        
+        # Click "Has a Model" filter to only show projects with trained models
+        try:
+            if not quiet_mode:
+                print("🔘 Applying 'Has a Model' filter...")
+            
+            # Look for the "Has a Model" button/checkbox
+            has_model_selectors = [
+                "button:has-text('Has a Model')",
+                "[data-filter='has-model']",
+                "input[type='checkbox'][value*='model']",
+                "label:has-text('Has a Model')",
+                "text=Has a Model"
+            ]
+            
+            for selector in has_model_selectors:
+                try:
+                    filter_btn = page.query_selector(selector)
+                    if filter_btn and filter_btn.is_visible():
+                        filter_btn.click()
+                        page.wait_for_timeout(3000)  # Wait for results to update
+                        if not quiet_mode:
+                            print("   ✓ Filter applied")
+                        break
+                except:
+                    continue
+        except Exception as e:
+            if not quiet_mode:
+                print(f"   ⚠️ Could not apply filter: {str(e)[:50]}")
         
         # Wait for content
         try:
@@ -367,7 +403,8 @@ def search_roboflow_models(keywords: str, max_projects: int = 10, headless=True)
             pass
         
         # Scroll
-        print("📜 Scrolling...")
+        if not quiet_mode:
+            print("📜 Scrolling...")
         scroll_page(page, max_scrolls=RESULT_SCROLLS)
         
         # Extract URLs
@@ -394,20 +431,23 @@ def search_roboflow_models(keywords: str, max_projects: int = 10, headless=True)
                         urls.append(f"{BASE_URL}{project_path}")
             except:
                 continue
-        
+
         urls = urls[:max_projects]
-        print(f"🔹 Found {len(urls)} projects, processing...")
+        if not quiet_mode:
+            print(f"🔹 Found {len(urls)} projects, processing...")
         
         # Extract models
         for idx, url in enumerate(urls, 1):
-            print(f"\n➡️ [{idx}/{len(urls)}] {url.split('/')[-1]}")
-            model_data = open_model_with_retry(context, url)
+            if not quiet_mode:
+                print(f"\n➡️ [{idx}/{len(urls)}] {url.split('/')[-1]}")
+            model_data = open_model_with_retry(context, url, quiet_mode=quiet_mode)
             if model_data:
                 models.append(model_data)
         
-        print(f"\n✅ Extracted {len(models)} models")
+        if not quiet_mode:
+            print(f"\n✅ Extracted {len(models)} models")
         return models
-    
+
     finally:
         browser.close()
         playwright.stop()
@@ -429,29 +469,41 @@ def save_models_to_json(models: List[Dict], keywords: str):
 # ---------- CLI ----------
 def main():
     keywords = os.getenv("SEARCH_KEYWORDS", "basketball detection")
-    max_projects = int(os.getenv("MAX_PROJECTS", "10"))
+    max_projects = int(os.getenv("MAX_PROJECTS", "6"))
     headless = os.getenv("HEADLESS", "true").lower() == "true"
+    
+    # Check if being called from API (should output JSON to stdout)
+    output_json = os.getenv("OUTPUT_JSON", "false").lower() == "true"
 
-    print("=" * 60)
-    print("🏀 ROBOFLOW UNIVERSE SEARCH")
-    print("=" * 60)
-    print(f"Keywords: {keywords} | Max: {max_projects} | Headless: {headless}")
-    print("=" * 60 + "\n")
+    if not output_json:
+        print("=" * 60)
+        print("🏀 ROBOFLOW UNIVERSE SEARCH")
+        print("=" * 60)
+        print(f"Keywords: {keywords} | Max: {max_projects} | Headless: {headless}")
+        print("=" * 60 + "\n")
 
     results = search_roboflow_models(keywords, max_projects=max_projects, headless=headless)
     
     if results:
-        filename = save_models_to_json(results, keywords)
-        print(f"\n🎉 SUCCESS! Saved {len(results)} models")
-        
-        # Show summary
-        with_models = sum(1 for r in results if r.get('has_model'))
-        with_metrics = sum(1 for r in results if r.get('mAP'))
-        print(f"\n📊 Summary:")
-        print(f"   • {with_models} projects with trained models")
-        print(f"   • {with_metrics} projects with performance metrics")
+        if output_json:
+            # Output JSON to stdout for API consumption
+            print(json.dumps(results, ensure_ascii=False))
+        else:
+            # Normal CLI mode - save to file and show summary
+            #filename = save_models_to_json(results, keywords)
+            print(f"\n🎉 SUCCESS! Saved {len(results)} models")
+            
+            # Show summary
+            with_models = sum(1 for r in results if r.get('has_model'))
+            with_metrics = sum(1 for r in results if r.get('mAP'))
+            print(f"\n📊 Summary:")
+            print(f"   • {with_models} projects with trained models")
+            print(f"   • {with_metrics} projects with performance metrics")
     else:
-        print("\n❌ No data collected")
+        if output_json:
+            print("[]")
+        else:
+            print("\n❌ No data collected")
 
 if __name__ == "__main__":
     main()

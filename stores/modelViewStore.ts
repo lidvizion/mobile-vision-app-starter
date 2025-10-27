@@ -24,7 +24,7 @@ class ModelViewStore {
 
   // UI state
   showAllResults: boolean = false
-  activeFilter: string = 'all'
+  activeFilters: string[] = ['all']
   
   // Pagination state
   currentPage: number = 1
@@ -87,7 +87,38 @@ class ModelViewStore {
   }
 
   setActiveFilter(filter: string) {
-    this.activeFilter = filter
+    if (filter === 'all') {
+      // Toggle 'all' filter
+      if (this.activeFilters.includes('all')) {
+        // If 'all' is selected, remove it and keep other filters
+        this.activeFilters = this.activeFilters.filter(f => f !== 'all')
+        // If no other filters, add 'all' back
+        if (this.activeFilters.length === 0) {
+          this.activeFilters = ['all']
+        }
+      } else {
+        // If 'all' is not selected, add it
+        this.activeFilters = [...this.activeFilters, 'all']
+      }
+    } else {
+      // For other filters, toggle them normally
+      if (this.activeFilters.includes(filter)) {
+        // Remove filter if already selected
+        this.activeFilters = this.activeFilters.filter(f => f !== filter)
+        // If no filters left, default to 'all'
+        if (this.activeFilters.length === 0) {
+          this.activeFilters = ['all']
+        }
+      } else {
+        // Add new filter (remove 'all' if it exists)
+        const newFilters = this.activeFilters.filter(f => f !== 'all')
+        this.activeFilters = [...newFilters, filter]
+      }
+    }
+  }
+
+  isFilterActive(filter: string) {
+    return this.activeFilters.includes(filter)
   }
   
   // Pagination actions
@@ -113,17 +144,23 @@ class ModelViewStore {
 
   // Computed values
   get filteredModels() {
-    if (this.activeFilter === 'all') {
+    if (this.activeFilters.includes('all')) {
       return this.modelList
     }
     return this.modelList.filter(model => 
-      model.task.includes(this.activeFilter)
+      this.activeFilters.some(filter => {
+        // Normalize task names for comparison
+        const normalizedTask = model.task === 'object-detection' ? 'detection' : model.task
+        return normalizedTask.includes(filter) || model.task.includes(filter)
+      })
     )
   }
 
   get displayedModels() {
-    // Return all models from current page (backend handles pagination)
-    return this.filteredModels
+    // Client-side pagination: slice the filtered models based on current page
+    const startIndex = (this.currentPage - 1) * this.pageSize
+    const endIndex = startIndex + this.pageSize
+    return this.filteredModels.slice(startIndex, endIndex)
   }
 
   get hasMoreResults() {
@@ -132,6 +169,13 @@ class ModelViewStore {
 
   get remainingCount() {
     return Math.max(0, this.totalResults - (this.currentPage * this.pageSize))
+  }
+  
+  // Update total pages based on loaded models for client-side pagination
+  updatePaginationFromLoadedModels() {
+    const totalLoadedModels = this.filteredModels.length
+    this.totalPages = Math.ceil(totalLoadedModels / this.pageSize)
+    this.totalResults = totalLoadedModels
   }
 
   // Reset actions
@@ -147,7 +191,7 @@ class ModelViewStore {
     this.modelList = []
     this.totalResults = 0
     this.showAllResults = false
-    this.activeFilter = 'all'
+    this.activeFilters = ['all']
     this.searchError = null
     this.currentPage = 1
     this.totalPages = 1

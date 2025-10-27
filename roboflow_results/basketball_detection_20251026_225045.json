@@ -1,0 +1,238 @@
+[
+  {
+    "project_title": "Models",
+    "url": "https://universe.roboflow.com/basketball-dxal0/basketball-detection-t4nif/model/",
+    "author": "msfad saf",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "293",
+    "tags": [
+      "Object Detection",
+      "yolov9",
+      "yolov9",
+      "yolov8"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": null,
+    "model_identifier": "model/"
+  },
+  {
+    "project_title": "How to Use the Basketball Detection Detection API",
+    "url": "https://universe.roboflow.com/hobbys-dmlrg/basketball-detection-1mtj3/model/1",
+    "author": "dronearoha",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": "46.0%",
+    "precision": "94.7%",
+    "recall": "42.0%",
+    "training_images": "4674",
+    "tags": [
+      "Object Detection",
+      "yolov9"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": null,
+    "model_identifier": "model/1"
+  },
+  {
+    "project_title": "Models",
+    "url": "https://universe.roboflow.com/swetha-saseendran/basketball-oznoj/model/",
+    "author": "ARaround",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "50",
+    "tags": [
+      "Object Detection",
+      "yolov11",
+      "yolov11"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": null,
+    "model_identifier": "model/"
+  },
+  {
+    "project_title": "basketball Computer Vision Model",
+    "url": "https://universe.roboflow.com/034-ganesh-kumar-m-v-cs-r2lwe/basketball-lhqoe/model/1",
+    "author": "Robotics",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "3 years ago",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "300",
+    "tags": [
+      "Object Detection"
+    ],
+    "classes": [
+      "asketball",
+      "oop",
+      "ry",
+      "his",
+      "odel",
+      "rop",
+      "an",
+      "image",
+      "browse"
+    ],
+    "class_count": "2",
+    "api_endpoint": null,
+    "model_identifier": "model/1"
+  },
+  {
+    "project_title": "basketball Computer Vision Dataset",
+    "url": "https://universe.roboflow.com/basketball-u5lsh/basketball-sh9gz/model/",
+    "author": "New Workspace",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "a year ago",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "44",
+    "tags": [
+      "Object Detection",
+      "yolov12",
+      "yolov12",
+      "yolov11"
+    ],
+    "classes": [
+      "description",
+      "this",
+      "project",
+      "has",
+      "not",
+      "been",
+      "published",
+      "ite",
+      "his",
+      "roject"
+    ],
+    "class_count": "0",
+    "api_endpoint": null,
+    "model_identifier": "model/"
+  },
+  {
+    "project_title": "basketball Computer Vision Dataset",
+    "url": "https://universe.roboflow.com/zhb-52r75/basketball-xhdz3/model/",
+    "author": "Freddy",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "2 years ago",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "399",
+    "tags": [
+      "Object Detection",
+      "yolov11",
+      "yolov11"
+    ],
+    "classes": [
+      "ball",
+      "made",
+      "person",
+      "description",
+      "this",
+      "project",
+      "has",
+      "not",
+      "been",
+      "published"
+    ],
+    "class_count": "3",
+    "api_endpoint": null,
+    "model_identifier": "model/"
+  },
+  {
+    "project_title": "BasketBall",
+    "url": "https://universe.roboflow.com/robotics-j2du8/basketball-0dp0m/model/1",
+    "author": "0",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "300",
+    "tags": [
+      "Object Detection"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": null,
+    "model_identifier": "model/1"
+  },
+  {
+    "project_title": "Models",
+    "url": "https://universe.roboflow.com/basketball-oatw2/shoot-detection-basketball-83v91/model/",
+    "author": "KTAivle",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "77",
+    "tags": [
+      "Object Detection",
+      "yolov5",
+      "yolov11",
+      "yolov11"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": null,
+    "model_identifier": "model/"
+  },
+  {
+    "project_title": "How to Use the basketball detection Detection API",
+    "url": "https://universe.roboflow.com/hotshot/basketball-detection-tqwcs/model/5",
+    "author": "Videocites",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": "87.4%",
+    "precision": "93.3%",
+    "recall": "80.0%",
+    "training_images": "2997",
+    "tags": [
+      "Object Detection"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": null,
+    "model_identifier": "model/5"
+  },
+  {
+    "project_title": "How to Use the Basketball detection Detection API",
+    "url": "https://universe.roboflow.com/robot-hwacq/basketball-detection-dsm0h/model/1",
+    "author": "Marmara University",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": "94.9%",
+    "precision": "96.1%",
+    "recall": "84.0%",
+    "training_images": "2595",
+    "tags": [
+      "Object Detection"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": null,
+    "model_identifier": "model/1"
+  }
+]

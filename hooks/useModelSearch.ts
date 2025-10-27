@@ -87,11 +87,12 @@ export function useModelSearch() {
     onSuccess: (data) => {
       // Update MobX store with search results
       modelViewStore.setModelList(data.models)
-      modelViewStore.setTotalResults(data.total)
-      modelViewStore.setCurrentPage(data.pagination.page)
-      modelViewStore.setTotalPages(data.pagination.totalPages)
+      modelViewStore.setCurrentPage(1) // Always start at page 1 for new search
       modelViewStore.setIsSearching(false)
       modelViewStore.setSearchError(null)
+      
+      // Update pagination based on loaded models for client-side pagination
+      modelViewStore.updatePaginationFromLoadedModels()
     },
     onError: (error: Error) => {
       console.error('Model search error:', error)

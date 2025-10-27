@@ -478,8 +478,14 @@ async function searchRoboflowModelsPython(keywords: string[], taskType: string):
       env: {
         ...process.env,
         SEARCH_KEYWORDS: searchQuery,
-        MAX_MODELS: "5",
+        MAX_PROJECTS: "4",
+        OUTPUT_JSON: 'true',  // 🔑 Key fix: Enable JSON stdout mode
+        HEADLESS: 'true',
+        // Ensure virtual environment is used
+        VIRTUAL_ENV: path.join(process.cwd(), 'venv'),
+        PATH: `${path.join(process.cwd(), 'venv', 'bin')}:${process.env.PATH}`
       },
+      cwd: process.cwd()  // 🔑 CRITICAL: Set working directory
     });
 
     let stdout = "";
@@ -531,13 +537,24 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
     const modelData = JSON.parse(jsonString);
     console.log(`✅ Parsed ${modelData.length} models from Python output`);
 
-    return modelData.map((model: any) => ({
-          id: model.model_identifier || `roboflow-${Date.now()}`,
-      name: model.model_name || "Roboflow Model",
+    return modelData.map((model: any, index: number) => {
+      // Extract better name from URL if project_title is generic
+      let modelName = model.project_title || model.model_name || "Roboflow Model";
+      if (modelName === "Models" || modelName === "N/A" || !modelName) {
+        const url = model.url || model.model_url || "";
+        const urlMatch = url.match(/\/universe\.roboflow\.com\/[^\/]+\/([^\/]+)\//);
+        if (urlMatch && urlMatch[1]) {
+          modelName = urlMatch[1].replace(/-/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+        }
+      }
+      
+      return {
+        id: model.model_identifier || `roboflow-${Date.now()}-${index}`,
+        name: modelName,
       source: "roboflow",
           description: model.description || `Roboflow model for ${searchQuery}`,
-      url: model.model_url || "https://universe.roboflow.com",
-      modelUrl: model.model_url || "https://universe.roboflow.com",
+        url: model.url || model.model_url || "https://universe.roboflow.com",
+        modelUrl: model.url || model.model_url || "https://universe.roboflow.com",
           task: taskType,
       author: model.author || "Roboflow Universe",
           downloads: 0,
@@ -547,13 +564,14 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
       platforms: ["web", "mobile"],
           supportsInference: true,
           inferenceEndpoint: model.api_endpoint || model.model_url,
-      apiKey: process.env.ROBOFLOW_API_KEY,
+        apiKey: typeof process !== 'undefined' && process.env ? process.env.ROBOFLOW_API_KEY : undefined,
           isKnownWorking: true,
           mAP: model.mAP,
           precision: model.precision,
           recall: model.recall,
       trainingImages: model.training_images,
-    }));
+      };
+    });
   } catch (e) {
     console.error("❌ Failed to parse Python JSON:", e);
     console.log("Raw JSON string preview:", jsonString.slice(0, 500));
@@ -571,7 +589,7 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
           try {
             const model = JSON.parse(objectStr);
             // Only include if it has required fields
-            if (model.model_identifier && model.model_name) {
+            if (model.model_identifier || model.model_name) {
               validModels.push(model);
             }
           } catch (objError) {
@@ -582,13 +600,13 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
         if (validModels.length > 0) {
           console.log(`✅ Repaired JSON: extracted ${validModels.length} valid models`);
           
-          return validModels.map((model: any) => ({
-            id: model.model_identifier || `roboflow-${Date.now()}`,
-            name: model.model_name || "Roboflow Model",
+          return validModels.map((model: any, index: number) => ({
+            id: model.model_identifier || `roboflow-${Date.now()}-${index}`,
+            name: model.model_name || model.project_title || "Roboflow Model",
             source: "roboflow",
             description: model.description || `Roboflow model for ${searchQuery}`,
-            url: model.model_url || "https://universe.roboflow.com",
-            modelUrl: model.model_url || "https://universe.roboflow.com",
+            url: model.model_url || model.url || "https://universe.roboflow.com",
+            modelUrl: model.model_url || model.url || "https://universe.roboflow.com",
             task: taskType,
             author: model.author || "Roboflow Universe",
             downloads: 0,
@@ -598,7 +616,7 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
             platforms: ["web", "mobile"],
             supportsInference: true,
             inferenceEndpoint: model.api_endpoint || model.model_url,
-            apiKey: process.env.ROBOFLOW_API_KEY,
+            apiKey: typeof process !== 'undefined' && process.env ? process.env.ROBOFLOW_API_KEY : undefined,
             isKnownWorking: true,
             mAP: model.mAP,
             precision: model.precision,
@@ -617,8 +635,6 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
     }
   }
 }
-
-
 
 /**
  * Filter out models that we know have failed in the past
@@ -877,21 +893,36 @@ function applyDomainSpecificSelection(models: any[], keywords: string[], taskTyp
     return true
   })
 }
-
 async function searchHFModels(
   keywords: string[], 
   taskType?: string,
-  filterForInference: boolean = true // New parameter: filter for inference-ready models
+  filterForInference: boolean = true
 ): Promise<NormalizedModel[]> {
   try {
-    // Simple search query construction
-    const searchQuery = keywords.slice(0, 2).join('+') // Use first 2 keywords
+    // Build search query with up to 3 keywords for better results
+    const searchQuery = keywords.slice(0, 3).join('+')
     
-    const url = `https://huggingface.co/api/models?search=${encodeURIComponent(searchQuery)}&sort=downloads&limit=500`
+    // Use filter parameter for better API-level filtering
+    let url = `https://huggingface.co/api/models?search=${encodeURIComponent(searchQuery)}&sort=downloads&limit=500`
     
-    console.log(`🔍 HF Search with router endpoint:`, {
+    // Add pipeline_tag filter if we have a specific task type
+    const cvPipelineTags = [
+      'image-classification',
+      'object-detection',
+      'image-segmentation',
+      'image-to-text',
+      'zero-shot-image-classification',
+      'zero-shot-object-detection',
+      'depth-estimation',
+      'image-feature-extraction',
+      'mask-generation',
+      'video-classification'
+    ]
+    
+    console.log(`🔍 HF Search:`, {
       keywords,
       searchQuery,
+      taskType,
       url
     })
     
@@ -899,13 +930,12 @@ async function searchHFModels(
       'Content-Type': 'application/json'
     }
     
-    // Authorization is optional - API works without token but has rate limits
     const apiKey = process.env.HUGGINGFACE_API_KEY
     if (apiKey) {
       headers['Authorization'] = `Bearer ${apiKey}`
     }
 
-    console.log('🔍 Searching Hugging Face with router endpoint:', searchQuery)
+    console.log('🔍 Searching Hugging Face models:', searchQuery)
     const response = await fetch(url, { headers })
     
     if (!response.ok) {
@@ -922,26 +952,29 @@ async function searchHFModels(
 
     console.log(`✅ Found ${data.length} total models on Hugging Face`)
 
-    // Log some sample models for debugging
-    const sampleModels = data.slice(0, 10).map(m => ({
+    // Log sample for debugging
+    const sampleModels = data.slice(0, 5).map(m => ({
       id: m.id,
       downloads: m.downloads,
-      inference: m.inference,
-      library_name: m.library_name,
-      pipeline_tag: m.pipeline_tag
+      pipeline_tag: m.pipeline_tag,
+      library_name: m.library_name
     }))
-    console.log(`📊 Sample models (first 10):`, sampleModels)
-    
-    // Count models by inference status
-    const inferenceStats = data.reduce((acc, model) => {
-      const status = model.inference || 'undefined'
-      acc[status] = (acc[status] || 0) + 1
-      return acc
-    }, {})
-    console.log(`📈 Inference status breakdown:`, inferenceStats)
+    console.log(`📊 Sample models:`, sampleModels)
 
-    // Define known working models for reference
-    const verifiedWorkingModels = [
+    // Known failed models to exclude
+    const knownFailedModels = [
+      'asadimtiazmalik/my_traffic_dataset_model',
+      'rohansaraswat/TrafficSignsDetection',
+      'taufeeq28/vehicles',
+      'Charansaiponnada/blip-traffic-rr',
+      'Charansaiponnada/blip-indian-traffic-captioning',
+      'Charansaiponnada/vijayawada-traffic-accessibility-v2-fixed',
+      'dima806/traffic_sign_detection',
+      'josephlyr/detr-resnet-50_finetuned_road_traffic'
+    ]
+
+    // Critical models that should NEVER be filtered out
+    const criticalModels = [
       'microsoft/resnet-50',
       'microsoft/resnet-18', 
       'microsoft/resnet-152',
@@ -954,335 +987,285 @@ async function searchHFModels(
       'facebook/convnext-tiny-224',
       'facebook/convnext-base-224',
       'openai/clip-vit-base-patch32',
-      'openai/clip-vit-large-patch14',
-      'facebook/detr-resnet-50-panoptic',
-      'facebook/detr-resnet-101-panoptic'
-    ]
-    
-    // Define known failed models to exclude
-    const knownFailedModels = [
-      'asadimtiazmalik/my_traffic_dataset_model',
-      'rohansaraswat/TrafficSignsDetection',
-      'taufeeq28/vehicles',
-      'Charansaiponnada/blip-traffic-rr',
-      'Charansaiponnada/blip-indian-traffic-captioning',
-      'Charansaiponnada/vijayawada-traffic-accessibility-v2-fixed',
-      'dima806/traffic_sign_detection',
-      'josephlyr/detr-resnet-50_finetuned_road_traffic'
+      'openai/clip-vit-large-patch14'
     ]
 
     console.log(`🔍 Starting filtering on ${data.length} models...`)
 
-    const filteredData = data
-      .filter((model: any) => {
+    const filteredData = data.filter((model: any) => {
+      const modelId = model.id.toLowerCase()
+      const modelName = (model.name || '').toLowerCase()
+      const modelDescription = (model.description || '').toLowerCase()
+      const pipelineTag = model.pipeline_tag
+      const tagsArray = model.tags || []
+      
+      // ✅ KEYWORD RELEVANCE FILTERING - Prioritize models matching search query
+      const searchKeywords = keywords.map(k => k.toLowerCase())
+      const hasRelevantKeywords = searchKeywords.some(keyword => 
+        modelId.includes(keyword) || 
+        modelName.includes(keyword) ||
+        modelDescription.includes(keyword) ||
+        tagsArray.some((tag: string) => tag.toLowerCase().includes(keyword))
+      )
+      
+      // If model doesn't match search keywords and is not critical/trusted, lower priority
+      const trustedOrgs = ['microsoft/', 'facebook/', 'meta/', 'google/', 'openai/', 'nvidia/', 'huggingface/']
+      const isRelevantToSearch = hasRelevantKeywords || 
+                                 criticalModels.includes(model.id) ||
+                                 trustedOrgs.some(org => model.id.toLowerCase().startsWith(org))
+      
+      // ✅ ALWAYS INCLUDE CRITICAL MODELS - NO MATTER WHAT
+      if (criticalModels.includes(model.id)) {
+        console.log(`✓ Keeping critical model: ${model.id}`)
+        return true
+      }
+      
         // ✅ EXCLUDE KNOWN FAILED MODELS
         if (knownFailedModels.includes(model.id)) {
-          console.log(`🚫 Excluding known failed model: ${model.id}`)
           return false
         }
         
-        // ✅ EXCLUDE VERY LOW-QUALITY MODELS (relaxed thresholds)
-        const minDownloads = 100 // Lower threshold to allow more models
-        if ((model.downloads || 0) < minDownloads) {
-          
+      // ✅ EXCLUDE INAPPROPRIATE CONTENT
+      const inappropriateTerms = ['nsfw', 'porn', 'adult', 'explicit', 'sexual', 'nude']
+      if (inappropriateTerms.some(term => modelId.includes(term))) {
           return false
         }
         
-        // ✅ EXCLUDE MODELS WITH ZERO LIKES (quality indicator)
-        const minLikes = 1 // Very low threshold to allow more models
-        if ((model.likes || 0) < minLikes) {
-          
+      // ✅ TEXT AND SPEECH MODEL EXCLUSIONS - Only if explicitly text/speech
+      const textSpeechPipelineTags = [
+        'text-classification',
+        'token-classification',
+        'question-answering',
+        'text-generation',
+        'text2text-generation',
+        'fill-mask',
+        'summarization',
+        'translation',
+        'conversational',
+        'text-to-speech',
+        'automatic-speech-recognition',
+        'audio-classification',
+        'audio-to-audio',
+        'voice-activity-detection'
+      ]
+      
+      // Only exclude if pipeline tag is explicitly text/speech
+      if (textSpeechPipelineTags.includes(pipelineTag)) {
           return false
         }
         
-        // ✅ EXCLUDE INAPPROPRIATE CONTENT
-        const modelId = model.id.toLowerCase()
-        const inappropriateTerms = ['nsfw', 'porn', 'adult', 'explicit', 'sexual', 'nude']
-        const hasInappropriateContent = inappropriateTerms.some(term => 
-          modelId.includes(term)
+      // Text/speech patterns - but ONLY if NO vision indicators present
+      const textSpeechPatterns = [
+        'bert', 'gpt-2', 'gpt2', 't5-', 'roberta', 'distilbert', 'xlm-roberta',
+        'deberta', 'bart-', 'pegasus', 'marian', 'mbart', 'blenderbot',
+        'whisper', 'wav2vec', 'hubert', 'opt-', 'bloom-', 'llama'
+      ]
+      
+      // Vision indicators that override text model exclusion
+      const visionIndicators = [
+        'vision', 'visual', 'image', 'vit', 'clip', 'resnet', 'detr',
+        'swin', 'deit', 'beit', 'convnext', 'yolo', 'detection', 'segmentation'
+      ]
+      
+      const hasVisionIndicator = visionIndicators.some(indicator => 
+        modelId.includes(indicator) || 
+        modelName.includes(indicator) ||
+        modelDescription.includes(indicator) ||
+        tagsArray.some((tag: string) => tag.toLowerCase().includes(indicator))
+      )
+      
+      // Only exclude text/speech models if they DON'T have vision indicators
+      if (!hasVisionIndicator) {
+        const isTextSpeechByName = textSpeechPatterns.some(pattern => 
+          modelId.includes(pattern)
         )
         
-        if (hasInappropriateContent) {
+        if (isTextSpeechByName) {
+          return false
+        }
+      }
+      
+      // ✅ COMPUTER VISION MODEL IDENTIFICATION - VERY RELAXED
+      const cvPipelineTags = [
+        'image-classification',
+        'object-detection',
+        'image-segmentation',
+        'image-to-text',
+        'zero-shot-image-classification',
+        'zero-shot-object-detection',
+        'depth-estimation',
+        'image-feature-extraction',
+        'mask-generation',
+        'video-classification',
+        'unconditional-image-generation',
+        'image-to-image',
+        'unknown' // Include unknown pipeline tags - might be CV models
+      ]
+      
+      const hasCVPipelineTag = cvPipelineTags.includes(pipelineTag)
+      
+      // CV architecture keywords - expanded list
+      const cvArchitectures = [
+        'resnet', 'vit', 'detr', 'yolo', 'efficientnet', 'mobilenet',
+        'inception', 'densenet', 'swin', 'convnext', 'deit', 'beit',
+        'segformer', 'maskformer', 'mask2former', 'clip', 'dino',
+        'detectron', 'rcnn', 'retinanet', 'squeezenet', 'alexnet',
+        'vgg', 'googlenet', 'shufflenet', 'nasnet', 'resnext',
+        'efficientnetv2', 'regnet', 'tresnet', 'poolformer'
+      ]
+      
+      // CV task keywords - expanded
+      const cvTaskKeywords = [
+        'detection', 'detect', 'classify', 'classification', 'segment', 'segmentation',
+        'vision', 'visual', 'image', 'photo', 'picture', 'depth',
+        'pose', 'keypoint', 'face', 'object', 'scene', 'recognition',
+        'recognition', 'localization', 'tracking', 'counting', 'estimation'
+      ]
+      
+      // Check tags for CV indicators
+      const hasCVTag = tagsArray.some((tag: string) => {
+        const tagLower = tag.toLowerCase()
+        return cvArchitectures.some(arch => tagLower.includes(arch)) ||
+               cvTaskKeywords.some(keyword => tagLower.includes(keyword)) ||
+               tagLower.includes('image') ||
+               tagLower.includes('vision') ||
+               tagLower.includes('detection') ||
+               tagLower.includes('classification')
+      })
+      
+      const hasCVArchitecture = cvArchitectures.some(arch => modelId.includes(arch))
+      const hasCVTaskKeyword = cvTaskKeywords.some(keyword => 
+        modelId.includes(keyword) || 
+        modelDescription.includes(keyword) ||
+        modelName.includes(keyword)
+      )
+      
+      // Check if model is computer vision related - VERY PERMISSIVE
+      const isComputerVisionModel = hasCVPipelineTag || 
+                                    hasCVArchitecture || 
+                                    hasCVTaskKeyword ||
+                                    hasCVTag ||
+                                    hasVisionIndicator
+      
+      // If not CV and not from a trusted org, exclude
+      const isTrustedOrg = trustedOrgs.some(org => model.id.toLowerCase().startsWith(org))
+      
+      if (!isComputerVisionModel && !isTrustedOrg) {
           return false
         }
         
-        // ✅ COMPUTER VISION FILTERING: Only include CV models for image tasks
-        const hasTransformersLibrary = model.library_name === 'transformers'
-        const hasEndpointsCompatible = (model.tags || []).includes('endpoints_compatible')
+      // ✅ PRIORITIZE RELEVANT MODELS - If model doesn't match search keywords and is not critical/trusted, 
+      // give it lower priority by filtering it out unless it's very high quality
+      if (!isRelevantToSearch && !isTrustedOrg) {
+        // Only keep non-relevant models if they have very high downloads (popular) or are high quality
+        const highDownloads = (model.downloads || 0) > 1000 
+        const highLikes = (model.likes || 0) > 5 
+        const hasInference = Boolean(model.inference || (model.pipeline_tag && model.pipeline_tag !== 'unknown'))
         
-        // ✅ CRITICAL: Only include computer vision models for image processing
-        const pipelineTag = model.pipeline_tag
-        const modelIdLower = model.id.toLowerCase()
-        
-        // ✅ RELAXED VALIDATION: Include models with CV pipeline tags or keywords
-        // For CV tasks, be more inclusive with model selection
-        const hasInferenceSupport = hasTransformersLibrary && 
-                                   (hasEndpointsCompatible || 
-                                    model.inference || 
-                                    model.pipeline_tag === 'object-detection' ||
-                                    model.pipeline_tag === 'image-classification' ||
-                                    model.pipeline_tag === 'image-segmentation' ||
-                                    model.pipeline_tag === 'image-to-text' ||
-                                    model.pipeline_tag === 'zero-shot-image-classification' ||
-                                    model.pipeline_tag === 'zero-shot-object-detection' ||
-                                    // Also include models that have CV keywords in their names
-                                    modelIdLower.includes('detection') ||
-                                    modelIdLower.includes('traffic') ||
-                                    modelIdLower.includes('signal') ||
-                                    modelIdLower.includes('vision') ||
-                                    modelIdLower.includes('image') ||
-                                    modelIdLower.includes('classify') ||
-                                    modelIdLower.includes('object') ||
-                                    modelIdLower.includes('cv') ||
-                                    modelIdLower.includes('yolo') ||
-                                    modelIdLower.includes('resnet') ||
-                                    modelIdLower.includes('detr'))
-        const modelName = (model.model_name || '').toLowerCase()
-        const modelDescription = (model.description || '').toLowerCase()
-        
-        // Check pipeline tag for CV models
-        const hasCVPipelineTag = pipelineTag === 'object-detection' ||
-                                pipelineTag === 'image-classification' ||
-                                pipelineTag === 'image-segmentation' ||
-                                pipelineTag === 'image-to-text' ||
-                                pipelineTag === 'zero-shot-image-classification' ||
-                                pipelineTag === 'zero-shot-object-detection'
-        
-        // Check model name/description for CV keywords (fallback for models without proper pipeline tags)
-        const hasCVKeywords = modelIdLower.includes('resnet') ||
-                             modelIdLower.includes('detr') ||
-                             modelIdLower.includes('yolo') ||
-                             modelIdLower.includes('vit') ||
-                             modelIdLower.includes('efficientnet') ||
-                             modelIdLower.includes('mobilenet') ||
-                             modelIdLower.includes('inception') ||
-                             modelIdLower.includes('densenet') ||
-                             modelIdLower.includes('swin') ||
-                             modelIdLower.includes('convnext') ||
-                             modelIdLower.includes('segmentation') ||
-                             modelIdLower.includes('segment') ||
-                             modelIdLower.includes('mask') ||
-                             modelIdLower.includes('unet') ||
-                             modelIdLower.includes('deeplab') ||
-                             modelName.includes('vision') ||
-                             modelName.includes('image') ||
-                             modelName.includes('detection') ||
-                             modelName.includes('classification') ||
-                             modelName.includes('segmentation') ||
-                             modelName.includes('segment') ||
-                             modelDescription.includes('vision') ||
-                             modelDescription.includes('image') ||
-                             modelDescription.includes('detection') ||
-                             modelDescription.includes('classification') ||
-                             modelDescription.includes('segmentation') ||
-                             modelDescription.includes('segment')
-        
-        const isComputerVisionModel = hasCVPipelineTag || hasCVKeywords
-        
-        // ✅ EXCLUDE TEXT-BASED AND SPEECH MODELS: Don't include text/speech models for image tasks
-        const isTextOrSpeechModel = pipelineTag === 'text-classification' ||
-                                   pipelineTag === 'question-answering' ||
-                                   pipelineTag === 'text-generation' ||
-                                   pipelineTag === 'token-classification' ||
-                                   pipelineTag === 'text2text-generation' ||
-                                   pipelineTag === 'fill-mask' ||
-                                   pipelineTag === 'summarization' ||
-                                   pipelineTag === 'translation' ||
-                                   pipelineTag === 'conversational' ||
-                                   pipelineTag === 'feature-extraction' ||
-                                   pipelineTag === 'text-to-speech' ||
-                                   pipelineTag === 'automatic-speech-recognition' ||
-                                   // Additional text model exclusions based on model names
-                                   modelIdLower.includes('bert') ||
-                                   modelIdLower.includes('gpt') ||
-                                   modelIdLower.includes('t5') ||
-                                   modelIdLower.includes('roberta') ||
-                                   modelIdLower.includes('distilbert') ||
-                                   modelIdLower.includes('xlm') ||
-                                   modelIdLower.includes('electra') ||
-                                   modelIdLower.includes('albert') ||
-                                   modelIdLower.includes('deberta') ||
-                                   modelIdLower.includes('bart') ||
-                                   modelIdLower.includes('pegasus') ||
-                                   modelIdLower.includes('marian') ||
-                                   modelIdLower.includes('mbart') ||
-                                   modelIdLower.includes('blenderbot') ||
-                                   modelIdLower.includes('dialo') ||
-                                   modelIdLower.includes('conversational') ||
-                                   modelIdLower.includes('qa') ||
-                                   modelIdLower.includes('question') ||
-                                   modelIdLower.includes('answer') ||
-                                   modelIdLower.includes('summarization') ||
-                                   modelIdLower.includes('translation') ||
-                                   modelIdLower.includes('sentiment') ||
-                                   modelIdLower.includes('emotion') ||
-                                   modelIdLower.includes('language') ||
-                                   modelIdLower.includes('text') ||
-                                   modelIdLower.includes('nlp') ||
-                                   modelIdLower.includes('natural') ||
-                                   modelIdLower.includes('processing') ||
-                                   modelIdLower.includes('speech') ||
-                                   modelIdLower.includes('voice') ||
-                                   modelIdLower.includes('audio')
-        
-        // If it's a text or speech model, exclude it for CV tasks
-        if (isTextOrSpeechModel) {
+        if (!highDownloads && !highLikes && !hasInference) {
           return false
         }
+      }
         
-        // Check if model is from trusted organizations (Microsoft, Facebook/Meta, Google, etc.)
-        const isTrustedOrganization = model.id.toLowerCase().includes('microsoft/') ||
-                                     model.id.toLowerCase().includes('facebook/') ||
-                                     model.id.toLowerCase().includes('meta/') ||
-                                     model.id.toLowerCase().includes('google/') ||
-                                     model.id.toLowerCase().includes('huggingface/') ||
-                                     model.id.toLowerCase().includes('openai/')
-        
-        // Check if model is relevant to search keywords
-        const searchKeywords = keywords.map(k => k.toLowerCase())
-        const modelText = `${model.id} ${model.description || ''}`.toLowerCase()
-        const isRelevantToSearch = searchKeywords.some(keyword => 
-          modelText.includes(keyword) || 
-          (keyword === 'detection' && modelText.includes('detect')) ||
-          (keyword === 'classification' && modelText.includes('classify'))
-        )
-        
-        // Show models if they are computer vision models with transformers library
-        // AND they are not text or speech models
-        return hasTransformersLibrary && isComputerVisionModel && !isTextOrSpeechModel
+      // ✅ NO LIBRARY VALIDATION - Accept all libraries for CV models
+      // This allows models with 'unknown' library_name to pass through
+      
+      // ✅ NO QUALITY FILTERS - Accept all models that made it this far
+      // Let popularity/downloads determine ranking, not filtering
+      
+      return true
       })
     
     console.log(`📊 After filtering: ${filteredData.length} models remaining`)
     
-    // Sort: Downloads first (highest to lowest), then trusted organizations, then known working
+    // Sort by quality indicators - but keep critical models highly ranked
     const sortedData = filteredData.sort((a: any, b: any) => {
-        // Priority 1: Downloads (highest first) - this is the main sorting criteria
-        const downloadDiff = (b.downloads || 0) - (a.downloads || 0)
-        if (downloadDiff !== 0) return downloadDiff
+      // Get search keywords and trusted orgs for sorting
+      const searchKeywords = keywords.map(k => k.toLowerCase())
+      const trustedOrgs = ['microsoft/', 'facebook/', 'meta/', 'google/', 'huggingface/', 'openai/', 'nvidia/']
+      // Priority 0: Critical models always come first
+      const aIsCritical = criticalModels.includes(a.id)
+      const bIsCritical = criticalModels.includes(b.id)
+      
+      if (aIsCritical && !bIsCritical) return -1
+      if (!aIsCritical && bIsCritical) return 1
+      
+      // Priority 1: Relevance to search query
+      const aIsRelevant = searchKeywords.some(keyword => 
+        a.id.toLowerCase().includes(keyword) || 
+        (a.name || '').toLowerCase().includes(keyword) ||
+        (a.description || '').toLowerCase().includes(keyword) ||
+        (a.tags || []).some((tag: string) => tag.toLowerCase().includes(keyword))
+      )
+      const bIsRelevant = searchKeywords.some(keyword => 
+        b.id.toLowerCase().includes(keyword) || 
+        (b.name || '').toLowerCase().includes(keyword) ||
+        (b.description || '').toLowerCase().includes(keyword) ||
+        (b.tags || []).some((tag: string) => tag.toLowerCase().includes(keyword))
+      )
+      
+      if (aIsRelevant && !bIsRelevant) return -1
+      if (!aIsRelevant && bIsRelevant) return 1
+      
+      // Priority 2: Trusted organizations
+      const aIsTrusted = trustedOrgs.some(org => a.id.toLowerCase().startsWith(org))
+      const bIsTrusted = trustedOrgs.some(org => b.id.toLowerCase().startsWith(org))
         
-        // Priority 2: Trusted organizations (as tiebreaker for same downloads)
-        const aIsTrusted = a.id.toLowerCase().includes('microsoft/') ||
-                          a.id.toLowerCase().includes('facebook/') ||
-                          a.id.toLowerCase().includes('meta/') ||
-                          a.id.toLowerCase().includes('google/') ||
-                          a.id.toLowerCase().includes('huggingface/') ||
-                          a.id.toLowerCase().includes('openai/')
+      if (aIsTrusted && !bIsTrusted) return -1
+      if (!aIsTrusted && bIsTrusted) return 1
         
-        const bIsTrusted = b.id.toLowerCase().includes('microsoft/') ||
-                          b.id.toLowerCase().includes('facebook/') ||
-                          b.id.toLowerCase().includes('meta/') ||
-                          b.id.toLowerCase().includes('google/') ||
-                          b.id.toLowerCase().includes('huggingface/') ||
-                          b.id.toLowerCase().includes('openai/')
-        
-        if (aIsTrusted && !bIsTrusted) return -1
-        if (!aIsTrusted && bIsTrusted) return 1
-        
-        // Priority 3: Known working models (as final tiebreaker)
-        const aIsWorking = verifiedWorkingModels.includes(a.id)
-        const bIsWorking = verifiedWorkingModels.includes(b.id)
-        if (aIsWorking && !bIsWorking) return -1
-        if (!aIsWorking && bIsWorking) return 1
-        
-        // Priority 4: If everything is equal, sort by likes (highest first)
-        return (b.likes || 0) - (a.likes || 0)
-      })
-    
-    console.log(`🎯 Filtered to ${sortedData.length} CV models using intelligent filtering (trusted orgs + high downloads + relevant specialized models)`)
-    
-    // Log top filtered models for debugging
-    const topFiltered = sortedData.slice(0, 5).map(m => ({
-      id: m.id,
-      downloads: m.downloads,
-      inference: m.inference,
-      isKnownWorking: verifiedWorkingModels.includes(m.id)
-    }))
-    console.log(`🏆 Top filtered models:`, topFiltered)
-    
-    // Add trusted models if search is detection-related
-    const trustedEnhancedData = await addTrustedModels(sortedData, keywords)
-    
-    // Additional validation: Check against our MongoDB database of failed models
-    const validatedData = await filterOutKnownFailedModels(trustedEnhancedData)
-    
-    // Re-sort after adding trusted models - prioritize downloads first
-    const reSortedData = validatedData.sort((a: any, b: any) => {
-      // Priority 1: Downloads (highest first) - main sorting criteria
+      // Priority 3: Downloads (main sorting)
       const downloadDiff = (b.downloads || 0) - (a.downloads || 0)
       if (downloadDiff !== 0) return downloadDiff
       
-      // Priority 2: Trusted organizations (as tiebreaker for same downloads)
-      const aIsTrusted = a.id.toLowerCase().includes('microsoft/') ||
-                        a.id.toLowerCase().includes('facebook/') ||
-                        a.id.toLowerCase().includes('meta/') ||
-                        a.id.toLowerCase().includes('google/') ||
-                        a.id.toLowerCase().includes('huggingface/') ||
-                        a.id.toLowerCase().includes('openai/')
+      // Priority 3: Has inference endpoint or known pipeline tag
+      const aHasInference = Boolean(a.inference || (a.pipeline_tag && a.pipeline_tag !== 'unknown'))
+      const bHasInference = Boolean(b.inference || (b.pipeline_tag && b.pipeline_tag !== 'unknown'))
       
-      const bIsTrusted = b.id.toLowerCase().includes('microsoft/') ||
-                        b.id.toLowerCase().includes('facebook/') ||
-                        b.id.toLowerCase().includes('meta/') ||
-                        b.id.toLowerCase().includes('google/') ||
-                        b.id.toLowerCase().includes('huggingface/') ||
-                        b.id.toLowerCase().includes('openai/')
+      if (aHasInference && !bHasInference) return -1
+      if (!aHasInference && bHasInference) return 1
       
-      if (aIsTrusted && !bIsTrusted) return -1
-      if (!aIsTrusted && bIsTrusted) return 1
-      
-      // Priority 3: Known working models (as final tiebreaker)
-      const aIsWorking = verifiedWorkingModels.includes(a.id)
-      const bIsWorking = verifiedWorkingModels.includes(b.id)
-      
-      if (aIsWorking && !bIsWorking) return -1
-      if (!aIsWorking && bIsWorking) return 1
-      
-      // Priority 4: If everything is equal, sort by likes (highest first)
+      // Priority 4: Likes
       return (b.likes || 0) - (a.likes || 0)
     })
     
-    // Boost models that we know are working from our database
-    const prioritizedData = await prioritizeKnownWorkingModels(reSortedData)
+    console.log(`✅ Final result: ${sortedData.length} validated CV models`)
     
-    // Apply domain-specific model selection for better appropriateness
-    const domainAppropriateData = applyDomainSpecificSelection(prioritizedData, keywords, taskType)
+    // Log top models
+    const topModels = sortedData.slice(0, 10).map(m => ({
+      id: m.id,
+      downloads: m.downloads,
+      pipeline_tag: m.pipeline_tag,
+      library: m.library_name
+    }))
+    console.log(`🏆 Top 10 models:`, topModels)
     
-    console.log(`✅ Final result: ${prioritizedData.length} validated CV models`)
-    
-    return domainAppropriateData
-      .map((model: any) => {
+    return sortedData.map((model: any) => {
         const modelName = model.id.split('/').pop() || model.id
         const author = model.id.split('/')[0] || 'Unknown'
-        const pipelineTag = model.pipeline_tag || 'object-detection'
-        const taskType = mapPipelineTagToTaskType(pipelineTag)
-        let cleanDescription = model.description || ''
+      const pipelineTag = model.pipeline_tag || 'image-classification'
         
-        // Clean up any double spaces or trailing/leading spaces
+      let cleanDescription = model.description || modelName
         cleanDescription = cleanDescription.replace(/\s+/g, ' ').trim()
         
-        // Mark models based on known working status
-        
-        const isKnownWorking = verifiedWorkingModels.includes(model.id)
-        // Only mark as supporting inference if it actually does
-        const modelHasTransformersLibrary = model.library_name === 'transformers'
-        const modelHasEndpointsCompatible = (model.tags || []).includes('endpoints_compatible')
-        const supportsInference = modelHasTransformersLibrary && 
-                                 (modelHasEndpointsCompatible || 
-                                  model.inference || 
-                                  model.pipeline_tag === 'object-detection' ||
-                                  model.pipeline_tag === 'image-classification' ||
-                                  model.pipeline_tag === 'image-segmentation' ||
-                                  model.pipeline_tag === 'image-to-text' ||
-                                  model.pipeline_tag === 'zero-shot-image-classification' ||
-                                  model.pipeline_tag === 'zero-shot-object-detection')
-        
-        // Enhanced model type determination for better categorization
-        const modelTypeInfo = determineModelType(model, model.classes)
+      // Check inference support - be more lenient
+      const hasTransformersLib = model.library_name === 'transformers'
+      const hasEndpointsCompatible = (model.tags || []).includes('endpoints_compatible')
+      const hasKnownCVPipeline = ['image-classification', 'object-detection', 'image-segmentation', 
+        'image-to-text', 'zero-shot-image-classification', 
+        'zero-shot-object-detection'].includes(pipelineTag)
+      
+      // Support inference if it has transformers + known CV pipeline, OR if it's a critical model
+      const supportsInference = criticalModels.includes(model.id) ||
+        (hasTransformersLib && hasKnownCVPipeline) ||
+        (hasTransformersLib && hasEndpointsCompatible) ||
+        Boolean(model.inference)
         
         return {
           id: model.id,
           name: modelName,
           source: 'huggingface' as const,
-          description: cleanDescription || modelName,
+        description: cleanDescription,
           url: `https://huggingface.co/${model.id}`,
           modelUrl: `https://huggingface.co/${model.id}`,
           thumbnail: `https://huggingface.co/${model.id}/resolve/main/thumbnail.jpg`,
@@ -1291,14 +1274,14 @@ async function searchHFModels(
           downloads: model.downloads || 0,
           likes: model.likes || 0,
           tags: model.tags || [],
-          frameworks: [],
+        frameworks: [model.library_name].filter(Boolean),
           platforms: [],
           supportsInference,
-          isKnownWorking,
-          inferenceEndpoint: `https://router.huggingface.co/hf-inference/models/${model.id}`,
-          // Enhanced model type information for better categorization
-          modelType: modelTypeInfo.type,
-          modelTypeInfo: modelTypeInfo
+        inferenceEndpoint: supportsInference 
+          ? `https://api-inference.huggingface.co/models/${model.id}`
+          : undefined,
+        pipelineTag: pipelineTag,
+        libraryName: model.library_name
         }
       })
 
@@ -1307,6 +1290,7 @@ async function searchHFModels(
     return []
   }
 }
+
 
 /**
  * Fetch individual model details to check inference support
@@ -1690,8 +1674,8 @@ export async function POST(request: NextRequest) {
     // Note: Roboflow search now uses embedded browser modal in frontend
     const [huggingFaceModels, roboflowModels] = await Promise.allSettled([
       searchHFModels(keywords, task_type, true),
-      // Roboflow search will be handled by embedded browser modal in frontend
-      Promise.resolve([])
+      // Search Roboflow models using Python script
+      searchRoboflowModelsPython(keywords, task_type || 'object-detection')
     ])
     
     const hfModels = huggingFaceModels.status === 'fulfilled' ? huggingFaceModels.value : []
@@ -1776,8 +1760,8 @@ export async function POST(request: NextRequest) {
         // Fallback to search if cache miss
         const [huggingFaceModels, roboflowModels] = await Promise.allSettled([
           searchHFModels(keywords, task_type, true),
-          // Roboflow search will be handled by embedded browser modal in frontend
-          Promise.resolve([])
+          // Search Roboflow models using Python script
+          searchRoboflowModelsPython(keywords, task_type || 'object-detection')
         ])
         
         const hfModels = huggingFaceModels.status === 'fulfilled' ? huggingFaceModels.value : []
@@ -1839,6 +1823,12 @@ export async function POST(request: NextRequest) {
       },
       queryId,
       timestamp: new Date().toISOString()
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
     })
     
   } catch (error) {

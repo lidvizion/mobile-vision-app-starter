@@ -17,34 +17,54 @@ warnings.filterwarnings('ignore')
 
 def run_inference(model_url, api_key, image_base64, parameters=None):
     """
-    Run inference using Roboflow Python SDK
+    Run inference using Roboflow SDK with proper model identification
     """
     try:
         # Initialize Roboflow client
         rf = Roboflow(api_key=api_key)
         
-        # Extract model ID from URL
-        # Format: https://serverless.roboflow.com/project-name/version
-        # or: https://universe.roboflow.com/username/project-name/model/version
-        # or: https://detect.roboflow.com/project-name/version
-        if 'universe.roboflow.com' in model_url:
-            # Convert universe URL to model ID
-            url_parts = model_url.split('/')
-            model_index = url_parts.index('model')
-            project_name = url_parts[model_index - 1]
-            version = url_parts[model_index + 1]
-            model_id = f"{project_name}/{version}"
-        elif 'serverless.roboflow.com' in model_url:
-            # Extract from serverless URL
-            url_parts = model_url.replace('https://serverless.roboflow.com/', '').split('/')
-            model_id = f"{url_parts[0]}/{url_parts[1]}"
-        elif 'detect.roboflow.com' in model_url:
-            # Extract from detect URL
-            url_parts = model_url.replace('https://detect.roboflow.com/', '').split('/')
-            model_id = f"{url_parts[0]}/{url_parts[1]}"
+        # Extract model information from the URL
+        # Handle different URL formats from the search agent
+        if 'detect.roboflow.com' in model_url:
+            # Extract model and version from detect URL
+            if '?model=' in model_url:
+                # Template format: https://detect.roboflow.com/?model=name&version=1&api_key=
+                import re
+                model_match = re.search(r'model=([^&]+)', model_url)
+                version_match = re.search(r'version=([^&]+)', model_url)
+                
+                if model_match and version_match:
+                    model_name = model_match.group(1)
+                    version = version_match.group(1)
+                else:
+                    return {
+                        'success': False,
+                        'error': 'Could not extract model name and version from URL',
+                        'model_id': 'unknown'
+                    }
+            else:
+                # Direct format: https://detect.roboflow.com/project_id/model_id
+                url_parts = model_url.replace('https://detect.roboflow.com/', '').split('/')
+                if len(url_parts) >= 2:
+                    # For direct URLs, we need to use the workspace approach
+                    # This is more complex and might not work with all models
+                    return {
+                        'success': False,
+                        'error': 'Direct detect URLs require workspace access. Please use template URLs.',
+                        'model_id': 'unknown'
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'error': 'Invalid detect URL format',
+                        'model_id': 'unknown'
+                    }
         else:
-            # Assume it's already a model ID
-            model_id = model_url
+            return {
+                'success': False,
+                'error': 'Please provide a detect.roboflow.com URL',
+                'model_id': 'unknown'
+            }
         
         # Decode base64 image
         if image_base64.startswith('data:'):
@@ -59,17 +79,29 @@ def run_inference(model_url, api_key, image_base64, parameters=None):
             temp_path = temp_file.name
         
         try:
-            # Load model and run inference
+            # Use the Roboflow SDK to load the model
+            # For public models, we need to use the workspace approach
             workspace = rf.workspace()
-            project = workspace.project(model_id.split('/')[0])
-            version = project.version(int(model_id.split('/')[1]))
-            model = version.model
             
-            # Prepare parameters (only use supported ones)
-            # Use sensible defaults if no parameters provided
+            # Try to find the project by name
+            # Note: This might not work for all models as they might be in private workspaces
+            try:
+                project = workspace.project(model_name)
+                model_version = project.version(int(version))
+                model = model_version.model
+            except Exception as e:
+                # If workspace approach fails, try using the model directly
+                # This is a fallback approach
+                return {
+                    'success': False,
+                    'error': f'Could not access model {model_name} version {version}. Model might be private or require different authentication. Error: {str(e)}',
+                    'model_id': f'{model_name}/{version}'
+                }
+            
+            # Prepare parameters
             inference_params = {
-                'confidence': 0.3,  # Lower confidence to catch more detections
-                'overlap': 0.3      # Standard overlap threshold
+                'confidence': 0.3,
+                'overlap': 0.3
             }
             
             if parameters:
@@ -77,7 +109,6 @@ def run_inference(model_url, api_key, image_base64, parameters=None):
                     inference_params['confidence'] = parameters['confidence']
                 if 'overlap' in parameters:
                     inference_params['overlap'] = parameters['overlap']
-                # Note: max_detections is not supported by Roboflow SDK
             
             # Run inference
             result = model.predict(temp_path, **inference_params)
@@ -113,7 +144,7 @@ def run_inference(model_url, api_key, image_base64, parameters=None):
             return {
                 'success': True,
                 'predictions': predictions,
-                'model_id': model_id
+                'model_id': f'{model_name}/{version}'
             }
             
         finally:
@@ -125,7 +156,7 @@ def run_inference(model_url, api_key, image_base64, parameters=None):
         return {
             'success': False,
             'error': str(e),
-            'model_id': model_id if 'model_id' in locals() else 'unknown'
+            'model_id': f'{model_name}/{version}' if 'model_name' in locals() and 'version' in locals() else 'unknown'
         }
 
 def main():

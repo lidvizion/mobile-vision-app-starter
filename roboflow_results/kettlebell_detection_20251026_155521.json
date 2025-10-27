@@ -1,0 +1,199 @@
+[
+  {
+    "project_title": "Models",
+    "url": "https://universe.roboflow.com/test-7g6h8/kettlebell/model/",
+    "author": "jason",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "1649",
+    "tags": [
+      "Object Detection",
+      "yolov8",
+      "yolov8",
+      "yolov8"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": "https://detect.roboflow.com/1618j9wDOaS3CpjqqDg3/MjjFLLGHUeuk4iABhEd4",
+    "model_identifier": "model/"
+  },
+  {
+    "project_title": "How to Use the kettlebell Detection API",
+    "url": "https://universe.roboflow.com/mart-xaifa/kettlebell-zxten/model/4",
+    "author": "Pavel",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": "99.5%",
+    "precision": "100.0%",
+    "recall": "98.5%",
+    "training_images": "1229",
+    "tags": [
+      "Object Detection",
+      "yolov11",
+      "yolov11"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": "https://detect.roboflow.com/?model=kettlebell-zxten&amp;version=4&amp;api_key=",
+    "model_identifier": "model/4"
+  },
+  {
+    "project_title": "N/A",
+    "url": "chrome-error://chromewebdata/",
+    "author": "N/A",
+    "project_type": "N/A",
+    "has_model": false,
+    "updated": "N/A",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": null,
+    "tags": [],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": null,
+    "model_identifier": "chromewebdata/"
+  },
+  {
+    "project_title": "Models",
+    "url": "https://universe.roboflow.com/train-yolov8-s7lia/kettlebells-detection/model/1/documentation",
+    "author": "proje",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "876",
+    "tags": [
+      "Object Detection"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": "https://detect.roboflow.com/VPrdtCpvUOeUpuBRo6TQ0hivWVD3/XpE3DpclxPg7Rd9YS1KM",
+    "model_identifier": "1/documentation"
+  },
+  {
+    "project_title": "Models",
+    "url": "https://universe.roboflow.com/tssearch/barbell-detection-p37td/model/",
+    "author": "jong",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "2264",
+    "tags": [
+      "Object Detection"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": "https://detect.roboflow.com/1OD68kUr5hcxP44fyl1h6Q0t5593/00UBQ1SaZ2ZteHx4Ahtz",
+    "model_identifier": "model/"
+  },
+  {
+    "project_title": "Models",
+    "url": "https://universe.roboflow.com/ikigais-workspace/dumbell-detection/model/",
+    "author": "NTUST",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "2553",
+    "tags": [
+      "Object Detection"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": "https://detect.roboflow.com/Coz0xUH86KOaxVU4wgCqRRKgJ723/undefined",
+    "model_identifier": "model/"
+  },
+  {
+    "project_title": "Models",
+    "url": "https://universe.roboflow.com/tomas-fuvzm/human-detection-puh5d/model/",
+    "author": "Tomas",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "841",
+    "tags": [
+      "Object Detection"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": "https://detect.roboflow.com/NzuNO2Q307RXLoZsiZg0N4PnyBI3/SWpiN9OrDTMClXm2cG97",
+    "model_identifier": "model/"
+  },
+  {
+    "project_title": "How to Use the Posture detection Detection API",
+    "url": "https://universe.roboflow.com/posture-detection-atvg1/posture-detection-kl83s/model/3",
+    "author": "Posture detection",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "252",
+    "tags": [
+      "Object Detection"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": "https://detect.roboflow.com/?model=posture-detection-kl83s&amp;version=3&amp;api_key=",
+    "model_identifier": "model/3"
+  },
+  {
+    "project_title": "Models",
+    "url": "https://universe.roboflow.com/build-your-dreams/pose-detection-npapg/model/",
+    "author": "AIAspiresIntel",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": null,
+    "precision": null,
+    "recall": null,
+    "training_images": "68",
+    "tags": [
+      "Object Detection",
+      "yolov11",
+      "yolov11",
+      "yolov11"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": "https://detect.roboflow.com/IMiev0jIG6h5gHlO3ddfDkzVbCH2/yh5oazscy69j908GUybb",
+    "model_identifier": "model/"
+  },
+  {
+    "project_title": "How to Use the Face Detection Detection API",
+    "url": "https://universe.roboflow.com/mohamed-traore-2ekkp/face-detection-mik1i/model/27",
+    "author": "Abner",
+    "project_type": "Object Detection",
+    "has_model": true,
+    "updated": "N/A",
+    "mAP": "98.8%",
+    "precision": "92.4%",
+    "recall": "98.6%",
+    "training_images": "568",
+    "tags": [
+      "Object Detection",
+      "yolov12"
+    ],
+    "classes": [],
+    "class_count": "0",
+    "api_endpoint": "https://detect.roboflow.com/?model=face-detection-mik1i&amp;version=27&amp;api_key=",
+    "model_identifier": "model/27"
+  }
+]
