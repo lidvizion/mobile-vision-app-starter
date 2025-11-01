@@ -26,6 +26,9 @@ class ModelViewStore {
   showAllResults: boolean = false
   activeFilters: string[] = ['all']
   
+  // Confidence threshold for filtering results (client-side only, doesn't affect API)
+  confidenceThreshold: number = 0.0  // 0.0 to 1.0, filters UI display only
+  
   // Pagination state
   currentPage: number = 1
   totalPages: number = 1
@@ -54,14 +57,36 @@ class ModelViewStore {
 
   // Model search actions
   setModelList(models: ModelMetadata[]) {
-    this.modelList = models
+    // Deduplicate models by id before setting
+    const uniqueModelsMap = new Map<string, ModelMetadata>()
+    models.forEach(model => {
+      if (model.id && !uniqueModelsMap.has(model.id)) {
+        uniqueModelsMap.set(model.id, model)
+      }
+    })
+    this.modelList = Array.from(uniqueModelsMap.values())
+    
+    // Reset filters to 'all' when new models are loaded
+    this.activeFilters = ['all']
+    this.currentPage = 1
+    
+    // Update pagination based on loaded models
+    this.updatePaginationFromLoadedModels()
   }
 
   addModels(models: ModelMetadata[]) {
     // Add new models to existing list, avoiding duplicates
     const existingIds = new Set(this.modelList.map(m => m.id))
     const newModels = models.filter(m => !existingIds.has(m.id))
+    const previousCount = this.modelList.length
     this.modelList = [...this.modelList, ...newModels]
+    
+    console.log(`🔍 DEBUG: addModels - Added ${newModels.length} new models (${previousCount} -> ${this.modelList.length})`)
+    
+    // Update pagination to reflect new total number of models
+    this.updatePaginationFromLoadedModels()
+    
+    console.log(`🔍 DEBUG: Pagination updated - Total pages: ${this.totalPages}, Filtered models: ${this.filteredModels.length}`)
   }
 
   setIsSearching(isSearching: boolean) {
@@ -87,34 +112,36 @@ class ModelViewStore {
   }
 
   setActiveFilter(filter: string) {
+    // Ensure we have a valid filter
+    if (!filter) return
+    
     if (filter === 'all') {
-      // Toggle 'all' filter
-      if (this.activeFilters.includes('all')) {
-        // If 'all' is selected, remove it and keep other filters
-        this.activeFilters = this.activeFilters.filter(f => f !== 'all')
-        // If no other filters, add 'all' back
-        if (this.activeFilters.length === 0) {
-          this.activeFilters = ['all']
-        }
+      // When clicking 'all', always set it as the only filter
+      if (this.activeFilters.includes('all') && this.activeFilters.length === 1) {
+        // 'all' is already the only filter, do nothing
+        return
       } else {
-        // If 'all' is not selected, add it
-        this.activeFilters = [...this.activeFilters, 'all']
+        // Set 'all' as the only filter
+        this.activeFilters = ['all']
       }
     } else {
-      // For other filters, toggle them normally
+      // For other filters, toggle them and support multi-select
       if (this.activeFilters.includes(filter)) {
         // Remove filter if already selected
-        this.activeFilters = this.activeFilters.filter(f => f !== filter)
+        const newFilters = this.activeFilters.filter(f => f !== filter)
         // If no filters left, default to 'all'
-        if (this.activeFilters.length === 0) {
-          this.activeFilters = ['all']
-        }
+        this.activeFilters = newFilters.length > 0 ? newFilters : ['all']
       } else {
-        // Add new filter (remove 'all' if it exists)
-        const newFilters = this.activeFilters.filter(f => f !== 'all')
-        this.activeFilters = [...newFilters, filter]
+        // Add new filter (remove 'all' if it exists, keep other filters)
+        const filtersWithoutAll = this.activeFilters.filter(f => f !== 'all')
+        this.activeFilters = [...filtersWithoutAll, filter]
       }
     }
+    
+    // Reset to page 1 when filters change
+    this.currentPage = 1
+    // Update pagination based on new filtered results
+    this.updatePaginationFromLoadedModels()
   }
 
   isFilterActive(filter: string) {
@@ -142,18 +169,49 @@ class ModelViewStore {
     }
   }
 
+  // Helper function to normalize task names (matches GuidedModelFlow.tsx)
+  private normalizeTaskName(task: string): string {
+    const normalized = task.toLowerCase()
+    
+    // Consolidate detection variants
+    if (normalized.includes('detection') || normalized === 'object-detection') {
+      return 'detection'
+    }
+    
+    // Consolidate classification variants
+    if (normalized.includes('classification') || normalized === 'image-classification') {
+      return 'classification'
+    }
+    
+    // Consolidate segmentation variants
+    if (normalized.includes('segmentation') || normalized === 'instance-segmentation') {
+      return 'segmentation'
+    }
+    
+    // Keep other task types as-is
+    return normalized
+  }
+
   // Computed values
   get filteredModels() {
     if (this.activeFilters.includes('all')) {
       return this.modelList
     }
-    return this.modelList.filter(model => 
-      this.activeFilters.some(filter => {
-        // Normalize task names for comparison
-        const normalizedTask = model.task === 'object-detection' ? 'detection' : model.task
-        return normalizedTask.includes(filter) || model.task.includes(filter)
+    
+    // Filter models that match any of the active filters
+    return this.modelList.filter(model => {
+      const normalizedModelTask = this.normalizeTaskName(model.task)
+      
+      return this.activeFilters.some(filter => {
+        // Normalize filter name for comparison
+        const normalizedFilter = this.normalizeTaskName(filter)
+        
+        // Check if normalized task matches normalized filter
+        return normalizedModelTask === normalizedFilter || 
+               normalizedModelTask.includes(normalizedFilter) || 
+               normalizedFilter.includes(normalizedModelTask)
       })
-    )
+    })
   }
 
   get displayedModels() {
@@ -206,6 +264,15 @@ class ModelViewStore {
     this.resetModels()
     this.resetSelection()
     this.isSearching = false
+  }
+
+  // Confidence threshold actions
+  setConfidenceThreshold(threshold: number) {
+    this.confidenceThreshold = Math.max(0, Math.min(1, threshold)) // Clamp between 0 and 1
+  }
+
+  resetConfidenceThreshold() {
+    this.confidenceThreshold = 0.0
   }
 }
 

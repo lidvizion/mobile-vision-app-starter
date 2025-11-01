@@ -18,6 +18,8 @@ export interface ValidatedModel {
   tags?: string[]
   library_name?: string
   inference_endpoint?: string
+  inferenceEndpoint?: string  // Alternative naming convention
+  supportsInference?: boolean  // Whether model supports inference
   sample_output?: any[]
   checked_at: string
   last_modified?: string
@@ -38,6 +40,28 @@ export interface ValidatedModel {
  * @param keywords - Optional keywords to match against model classes 
  * @returns Array of validated models sorted by downloads
  */
+/**
+ * Ensure unique index on model_id to prevent duplicates
+ * Called once at startup/initialization
+ */
+export async function ensureUniqueIndex(): Promise<void> {
+  try {
+    const db = await getDatabase()
+    const collection = db.collection('validated_models')
+    
+    // Create unique index on model_id if it doesn't exist
+    await collection.createIndex({ model_id: 1 }, { unique: true, sparse: true })
+    console.log('✅ Unique index ensured on validated_models.model_id')
+  } catch (error: any) {
+    // Index might already exist, which is fine
+    if (error.code === 85 || error.codeName === 'IndexOptionsConflict') {
+      console.log('ℹ️  Unique index on model_id already exists')
+    } else {
+      console.error('⚠️  Error creating unique index:', error)
+    }
+  }
+}
+
 export async function getValidatedModels(
   taskType?: string,
   keywords?: string[]
@@ -45,28 +69,171 @@ export async function getValidatedModels(
   try {
     const db = await getDatabase()
     
-    const query: any = { validated: true }
+    // Ensure unique index exists (idempotent - safe to call multiple times)
+    await ensureUniqueIndex()
     
-    // Filter by task type
-    if (taskType) {
-      query.task_type = taskType
+    // Priority models that should ALWAYS be included (regardless of keyword matching)
+    const priorityModelIds = [
+      'facebook/detr-resnet-50',
+      'facebook/detr-resnet-101',
+      'microsoft/resnet-50'
+    ]
+    
+    const query: any = { 
+      validated: true,
+      // Exclude text classification models
+      $and: [
+        { pipeline_tag: { $ne: 'text-classification' } },
+        { task_type: { $ne: 'Text Classification' } },
+        { 'tags': { $not: { $regex: 'text-classification', $options: 'i' } } },
+        { 'tags': { $not: { $regex: 'sentiment', $options: 'i' } } },
+        { 'tags': { $not: { $regex: 'emotion', $options: 'i' } } },
+        { 'tags': { $not: { $regex: 'language-detection', $options: 'i' } } },
+        { 'tags': { $not: { $regex: 'spam', $options: 'i' } } },
+        { 'tags': { $not: { $regex: 'phishing', $options: 'i' } } },
+        { 'tags': { $not: { $regex: 'offensive', $options: 'i' } } },
+        { 'tags': { $not: { $regex: 'question-detection', $options: 'i' } } },
+        { 'tags': { $not: { $regex: 'ai-text-detection', $options: 'i' } } },
+        { 'tags': { $not: { $regex: 'document-analysis', $options: 'i' } } }
+      ]
     }
     
-    // Build class-based keyword filter 
+    // List of generic task-related keywords to ignore when filtering
+    const genericTaskKeywords = [
+      'detection', 'object', 'segmentation', 'classification', 'classify',
+      'keypoint', 'key-point', 'keypoint detection', 'key point detection',
+      'pose', 'pose detection', 'pose-detection',
+      'instance', 'instance segmentation', 'instance-segmentation',
+      'semantic', 'semantic segmentation', 'semantic-segmentation',
+      'object detection', 'object-detection',
+      'image classification', 'image-classification',
+      'model', 'models' // Also ignore generic "model" keyword
+    ]
+    
+    // Filter out generic task keywords - only keep domain-specific keywords
+    const domainKeywords = keywords && keywords.length > 0 ? keywords.filter(keyword => {
+      const lowerKeyword = keyword.toLowerCase().trim()
+      // Check if keyword is NOT a generic task keyword
+      return !genericTaskKeywords.some(generic => 
+        lowerKeyword === generic || 
+        lowerKeyword.includes(generic) || 
+        generic.includes(lowerKeyword)
+      )
+    }) : []
+    
+    // SIMPLIFIED KEYWORD FILTERING FOR CURATED MODELS: Only check if model matches keywords
+    // No need to check downloads, likes, or other metrics
+    // EXCLUDE generic task-related keywords (detection, object, segmentation, classification, keypoint detection, etc.)
     if (keywords && keywords.length > 0) {
-      // Find models where classes array contains any of the keywords 
-      query.$or = keywords.map(keyword => ({
-        classes: { $regex: keyword, $options: 'i' }
-      }))
+      // Only apply keyword filtering if we have domain-specific keywords
+      // If all keywords are generic, don't filter (show all models matching task type)
+      if (domainKeywords.length > 0) {
+        // Build keyword queries (search in classes, model_id, name, and tags)
+        const keywordQueries: any[] = []
+        domainKeywords.forEach(keyword => {
+          keywordQueries.push(
+            { classes: { $regex: keyword, $options: 'i' } },
+            { model_id: { $regex: keyword, $options: 'i' } },
+            { name: { $regex: keyword, $options: 'i' } },
+            { tags: { $regex: keyword, $options: 'i' } }
+          )
+        })
+        
+        // Models must match at least one domain-specific keyword
+        query.$and = query.$and || []
+        query.$and.push({ $or: keywordQueries })
+        
+        console.log(`🔍 Curated Models Query - Filtering by domain keywords: [${domainKeywords.join(', ')}] (ignored generic: [${keywords.filter(k => !domainKeywords.includes(k)).join(', ')}])`)
+      } else {
+        console.log(`🔍 Curated Models Query - All keywords are generic task keywords, showing all models matching task type`)
+      }
     }
     
-    const models = await db.collection('validated_models')
-      .find(query)
-      .sort({ downloads: -1 })
-      .limit(50)
-      .toArray()
+    // Filter by task type (handle both formats)
+    // IMPORTANT: If domain keywords match, don't strictly filter by task type - include models matching domain keywords even if task type differs
+    // Task type filter is only strictly applied when there are no domain keywords (or all keywords are generic)
+    if (taskType && domainKeywords.length === 0) {
+      // Only apply strict task type filter when no domain keywords exist
+      // Convert various formats to regex match (case-insensitive)
+      // e.g., "segmentation" matches "Instance Segmentation", "Image Segmentation", etc.
+      let normalizedTaskType = taskType
+      if (taskType === 'object-detection') {
+        normalizedTaskType = 'Object Detection'
+      } else if (taskType === 'keypoint-detection') {
+        normalizedTaskType = 'Keypoint Detection'
+      } else {
+        normalizedTaskType = taskType
+      }
+      // Use regex to match any task type containing the search term
+      query.task_type = { $regex: normalizedTaskType.replace(/-/g, ' '), $options: 'i' }
+      console.log(`🔍 Curated Models Query - Applying strict task type filter: ${normalizedTaskType}`)
+    } else if (taskType && domainKeywords.length > 0) {
+      // When domain keywords exist, task type is used for scoring/priority but not filtering
+      // This allows models matching domain keywords (like "basketball") to appear even if task type differs
+      console.log(`🔍 Curated Models Query - Domain keywords present, task type (${taskType}) will be used for relevance scoring only, not filtering`)
+    }
     
-    return models as unknown as ValidatedModel[]
+    // Fetch priority models separately (always include them, regardless of keywords)
+    const priorityQuery: any = {
+      model_id: { $in: priorityModelIds },
+      validated: true
+    }
+    
+    // Get both priority models and keyword-matched models
+    const [priorityModels, keywordMatchedModels] = await Promise.all([
+      db.collection('validated_models').find(priorityQuery).toArray(),
+      db.collection('validated_models').find(query).toArray()
+    ])
+    
+    console.log(`📊 MongoDB Query Results - Priority: ${priorityModels.length}, Keyword-matched: ${keywordMatchedModels.length}`)
+    if (priorityModels.length > 0) {
+      console.log(`📊 Priority models: ${priorityModels.map(m => m.model_id).join(', ')}`)
+    }
+    if (keywordMatchedModels.length > 0) {
+      console.log(`📊 Keyword-matched models (first 10): ${keywordMatchedModels.slice(0, 10).map(m => m.model_id).join(', ')}`)
+    }
+    
+    // Combine and deduplicate (priority models first, but Roboflow will override in sorting)
+    const allModels = [...priorityModels, ...keywordMatchedModels]
+    const uniqueModels = allModels.filter((model, index, self) => 
+      index === self.findIndex(m => m.model_id === model.model_id)
+    )
+    
+    // Sort: Roboflow models FIRST (highest priority), then priority models, then others
+    uniqueModels.sort((a, b) => {
+      const aIsRoboflow = (a.model_id || '').toLowerCase().startsWith('roboflow/') ||
+                         (a.model_id || '').toLowerCase().includes('roboflow') ||
+                         (a.inferenceEndpoint && (
+                           a.inferenceEndpoint.includes('roboflow.com') ||
+                           a.inferenceEndpoint.includes('serverless.roboflow.com') ||
+                           a.inferenceEndpoint.includes('detect.roboflow.com') ||
+                           a.inferenceEndpoint.includes('segment.roboflow.com')
+                         ))
+      const bIsRoboflow = (b.model_id || '').toLowerCase().startsWith('roboflow/') ||
+                         (b.model_id || '').toLowerCase().includes('roboflow') ||
+                         (b.inferenceEndpoint && (
+                           b.inferenceEndpoint.includes('roboflow.com') ||
+                           b.inferenceEndpoint.includes('serverless.roboflow.com') ||
+                           b.inferenceEndpoint.includes('detect.roboflow.com') ||
+                           b.inferenceEndpoint.includes('segment.roboflow.com')
+                         ))
+      
+      const aIsPriority = priorityModelIds.includes(a.model_id)
+      const bIsPriority = priorityModelIds.includes(b.model_id)
+      
+      // PRIORITY 1: Roboflow models always come first
+      if (aIsRoboflow && !bIsRoboflow) return -1
+      if (!aIsRoboflow && bIsRoboflow) return 1
+      
+      // PRIORITY 2: Priority models come after Roboflow
+      if (aIsPriority && !bIsPriority) return -1
+      if (!aIsPriority && bIsPriority) return 1
+      
+      // PRIORITY 3: Maintain original order for others (relevance scoring handled in searchValidatedModels)
+      return 0
+    })
+    
+    return uniqueModels.slice(0, 50) as unknown as ValidatedModel[]
   } catch (error) {
     console.error('Error fetching validated models:', error)
     return []
@@ -253,13 +420,61 @@ export function calculateValidatedModelRelevance(
   // Base score for being validated 
   score += 1000
   
-  // Keyword matching in model name, task, and tags
-  const modelText = `${model.name} ${model.task_type} ${model.tags?.join(' ') || ''}`.toLowerCase()
+  // Enhanced keyword matching with weighted scoring
+  const modelText = `${model.model_id} ${model.name || ''} ${model.task_type} ${model.tags?.join(' ') || ''}`.toLowerCase()
+  
+  // Separate domain-specific keywords from generic ones
+  const genericTerms = new Set(['segmentation', 'segformer', 'image-segmentation', 'detection', 'classification', 'object-detection', 'instance-segmentation'])
+  const domainKeywords = keywords.filter(k => !genericTerms.has(k.toLowerCase()))
+  const genericKeywords = keywords.filter(k => genericTerms.has(k.toLowerCase()))
+  
+  // Higher weight for domain-specific keywords (e.g., "soccer", "ball")
   keywords.forEach(keyword => {
-    if (modelText.includes(keyword.toLowerCase())) {
-      score += 50
+    const lowerKeyword = keyword.toLowerCase()
+    const isDomainKeyword = domainKeywords.includes(keyword)
+    const keywordWeight = isDomainKeyword ? 1.5 : 1.0 // 50% boost for domain keywords
+    
+    // Model ID contains keyword (highest priority)
+    if (model.model_id.toLowerCase().includes(lowerKeyword)) {
+      score += Math.round(1000 * keywordWeight)
+    }
+    
+    // Model name contains keyword
+    if ((model.name || '').toLowerCase().includes(lowerKeyword)) {
+      score += Math.round(800 * keywordWeight)
+    }
+    
+    // Task type contains keyword
+    if (model.task_type.toLowerCase().includes(lowerKeyword)) {
+      score += Math.round(600 * keywordWeight)
+    }
+    
+    // Tags contain keyword
+    if ((model.tags || []).some(tag => tag.toLowerCase().includes(lowerKeyword))) {
+      score += Math.round(700 * keywordWeight)
+    }
+    
+    // Word boundary matches
+    const regex = new RegExp(`\\b${lowerKeyword}`, 'i')
+    if (regex.test(modelText)) {
+      score += Math.round(200 * keywordWeight)
     }
   })
+  
+  // Bonus for multiple keyword matches
+  const keywordMatchCount = keywords.filter(keyword => 
+    modelText.includes(keyword.toLowerCase())
+  ).length
+  score += keywordMatchCount * 100
+  
+  // Penalty for irrelevant terms
+  const irrelevantTerms = ['nsfw', 'adult', 'explicit', 'inappropriate', 'offensive', 'hate', 'violence']
+  const hasIrrelevant = irrelevantTerms.some(term => 
+    modelText.includes(term) && !keywords.some(k => k.toLowerCase().includes(term))
+  )
+  if (hasIrrelevant) {
+    score -= 1000 // Heavy penalty for irrelevant content
+  }
   
   // Class specificity scoring
   if (model.classes && model.class_count) {
@@ -272,17 +487,27 @@ export function calculateValidatedModelRelevance(
       score += 200  // Highly specialized model
     }
     
-    // Exact class matches (very important!)
-    const classMatches = keywords.filter(keyword =>
-      model.classes?.some(cls => 
+    // Exact class matches (very important!) - prioritize domain keywords
+    const domainKeywords = keywords.filter(k => !['segmentation', 'segformer', 'image-segmentation', 'detection', 'classification'].includes(k.toLowerCase()))
+    
+    const classMatches = keywords.filter(keyword => {
+      const isDomainKeyword = domainKeywords.includes(keyword)
+      return model.classes?.some(cls => 
         cls.toLowerCase().includes(keyword.toLowerCase())
       )
-    ).length
-    score += classMatches * 150  // Big bonus for exact class matches
+    })
+    
+    // Higher weight for domain keyword class matches
+    classMatches.forEach(keyword => {
+      const isDomainKeyword = domainKeywords.includes(keyword)
+      score += isDomainKeyword ? 300 : 150  // Double bonus for domain keyword class matches
+    })
   }
   
   // Popularity bonus (but not too much)
-  score += Math.log10(model.downloads + 1) * 10
+  // Handle undefined/null downloads (common for Roboflow models)
+  const downloads = model.downloads ?? 0
+  score += Math.log10(downloads + 1) * 10
   
   // Known working model bonus
   if (model.works_with_dataurl) {
@@ -307,20 +532,102 @@ export async function searchValidatedModels(
 ): Promise<Array<ValidatedModel & { relevanceScore: number }>> {
   const models = await getValidatedModels(taskType, keywords)
   
-  // Calculate relevance scores
-  const scoredModels = models.map(model => ({
-    ...model,
-    relevanceScore: calculateValidatedModelRelevance(model, keywords)
-  }))
+  // Priority models that should always be included
+  const priorityModelIds = [
+    'facebook/detr-resnet-50',
+    'facebook/detr-resnet-101',
+    'microsoft/resnet-50'
+  ]
   
-  // Sort by relevance score
-  scoredModels.sort((a, b) => b.relevanceScore - a.relevanceScore)
+  // Calculate relevance scores - SIMPLIFIED: Only keyword matching, no downloads/likes
+  const scoredModels = models.map(model => {
+    let relevanceScore = 0
+    
+    // Check if model is Roboflow (prioritize these)
+    const isRoboflow = (model.model_id || '').toLowerCase().startsWith('roboflow/') ||
+                      (model.model_id || '').toLowerCase().includes('roboflow') ||
+                      (model.inferenceEndpoint && (
+                        model.inferenceEndpoint.includes('roboflow.com') ||
+                        model.inferenceEndpoint.includes('serverless.roboflow.com') ||
+                        model.inferenceEndpoint.includes('detect.roboflow.com') ||
+                        model.inferenceEndpoint.includes('segment.roboflow.com')
+                      ))
+    
+    // Check if model is a priority model
+    const isPriority = priorityModelIds.includes(model.model_id)
+    
+    // Build model text for keyword matching
+    const modelText = `${model.model_id} ${model.name || ''} ${model.task_type} ${model.tags?.join(' ') || ''}`.toLowerCase()
+    
+    // Keyword matching (simplified - no downloads/likes weighting)
+    keywords.forEach(keyword => {
+      const lowerKeyword = keyword.toLowerCase()
+      
+      // Model ID contains keyword (highest priority)
+      if (model.model_id.toLowerCase().includes(lowerKeyword)) {
+        relevanceScore += 1000
+      }
+      
+      // Model name contains keyword
+      if ((model.name || '').toLowerCase().includes(lowerKeyword)) {
+        relevanceScore += 800
+      }
+      
+      // Classes contain keyword
+      if (model.classes?.some((c: string) => c.toLowerCase().includes(lowerKeyword))) {
+        relevanceScore += 900
+      }
+      
+      // Tags contain keyword
+      if ((model.tags || []).some(tag => tag.toLowerCase().includes(lowerKeyword))) {
+        relevanceScore += 700
+      }
+      
+      // Task type contains keyword
+      if (model.task_type.toLowerCase().includes(lowerKeyword)) {
+        relevanceScore += 600
+      }
+    })
+    
+    // PRIORITY 1: Roboflow models get massive boost (always prioritize Roboflow)
+    if (isRoboflow) {
+      relevanceScore += 100000 // Very high boost for all Roboflow models
+    }
+    
+    // PRIORITY 2: Priority models get boost (but less than Roboflow)
+    if (isPriority && !isRoboflow) {
+      relevanceScore += 50000 // High boost for priority models (after Roboflow)
+    }
+    
+    return {
+      ...model,
+      relevanceScore
+    }
+  })
+  
+  // Sort by relevance score: Roboflow models first, then by keyword matches
+  scoredModels.sort((a, b) => {
+    // Roboflow models always come first
+    const aIsRoboflow = (a.model_id || '').toLowerCase().startsWith('roboflow/') ||
+                       (a.model_id || '').toLowerCase().includes('roboflow') ||
+                       (a.inferenceEndpoint && a.inferenceEndpoint.includes('roboflow.com'))
+    const bIsRoboflow = (b.model_id || '').toLowerCase().startsWith('roboflow/') ||
+                       (b.model_id || '').toLowerCase().includes('roboflow') ||
+                       (b.inferenceEndpoint && b.inferenceEndpoint.includes('roboflow.com'))
+    
+    if (aIsRoboflow && !bIsRoboflow) return -1
+    if (!aIsRoboflow && bIsRoboflow) return 1
+    
+    // Otherwise sort by relevance score
+    return b.relevanceScore - a.relevanceScore
+  })
   
   return scoredModels.slice(0, limit)
 }
 
 /**
  * Mark a model as working (successful inference) with detailed status
+ * Only updates if model doesn't exist or hasn't been marked as working recently (within last hour)
  */
 export async function markModelAsWorking(
   model_id: string,
@@ -332,26 +639,54 @@ export async function markModelAsWorking(
     const db = await getDatabase()
     const collection = db.collection('validated_models')
     
+    // Check if model already exists and was recently marked as working (within last hour)
+    // Use atomic update to prevent race conditions when multiple calls happen simultaneously
+    const now = new Date().toISOString()
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+    
+    const existingModel = await collection.findOne({ model_id })
+    if (existingModel?.works && existingModel?.workingDate) {
+      const lastWorkingDate = new Date(existingModel.workingDate)
+      
+      // If model was marked as working within the last hour, skip update and logging
+      if (lastWorkingDate > oneHourAgo) {
+        // Only update checked_at timestamp atomically, don't update workingDate or other fields
+        await collection.updateOne(
+          { model_id },
+          { $set: { checked_at: now } }
+        )
+        return // Skip the full update and logging
+      }
+    }
+    
     const updateData: Partial<ValidatedModel> = {
       model_id,
       task_type,
       validated: true,
       works: true,
-      workingDate: new Date().toISOString(),
-      checked_at: new Date().toISOString(),
+      workingDate: now,
+      checked_at: now,
       hosted: true,
       warm: inferenceStatus === 'warm' || inferenceStatus === 'hosted',
       inferenceStatus,
       ...(sample_output && { sample_output })
     }
     
-    await collection.updateOne(
+    // Use atomic update with upsert to prevent duplicate writes
+    const updateResult = await collection.updateOne(
       { model_id },
-      { $set: updateData },
+      { 
+        $set: updateData,
+        $setOnInsert: { created_at: now } // Only set on insert, not update
+      },
       { upsert: true }
     )
     
-    console.log(`✅ Marked ${model_id} as WORKING (${inferenceStatus})`)
+    // Only log if this was actually a new write or significant update
+    // Check if we just inserted a new document or updated an existing one
+    if (updateResult.upsertedCount > 0 || !existingModel || !existingModel.works) {
+      console.log(`✅ Marked ${model_id} as WORKING (${inferenceStatus})`)
+    }
   } catch (error) {
     console.error(`❌ Error marking model as working: ${error}`)
     throw error
@@ -394,6 +729,102 @@ export async function markModelAsFailed(
   } catch (error) {
     console.error(`❌ Error marking model as failed: ${error}`)
     throw error
+  }
+}
+
+/**
+ * Save Roboflow model to MongoDB when found in search results
+ * This ensures Roboflow models are available in getValidatedModels queries
+ */
+export async function saveRoboflowModelToValidated(
+  modelIdentifier: string,
+  modelData: {
+    name: string
+    author: string
+    task_type: string
+    api_endpoint?: string
+    classes?: string[]
+    tags?: string[]
+    mAP?: string
+    training_images?: string
+  }
+): Promise<void> {
+  try {
+    const db = await getDatabase()
+    const collection = db.collection('validated_models')
+    
+    // Ensure model_id has roboflow/ prefix
+    const modelId = modelIdentifier.startsWith('roboflow/') 
+      ? modelIdentifier 
+      : `roboflow/${modelIdentifier}`
+    
+    const updateData: Partial<ValidatedModel> = {
+      model_id: modelId,
+      name: modelData.name,
+      author: modelData.author || 'Roboflow Universe',
+      task_type: modelData.task_type,
+      validated: true, // Assume Roboflow models work (they have API endpoints)
+      works: true,
+      classes: modelData.classes || [],
+      class_count: modelData.classes?.length || 0,
+      downloads: 0, // Roboflow models don't have downloads
+      likes: 0,
+      tags: modelData.tags || [],
+      inferenceEndpoint: modelData.api_endpoint,
+      inference_endpoint: modelData.api_endpoint,
+      supportsInference: true,
+      checked_at: new Date().toISOString(),
+      hosted: true,
+      warm: false,
+      inferenceStatus: 'hosted' as const
+    }
+    
+    // Check if model already exists to avoid duplicate saves
+    const existingModel = await collection.findOne({ model_id: modelId })
+    
+    if (existingModel) {
+      // Model exists - update only if new data is provided (don't overwrite with empty/null values)
+      const updateFields: any = {
+        checked_at: new Date().toISOString() // Always update checked_at
+      }
+      
+      // Only update fields that have new data
+      if (modelData.name && modelData.name !== existingModel.name) {
+        updateFields.name = modelData.name
+      }
+      if (modelData.api_endpoint && modelData.api_endpoint !== existingModel.inferenceEndpoint) {
+        updateFields.inferenceEndpoint = modelData.api_endpoint
+        updateFields.inference_endpoint = modelData.api_endpoint
+      }
+      if (modelData.classes && modelData.classes.length > 0) {
+        updateFields.classes = modelData.classes
+        updateFields.class_count = modelData.classes.length
+      }
+      if (modelData.tags && modelData.tags.length > 0) {
+        updateFields.tags = modelData.tags
+      }
+      
+      if (Object.keys(updateFields).length > 1) { // More than just checked_at
+        await collection.updateOne(
+          { model_id: modelId },
+          { $set: updateFields }
+        )
+        console.log(`✅ Updated existing Roboflow model in MongoDB: ${modelId}`)
+      } else {
+        console.log(`ℹ️  Roboflow model already exists in MongoDB: ${modelId} (no updates needed)`)
+      }
+    } else {
+      // New model - insert
+      await collection.updateOne(
+        { model_id: modelId },
+        { $set: updateData },
+        { upsert: true }
+      )
+      console.log(`✅ Saved new Roboflow model to MongoDB: ${modelId}`)
+    }
+  } catch (error) {
+    console.error(`❌ Error saving Roboflow model to MongoDB: ${error}`)
+    // Don't throw - this is a background operation
   }
 }
 

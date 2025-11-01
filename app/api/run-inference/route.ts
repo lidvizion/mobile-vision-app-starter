@@ -385,7 +385,8 @@ export async function POST(request: NextRequest) {
     
     console.log('🚀 Calling Hugging Face inference endpoint directly:', {
       endpoint: inferenceEndpoint,
-      modelId: model_id
+      modelId: model_id,
+      parameters: JSON.stringify(parameters || {}, null, 2)
     })
     
     const response = await fetch(inferenceEndpoint, {

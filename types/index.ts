@@ -7,6 +7,8 @@ export type {
   CVResponse,
   CVResults,
   Detection,
+  KeypointDetection,
+  Keypoint,
   Classification,
   SegmentationRegion,
   ImageMetadata

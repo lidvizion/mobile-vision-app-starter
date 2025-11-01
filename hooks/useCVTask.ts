@@ -50,10 +50,13 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
           const parameters: Record<string, any> = {}
           
           // Add parameters based on task type and model source
+          // NOTE: We don't set confidence threshold here - API returns ALL results
+          // Client-side filtering happens in ResultsDisplay using MobX store
           if (selectedModel.source === 'roboflow') {
-            // Roboflow models work better with lower confidence thresholds
-            if (selectedModel.task?.toLowerCase().includes('detection')) {
-              parameters.confidence = 0.3 // Lower confidence for more detections 
+            // Roboflow models - explicitly set confidence=0 to get ALL results
+            // Roboflow API defaults to 50% confidence threshold, so we must set to 0 to get everything
+            if (selectedModel.task?.toLowerCase().includes('detection') || selectedModel.task?.toLowerCase().includes('segmentation')) {
+              parameters.confidence = 0 // Set to 0 to get ALL detections (0-100% confidence)
               parameters.overlap = 0.3 // Standard overlap threshold
             }
           } else {
@@ -61,7 +64,8 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             if (selectedModel.task?.toLowerCase().includes('classification')) {
               parameters.top_k = 5 // Return top 5 predictions
             } else if (selectedModel.task?.toLowerCase().includes('detection')) {
-              parameters.threshold = 0.5 // Confidence threshold for detections
+              // Some HF models may filter by default, set threshold=0 to get ALL results
+              parameters.threshold = 0 // Set to 0 to get ALL detections (0-100% confidence)
             }
           }
           
@@ -70,6 +74,11 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
           
           if (selectedModel.source === 'roboflow') {
             // Use Roboflow inference API
+            // Ensure inference endpoint is available (required for Roboflow models)
+            if (!selectedModel.inferenceEndpoint) {
+              throw new Error(`Roboflow model ${selectedModel.id} is missing inference endpoint. Please select a different model or try searching again.`)
+            }
+            
             response = await fetch('/api/roboflow-inference', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -77,6 +86,8 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
                 model_url: selectedModel.inferenceEndpoint,
                 api_key: selectedModel.apiKey,
                 image: base64,
+                model_id: selectedModel.id, // Pass model ID for tracking
+                task_type: selectedModel.task, // Pass task type for proper categorization
                 parameters: Object.keys(parameters).length > 0 ? parameters : undefined
               })
             })
@@ -131,20 +142,27 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             modelSource: selectedModel.source
           })
           
-          // Save inference result to MongoDB (hf_inference_jobs collection)
+          // Save inference result to MongoDB (hf_inference_jobs or roboflow_inference_jobs collection)
           try {
+            const savePayload: any = {
+              user_id: 'anonymous',
+              model_id: selectedModel.id,
+              query: modelViewStore.queryText || 'unknown',
+              image_url: base64, // Using base64 as image_url for now 
+              response: inferenceData.results
+            }
+            
+            // Add inference endpoint for Roboflow models (required for future inference calls)
+            if (selectedModel.source === 'roboflow' && selectedModel.inferenceEndpoint) {
+              savePayload.inference_endpoint = selectedModel.inferenceEndpoint
+            }
+            
             await fetch('/api/save-inference-result', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                user_id: 'anonymous',
-                model_id: selectedModel.id,
-                query: modelViewStore.queryText || 'unknown',
-                image_url: base64, // Using base64 as image_url for now 
-                response: inferenceData.results
-              })
+              body: JSON.stringify(savePayload)
             })
-            logger.info('Inference job saved to MongoDB (hf_inference_jobs)', context)
+            logger.info(`Inference job saved to MongoDB (${selectedModel.source === 'roboflow' ? 'roboflow_inference_jobs' : 'hf_inference_jobs'})`, context)
           } catch (saveError) {
             logger.error('Failed to save inference job', context, saveError as Error)
             // Don't fail the inference if save fails
@@ -196,7 +214,7 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
     processImage,
     isProcessing: processImageMutation.isPending,
     lastResponse: processImageMutation.data || null,
-    error: processImageMutation.error
+    error: processImageMutation.error,
   }
 }
 
@@ -306,7 +324,7 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
     return {
       task: 'segmentation',
       model_version: model.name,
-      processing_time: 0.8,
+      processing_time: (inferenceData.duration || 800) / 1000, // Convert ms to seconds
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -332,17 +350,15 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
             
             if (seg.mask) {
               try {
-                // Decode base64 mask to calculate actual coverage
-                const maskBuffer = Buffer.from(seg.mask, 'base64');
-                // For PNG masks, we need to count non-transparent pixels
-                // This is a simplified calculation - in practice, you'd parse the PNG
-                // and count actual mask pixels vs total image pixels
-                const maskSize = maskBuffer.length;
+                // Estimate area from mask size (base64 encoded PNG)
+                // This is a rough estimation - actual mask parsing would require PNG decoder
+                const maskBase64Length = seg.mask.length;
                 const imageSize = (imageDimensions?.width || 640) * (imageDimensions?.height || 480);
                 
-                // Rough estimation based on mask size vs image size
-                // This is not perfect but better than hardcoded 0.1
-                calculatedArea = Math.min(0.95, Math.max(0.01, maskSize / (imageSize * 0.1)));
+                // Rough estimation: assume mask represents roughly maskSize/imageSize coverage
+                // Base64 encoding increases size by ~33%, so we adjust for that
+                const estimatedPixels = (maskBase64Length * 3 / 4) / 4; // Approximate pixel count (4 bytes per pixel)
+                calculatedArea = Math.min(0.95, Math.max(0.01, estimatedPixels / imageSize));
               } catch (error) {
                 console.warn('Failed to calculate mask area, using fallback:', error);
                 calculatedArea = 0.1;
@@ -395,36 +411,79 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
  * Transform Roboflow API response to CVResponse format with pixel strips
  */
 function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata, imageDimensions?: { width: number; height: number }): CVResponse {
-  const results = inferenceData.results || []
+  // Roboflow API returns predictions, not results
+  const predictions = inferenceData.predictions || inferenceData.results || []
   
   // Determine task type from model and results
+  // Prioritize model's explicit task type, but verify with actual data
   let task = model.task || 'detection'
   
+  // Normalize model task to lowercase for easier comparison
+  const modelTaskLower = (model.task || '').toLowerCase()
+  
   // Check for specific data types to determine task
-  if (results.length > 0) {
-    const firstResult = results[0]
+  if (predictions.length > 0) {
+    const firstPrediction = predictions[0]
     
-    // Instance segmentation: has both bbox and mask
-    if (firstResult.bbox && firstResult.mask) {
+    // Keypoint detection: has keypoints array (check first, as it's most specific)
+    // Check both direct keypoints property and also check if any prediction has keypoints
+    const hasKeypoints = (firstPrediction.keypoints && Array.isArray(firstPrediction.keypoints) && firstPrediction.keypoints.length > 0) ||
+                         predictions.some((p: any) => p.keypoints && Array.isArray(p.keypoints) && p.keypoints.length > 0)
+    
+    if (hasKeypoints) {
+      task = 'keypoint-detection'
+    }
+    // Check for segmentation only if:
+    // 1. Model explicitly indicates segmentation, OR
+    // 2. There's a mask (pixel-level segmentation), OR
+    // 3. There are points AND model indicates segmentation (not detection)
+    else if (modelTaskLower.includes('segmentation') || 
+             firstPrediction.mask ||
+             (firstPrediction.points && modelTaskLower.includes('segmentation'))) {
       task = 'segmentation'
     }
-    // Object detection: has bbox but no mask
-    else if (firstResult.bbox) {
+    // Object detection: 
+    // - Has bbox
+    // - Model explicitly indicates detection (or is not segmentation)
+    // - No mask (mask indicates segmentation)
+    // - Points alone don't mean segmentation (could be polygon annotations for detection)
+    else if (firstPrediction.bbox && !firstPrediction.mask) {
+      // Trust model's task type if it explicitly says detection
+      if (modelTaskLower.includes('detection') || (!modelTaskLower.includes('segmentation') && !modelTaskLower.includes('keypoint'))) {
+        task = 'detection'
+      }
+    }
+    // Image segmentation: has mask or points but no bbox (and model indicates segmentation)
+    else if ((firstPrediction.mask || firstPrediction.points) && !firstPrediction.bbox) {
+      if (modelTaskLower.includes('segmentation')) {
+        task = 'segmentation'
+      }
+    }
+  }
+  
+  // Also check if model task type explicitly indicates keypoint detection
+  if (model.task && (modelTaskLower.includes('keypoint') || modelTaskLower.includes('key-point') || modelTaskLower.includes('pose'))) {
+    task = 'keypoint-detection'
+  }
+  
+  // Final check: If model explicitly says "Object Detection", don't override to segmentation
+  // unless there's a clear mask indicating segmentation
+  if (modelTaskLower.includes('object') && modelTaskLower.includes('detection') && 
+      task === 'segmentation' && predictions.length > 0) {
+    const hasMask = predictions.some((p: any) => p.mask)
+    if (!hasMask) {
+      // No mask found, trust the model's task type (Object Detection)
       task = 'detection'
-    }
-    // Image segmentation: has mask but no bbox
-    else if (firstResult.mask) {
-      task = 'segmentation'
     }
   }
   
   // Transform based on task type
-  if (task === 'detection' || task.includes('detection')) {
-    // Object Detection
+  if (task === 'keypoint-detection' || (task.includes('keypoint') && predictions.some((p: any) => p.keypoints))) {
+    // Keypoint Detection - has bounding box + keypoints (separate schema)
     return {
-      task: 'detection',
+      task: 'keypoint-detection',
       model_version: model.name,
-      processing_time: inferenceData.processing_time || 0.5,
+      processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -432,11 +491,84 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
         format: 'jpeg'
       },
       results: {
-        detections: results.map((detection: any) => ({
-          class: detection.class,
-          confidence: detection.confidence,
-          bbox: detection.bbox
-        }))
+        keypoint_detections: predictions.map((prediction: any) => {
+          // Roboflow returns center coordinates (x, y) and width/height
+          // If bbox exists, use it (it's already converted to top-left), otherwise use direct x/y/width/height
+          let bbox
+          if (prediction.bbox) {
+            // bbox is already in top-left format from Python script
+            bbox = prediction.bbox
+          } else if (prediction.x !== undefined && prediction.y !== undefined) {
+            // Roboflow returns center coordinates, convert to top-left
+            const center_x = prediction.x
+            const center_y = prediction.y
+            const width = prediction.width || 0
+            const height = prediction.height || 0
+            bbox = {
+              x: center_x - (width / 2),
+              y: center_y - (height / 2),
+              width: width,
+              height: height
+            }
+          } else {
+            bbox = { x: 0, y: 0, width: 0, height: 0 }
+          }
+          
+          return {
+            class: prediction.class,
+            confidence: prediction.confidence,
+            bbox: {
+              x: bbox.x,
+              y: bbox.y,
+              width: bbox.width,
+              height: bbox.height
+            },
+            keypoints: (prediction.keypoints || []).map((kp: any) => ({
+              x: kp.x,
+              y: kp.y,
+              confidence: kp.confidence || 1.0,
+              class_id: kp.class_id,
+              class: kp.class
+            })),
+            class_id: prediction.class_id,
+            detection_id: prediction.detection_id
+          }
+        })
+      }
+    }
+  } else if (task === 'detection' || task.includes('detection')) {
+    // Object Detection
+    return {
+      task: 'detection',
+      model_version: model.name,
+      processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
+      timestamp: inferenceData.timestamp || new Date().toISOString(),
+      image_metadata: {
+        width: imageDimensions?.width || 640,
+        height: imageDimensions?.height || 480,
+        format: 'jpeg'
+      },
+      results: {
+        detections: predictions.map((detection: any) => {
+          // Convert Roboflow bbox format to our format
+          const bbox = detection.bbox || {
+            x: detection.x || 0,
+            y: detection.y || 0,
+            width: detection.width || 0,
+            height: detection.height || 0
+          }
+          
+          return {
+            class: detection.class,
+            confidence: detection.confidence,
+            bbox: {
+              x: bbox.x || detection.x || 0,
+              y: bbox.y || detection.y || 0,
+              width: bbox.width || detection.width || 0,
+              height: bbox.height || detection.height || 0
+            }
+          }
+        })
       }
     }
   } else if (task === 'segmentation' || task.includes('segmentation')) {
@@ -446,7 +578,7 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
     return {
       task: 'segmentation',
       model_version: model.name,
-      processing_time: inferenceData.processing_time || 0.5,
+      processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -455,14 +587,47 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
       },
       results: {
         segmentation: {
-          regions: results.map((seg: any, index: number) => ({
-            class: seg.class,
-            area: seg.area,
-            color: colors[index % colors.length],
-            mask: seg.mask || null,
-            bbox: seg.bbox || null,
-            pixelStrip: seg.pixelStrip || null // Include pixel strip data
-          }))
+          regions: predictions.map((seg: any, index: number) => {
+            // Calculate area from bbox if not provided
+            let area = seg.area || 0.1
+            
+            // Handle bbox conversion (Roboflow may return center coordinates)
+            let bbox = seg.bbox || null
+            if (!bbox && seg.x !== undefined && seg.y !== undefined && seg.width && seg.height) {
+              // Convert center coordinates to top-left format
+              bbox = {
+                x: seg.x - (seg.width / 2),
+                y: seg.y - (seg.height / 2),
+                width: seg.width,
+                height: seg.height
+              }
+            } else if (bbox && bbox.x !== undefined && bbox.y !== undefined) {
+              // bbox already exists, ensure it's in top-left format
+              // (should already be converted by Python script, but double-check)
+              bbox = {
+                x: bbox.x,
+                y: bbox.y,
+                width: bbox.width || seg.width || 0,
+                height: bbox.height || seg.height || 0
+              }
+            }
+            
+            if (!seg.area && bbox) {
+              const bboxArea = bbox.width * bbox.height
+              const imageArea = (imageDimensions?.width || 640) * (imageDimensions?.height || 480)
+              area = Math.min(0.95, Math.max(0.01, bboxArea / imageArea))
+            }
+            
+            return {
+              class: seg.class,
+              area: area,
+              color: colors[index % colors.length],
+              mask: seg.mask || null,
+              points: seg.points || null, // Include polygon points if available
+              bbox: bbox,
+              pixelStrip: seg.pixelStrip || null // Include pixel strip data
+            }
+          })
         }
       }
     }
@@ -472,7 +637,7 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
   return {
     task: 'multi-type',
     model_version: model.name,
-    processing_time: inferenceData.processing_time || 0.5,
+    processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
     timestamp: inferenceData.timestamp || new Date().toISOString(),
     image_metadata: {
       width: imageDimensions?.width || 640,

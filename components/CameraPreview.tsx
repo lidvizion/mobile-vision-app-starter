@@ -115,7 +115,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
         reader.readAsDataURL(snapshotFile)
         
         // Process the snapshot
-        const response = await processImage(snapshotFile)
+          const response = await processImage(snapshotFile)
         onImageProcessed(response)
         logger.info('Video snapshot processed successfully', context)
       } catch (error) {
@@ -135,7 +135,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
       reader.readAsDataURL(file)
 
       try {
-        const response = await processImage(file)
+          const response = await processImage(file)
         onImageProcessed(response)
         logger.info('Image processed successfully', context)
       } catch (error) {
@@ -202,7 +202,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
       reader.readAsDataURL(file)
 
       try {
-        const response = await processImage(file)
+          const response = await processImage(file)
         onImageProcessed(response)
         stopCamera()
       } catch (error) {
@@ -361,6 +361,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
           </div>
         </div>
       )}
+
 
       {/* Upload Area */}
       {!cameraActive && (

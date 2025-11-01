@@ -3,7 +3,7 @@ export interface ModelMetadata {
   name: string
   description: string
   task: string
-  source: 'roboflow' | 'huggingface'
+  source: 'roboflow' | 'huggingface' | 'curated' | 'background'
   author: string
   downloads: number
   likes?: number
@@ -17,6 +17,8 @@ export interface ModelMetadata {
   image?: string
   modelUrl: string
   platforms: string[]
+  // Phase 1: Curated vs Background models
+  isCurated?: boolean
   // Model metrics
   metrics?: {
     mAP?: number
@@ -43,7 +45,7 @@ export interface ModelMetadata {
     tier: 1 | 2 | 3
     displayLabel: string
     description: string
-    taskType: 'object-detection' | 'classification' | 'segmentation' | 'captioning' | 'qa' | 'embedding' | 'general'
+    taskType: 'object-detection' | 'classification' | 'segmentation' | 'keypoint-detection' | 'captioning' | 'qa' | 'embedding' | 'general'
     displayFormat: {
       type: 'bounding-boxes' | 'labels' | 'masks' | 'text' | 'embeddings' | 'general'
       requiresImage: boolean

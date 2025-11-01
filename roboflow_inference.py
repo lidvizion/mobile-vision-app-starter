@@ -1,35 +1,48 @@
 #!/usr/bin/env python3
 """
 Roboflow Inference Script
-Uses the official Roboflow Python SDK with serverless endpoint
+Supports both serverless.roboflow.com and detect.roboflow.com endpoints
 """
 
 import sys
 import json
 import base64
-import tempfile
-import os
+import requests
 import warnings
-from roboflow import Roboflow
+import re
 
 # Suppress warnings and verbose output
 warnings.filterwarnings('ignore')
 
 def run_inference(model_url, api_key, image_base64, parameters=None):
     """
-    Run inference using Roboflow SDK with proper model identification
+    Run inference using Roboflow API (serverless or detect endpoint)
     """
     try:
-        # Initialize Roboflow client
-        rf = Roboflow(api_key=api_key)
-        
-        # Extract model information from the URL
-        # Handle different URL formats from the search agent
-        if 'detect.roboflow.com' in model_url:
-            # Extract model and version from detect URL
+        # Parse the model URL to determine endpoint type
+        if 'serverless.roboflow.com' in model_url:
+            # Serverless endpoint format: https://serverless.roboflow.com/project-name/version
+            # Extract project and version from URL
+            url_clean = model_url.split('?')[0]  # Remove query params if any
+            url_parts = url_clean.replace('https://serverless.roboflow.com/', '').split('/')
+            
+            if len(url_parts) >= 2:
+                model_name = url_parts[0]
+                version = url_parts[1]
+            else:
+                return {
+                    'success': False,
+                    'error': 'Invalid serverless URL format. Expected: https://serverless.roboflow.com/project-name/version',
+                    'model_id': 'unknown'
+                }
+            
+            api_endpoint = f"https://serverless.roboflow.com/{model_name}/{version}"
+            use_serverless = True
+            
+        elif 'detect.roboflow.com' in model_url:
+            # Detect endpoint format: https://detect.roboflow.com/project-name/version
             if '?model=' in model_url:
-                # Template format: https://detect.roboflow.com/?model=name&version=1&api_key=
-                import re
+                # Template format: https://detect.roboflow.com/?model=name&version=1
                 model_match = re.search(r'model=([^&]+)', model_url)
                 version_match = re.search(r'version=([^&]+)', model_url)
                 
@@ -43,26 +56,25 @@ def run_inference(model_url, api_key, image_base64, parameters=None):
                         'model_id': 'unknown'
                     }
             else:
-                # Direct format: https://detect.roboflow.com/project_id/model_id
+                # Direct format: https://detect.roboflow.com/project_id/version
                 url_parts = model_url.replace('https://detect.roboflow.com/', '').split('/')
                 if len(url_parts) >= 2:
-                    # For direct URLs, we need to use the workspace approach
-                    # This is more complex and might not work with all models
-                    return {
-                        'success': False,
-                        'error': 'Direct detect URLs require workspace access. Please use template URLs.',
-                        'model_id': 'unknown'
-                    }
+                    model_name = url_parts[0]
+                    version = url_parts[1]
                 else:
                     return {
                         'success': False,
                         'error': 'Invalid detect URL format',
                         'model_id': 'unknown'
                     }
+            
+            api_endpoint = f"https://detect.roboflow.com/{model_name}/{version}"
+            use_serverless = False
+            
         else:
             return {
                 'success': False,
-                'error': 'Please provide a detect.roboflow.com URL',
+                'error': 'Please provide a serverless.roboflow.com or detect.roboflow.com URL',
                 'model_id': 'unknown'
             }
         
@@ -71,86 +83,106 @@ def run_inference(model_url, api_key, image_base64, parameters=None):
             # Remove data URL prefix
             image_base64 = image_base64.split(',')[1]
         
-        image_data = base64.b64decode(image_base64)
+        # Prepare query parameters
+        query_params = {
+            'api_key': api_key
+        }
         
-        # Save to temporary file
-        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
-            temp_file.write(image_data)
-            temp_path = temp_file.name
+        # Add optional parameters for both endpoint types
+        if parameters:
+            if 'confidence' in parameters:
+                query_params['confidence'] = parameters['confidence']
+            if 'overlap' in parameters:
+                query_params['overlap'] = parameters['overlap']
+            if 'max_detections' in parameters:
+                query_params['max_detections'] = parameters['max_detections']
         
-        try:
-            # Use the Roboflow SDK to load the model
-            # For public models, we need to use the workspace approach
-            workspace = rf.workspace()
-            
-            # Try to find the project by name
-            # Note: This might not work for all models as they might be in private workspaces
-            try:
-                project = workspace.project(model_name)
-                model_version = project.version(int(version))
-                model = model_version.model
-            except Exception as e:
-                # If workspace approach fails, try using the model directly
-                # This is a fallback approach
-                return {
-                    'success': False,
-                    'error': f'Could not access model {model_name} version {version}. Model might be private or require different authentication. Error: {str(e)}',
-                    'model_id': f'{model_name}/{version}'
-                }
-            
-            # Prepare parameters
-            inference_params = {
-                'confidence': 0.3,
-                'overlap': 0.3
+        # Make the API request based on endpoint type
+        if use_serverless:
+            # Serverless endpoint expects raw base64 data with specific headers
+            # Confidence and other parameters are passed in query params
+            response = requests.post(
+                api_endpoint,
+                params=query_params,
+                data=image_base64,
+                headers={
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                timeout=30
+            )
+        else:
+            # Detect endpoint expects multipart form data
+            response = requests.post(
+                api_endpoint,
+                params=query_params,
+                files={'file': ('image.jpg', base64.b64decode(image_base64), 'image/jpeg')},
+                timeout=30
+            )
+        
+        if response.status_code != 200:
+            return {
+                'success': False,
+                'error': f'API request failed with status {response.status_code}: {response.text}',
+                'model_id': f'{model_name}/{version}'
             }
-            
-            if parameters:
-                if 'confidence' in parameters:
-                    inference_params['confidence'] = parameters['confidence']
-                if 'overlap' in parameters:
-                    inference_params['overlap'] = parameters['overlap']
-            
-            # Run inference
-            result = model.predict(temp_path, **inference_params)
-            
-            # Convert to JSON-serializable format
-            predictions = []
-            for prediction in result:
-                # Access prediction data directly from the JSON representation
-                pred_json = prediction.json()
+        
+        # Parse the response
+        result = response.json()
+        
+        # Convert to our expected format
+        predictions = []
+        if 'predictions' in result:
+            for pred in result['predictions']:
+                # Roboflow returns center coordinates, convert to top-left
+                center_x = pred.get('x', 0)
+                center_y = pred.get('y', 0)
+                width = pred.get('width', 0)
+                height = pred.get('height', 0)
                 
-                # Convert Roboflow center coordinates to top-left coordinates
-                center_x = pred_json.get('x', 0)
-                center_y = pred_json.get('y', 0)
-                width = pred_json.get('width', 0)
-                height = pred_json.get('height', 0)
-                
-                # Calculate top-left coordinates
+                # Calculate top-left coordinates (bounding box)
                 x = center_x - (width / 2)
                 y = center_y - (height / 2)
                 
                 pred_data = {
-                    'class': pred_json.get('class', 'unknown'),
-                    'confidence': pred_json.get('confidence', 0.0),
+                    'class': pred.get('class', 'unknown'),
+                    'confidence': pred.get('confidence', 0.0),
                     'bbox': {
                         'x': x,
                         'y': y,
                         'width': width,
-                        'height': height
+                        'height': height,
+                        'center_x': center_x,  # Keep original center coords too
+                        'center_y': center_y
                     }
                 }
+                
+                # Include additional fields if present (for segmentation models)
+                if 'points' in pred:
+                    pred_data['points'] = pred['points']  # Polygon points for segmentation
+                if 'mask' in pred:
+                    pred_data['mask'] = pred['mask']  # Binary mask data
+                if 'class_id' in pred:
+                    pred_data['class_id'] = pred['class_id']  # Numeric class ID
+                if 'detection_id' in pred:
+                    pred_data['detection_id'] = pred['detection_id']  # Unique detection ID
+                
+                # Include keypoints if present (for keypoint detection models)
+                if 'keypoints' in pred and isinstance(pred['keypoints'], list):
+                    pred_data['keypoints'] = pred['keypoints']  # Keypoints array
+                    # Also keep original bbox format (x, y, width, height) as Roboflow returns
+                    pred_data['x'] = center_x
+                    pred_data['y'] = center_y
+                    pred_data['width'] = width
+                    pred_data['height'] = height
+                
                 predictions.append(pred_data)
-            
-            return {
-                'success': True,
-                'predictions': predictions,
-                'model_id': f'{model_name}/{version}'
-            }
-            
-        finally:
-            # Clean up temporary file
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
+        
+        return {
+            'success': True,
+            'predictions': predictions,
+            'model_id': f'{model_name}/{version}',
+            'endpoint_type': 'serverless' if use_serverless else 'detect'
+        }
                 
     except Exception as e:
         return {
@@ -160,17 +192,26 @@ def run_inference(model_url, api_key, image_base64, parameters=None):
         }
 
 def main():
-    if len(sys.argv) < 4:
+    if len(sys.argv) < 3:
         print(json.dumps({
             'success': False,
-            'error': 'Usage: python roboflow_inference.py <model_url> <api_key> <image_base64> [parameters_json]'
+            'error': 'Usage: python roboflow_inference.py <model_url> <api_key> [parameters_json] < image_base64 (via stdin)'
         }))
         sys.exit(1)
     
     model_url = sys.argv[1]
     api_key = sys.argv[2]
-    image_base64 = sys.argv[3]
-    parameters = json.loads(sys.argv[4]) if len(sys.argv) > 4 else None
+    parameters = json.loads(sys.argv[3]) if len(sys.argv) > 3 else None
+    
+    # Read image data from stdin to avoid command line argument size limits
+    image_base64 = sys.stdin.read()
+    
+    if not image_base64:
+        print(json.dumps({
+            'success': False,
+            'error': 'No image data provided via stdin'
+        }))
+        sys.exit(1)
     
     result = run_inference(model_url, api_key, image_base64, parameters)
     print(json.dumps(result))

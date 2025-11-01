@@ -10,24 +10,26 @@ interface ModelSearchRequest {
 }
 
 interface ModelSearchResponse {
+  success: boolean
   models: ModelMetadata[]
-  total: number
-  displayed: number
-  hasMore: boolean
-  remaining: number
-  sources: {
-    roboflow: number
-    huggingface: number
-  }
   pagination: {
     page: number
-    pageSize: number
+    limit: number
+    total: number
     totalPages: number
-    totalModels: number
     hasNextPage: boolean
-    hasPreviousPage: boolean
-    nextPage: number | null
-    previousPage: number | null
+    hasPrevPage: boolean
+  }
+  queryId: string
+  timestamp: string
+  sources: {
+    curated: number
+    background: number
+    total: number
+  }
+  backgroundSearch: {
+    status: 'running' | 'completed' | 'error'
+    message: string
   }
 }
 
@@ -45,11 +47,8 @@ export function useModelSearch() {
       const requestId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       const startTime = Date.now()
 
-      console.log('🔍 Model search started', {
-        requestId,
-        keywords: request.keywords,
-        taskType: request.task_type
-      })
+      // Reduced logging for performance
+      console.log('🔍 Model search started')
 
       const response = await fetch('/api/model-search', {
         method: 'POST',
@@ -74,11 +73,7 @@ export function useModelSearch() {
       }
 
       const data = await response.json() as ModelSearchResponse
-      console.log('✅ Model search success', {
-        requestId,
-        duration,
-        modelCount: data.models.length
-      })
+      console.log('✅ Model search success')
 
       return data
     },
@@ -93,6 +88,9 @@ export function useModelSearch() {
       
       // Update pagination based on loaded models for client-side pagination
       modelViewStore.updatePaginationFromLoadedModels()
+      
+      // Reduced logging for performance
+      console.log('⚡ Phase 1 completed')
     },
     onError: (error: Error) => {
       console.error('Model search error:', error)

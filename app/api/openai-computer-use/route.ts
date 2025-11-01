@@ -435,7 +435,9 @@ function generateRoboflowModels(keywords: string[], taskType: string, maxModels:
     // Check task type match
     const taskMatch = model.task_type === taskType || 
                      (taskType === 'detection' && model.task_type === 'classification') ||
-                     (taskType === 'classification' && model.task_type === 'detection')
+                     (taskType === 'classification' && model.task_type === 'detection') ||
+                     (taskType === 'keypoint-detection' && (model.task_type === 'detection' || model.task_type === 'keypoint-detection')) ||
+                     (taskType === 'keypoint-detection' && model.tags.some(tag => tag.toLowerCase().includes('keypoint') || tag.toLowerCase().includes('pose')))
     
     return keywordMatch && taskMatch
   })

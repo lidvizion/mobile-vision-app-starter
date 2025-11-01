@@ -1,13 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { observer } from 'mobx-react-lite'
 import { 
-  Sparkles, ArrowRight, ArrowRightLeft, Box, Lightbulb, Download, ExternalLink, 
+  ArrowRight, ArrowRightLeft, Box, Lightbulb, Download, ExternalLink, 
   Smartphone, ChevronDown, ChevronUp, Filter, Grid, Grid3X3, Image, Layers, 
   Layers3, MapPin, Square, Tag, Target, Type, Video, VideoIcon, AlertCircle, 
   CheckCircle, FileText, FileVideo, Zap, Eye, Scan, Focus, Camera, 
-  ScanLine, ScanFace, ScanBarcode, ScanEye, ScanSearch, ScanText, Globe
+  ScanLine, ScanFace, ScanBarcode, ScanEye, ScanSearch, ScanText, Globe,
+  Loader2
 } from 'lucide-react'
 import { EXAMPLE_QUERIES } from '@/lib/keywordExtraction'
 import { ModelMetadata } from '@/types/models'
@@ -15,6 +16,7 @@ import { modelViewStore } from '@/stores/modelViewStore'
 import { useQueryRefine } from '@/hooks/useQueryRefine'
 import { useModelSearch } from '@/hooks/useModelSearch'
 import { useSaveModelSelection } from '@/hooks/useSaveModelSelection'
+import { useBackgroundSearch } from '@/hooks/useBackgroundSearch'
 import ModelSearchSkeleton from './ModelSearchSkeleton'
 
 interface GuidedModelFlowProps {
@@ -24,11 +26,58 @@ interface GuidedModelFlowProps {
 const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
   const [showSearchBar, setShowSearchBar] = useState(false)
   const [sessionId] = useState(() => `session_${Date.now()}`)
+  const [showBackgroundSearchIndicator, setShowBackgroundSearchIndicator] = useState(false)
+  const [hasBackgroundSearchCompleted, setHasBackgroundSearchCompleted] = useState(false)
 
   // React Query hooks
   const queryRefineMutation = useQueryRefine()
   const searchModels = useModelSearch()  // Renamed for clarity
   const saveSelectionMutation = useSaveModelSelection()
+
+  // Reset background search indicator when component mounts or query changes significantly
+  useEffect(() => {
+    setShowBackgroundSearchIndicator(false)
+  }, []) // Remove dependency to avoid ESLint warning
+  
+  // Background search hook - only enable after initial search is complete
+  const { status: backgroundStatus, isPolling } = useBackgroundSearch({
+    keywords: modelViewStore.refinedKeywords.length > 0 ? modelViewStore.refinedKeywords : [modelViewStore.queryText],
+    taskType: modelViewStore.taskType,
+    enabled: !modelViewStore.isSearching && modelViewStore.modelList.length > 0 && !hasBackgroundSearchCompleted, // Only run once per search
+    onNewModelsFound: (newModels) => {
+      console.log(`🔍 Found ${newModels.length} new models`)
+      
+      // Hide background search indicator
+      setShowBackgroundSearchIndicator(false)
+      
+      // Add new models to the existing list silently (no notification)
+      modelViewStore.addModels(newModels)
+      
+      // Mark background search as completed to prevent restart
+      setHasBackgroundSearchCompleted(true)
+    }
+  })
+
+  // Show background search indicator when polling starts, hide when completed
+  useEffect(() => {
+    if (isPolling) {
+      setShowBackgroundSearchIndicator(true)
+    } else if (backgroundStatus.status === 'completed') {
+      setShowBackgroundSearchIndicator(false)
+    }
+  }, [isPolling, backgroundStatus.status])
+
+  // Auto-hide indicator after 2 minutes as fallback
+  useEffect(() => {
+    if (showBackgroundSearchIndicator) {
+      const timeout = setTimeout(() => {
+        console.log('🕐 Auto-hiding background search indicator after 2 minutes')
+        setShowBackgroundSearchIndicator(false)
+      }, 2 * 60 * 1000) // 2 minutes
+
+      return () => clearTimeout(timeout)
+    }
+  }, [showBackgroundSearchIndicator])
 
   const taskIcons = {
     'detection': ScanEye, // Object Detection - eye scanning for detection
@@ -71,16 +120,36 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
     'Text to 3D': Type
   }
 
-  // Normalize task names - map object-detection to detection
+  // Normalize task names - consolidate similar task types
   const normalizeTaskName = (task: string) => {
-    if (task === 'object-detection') return 'detection'
-    return task
+    const normalized = task.toLowerCase()
+    
+    // Consolidate classification variants
+    if (normalized.includes('classification') || normalized === 'image-classification') {
+      return 'classification'
+    }
+    
+    // Consolidate segmentation variants
+    if (normalized.includes('segmentation') || normalized === 'instance-segmentation') {
+      return 'segmentation'
+    }
+    
+    // Map object-detection to detection
+    if (normalized === 'object-detection') {
+      return 'detection'
+    }
+    
+    return normalized
   }
 
 
 
   const handleSearch = async () => {
     if (modelViewStore.queryText.length < 10) return
+
+    // Reset notification state for new search
+    // Reset background search indicator when query changes
+    setHasBackgroundSearchCompleted(false)
 
     try {
       // Step 1: Refine query
@@ -177,7 +246,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
             className="w-full px-4 py-3 flex items-center justify-between hover:bg-wells-warm-grey/5 transition-colors"
           >
             <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-wells-dark-grey" />
+              <Zap className="w-4 h-4 text-wells-dark-grey" />
               <span className="text-sm font-medium text-wells-dark-grey">Search Again</span>
             </div>
             {showSearchBar ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -208,7 +277,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         {/* Results Header */}
         <div className="text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-wells-warm-grey/10 rounded-full mb-4">
-            <Sparkles className="w-4 h-4 text-wells-dark-grey" />
+            <Zap className="w-4 h-4 text-wells-dark-grey" />
             <span className="text-sm font-medium text-wells-dark-grey">Step 3</span>
           </div>
           <h2 className="text-2xl font-serif font-bold text-wells-dark-grey mb-2">
@@ -244,18 +313,38 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
               <span className="text-wells-dark-grey">All</span>
             </label>
             {(() => {
-              // Get unique task types from current models and normalize them
-              const uniqueTasks = Array.from(new Set(modelViewStore.displayedModels.map(model => normalizeTaskName(model.task))))
+              // Get unique task types from all models (not just displayed) and normalize them
+              const uniqueTasks = Array.from(new Set(modelViewStore.modelList.map(model => normalizeTaskName(model.task))))
               
               // Define common CV task filters to always show
-              const commonTasks = ['classification', 'segmentation', 'live']
+              const commonTasks = ['detection', 'classification', 'segmentation', 'live']
               
               // Combine all tasks and remove duplicates
               const allTasks = Array.from(new Set([...uniqueTasks, ...commonTasks]))
               
               return allTasks.map((task) => {
                 const Icon = taskIcons[task as keyof typeof taskIcons] || Grid
-                const hasModels = uniqueTasks.includes(task) || (task === 'segmentation' && (uniqueTasks.includes('segmentation') || uniqueTasks.includes('instance-segmentation')))
+                
+                // Check if this task has models (including normalized variants)
+                // Use filteredModels to check what models would actually be shown with this filter
+                const checkHasModels = () => {
+                  if (modelViewStore.modelList.length === 0) return false
+                  
+                  // Check if any model matches this task filter
+                  const testFilters = [task]
+                  return modelViewStore.modelList.some(model => {
+                    const normalizedModelTask = normalizeTaskName(model.task)
+                    return testFilters.some(filter => {
+                      const normalizedFilter = normalizeTaskName(filter)
+                      return normalizedModelTask === normalizedFilter || 
+                             normalizedModelTask.includes(normalizedFilter) || 
+                             normalizedFilter.includes(normalizedModelTask)
+                    })
+                  })
+                }
+                
+                const hasModels = checkHasModels()
+                
                 
                 return (
                   <label
@@ -282,13 +371,43 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                     />
                     <Icon className="w-4 h-4" />
                     <span className="capitalize text-wells-dark-grey">{task.replace(/([A-Z])/g, ' $1').trim()}</span>
-                    {!hasModels && <span className="text-xs opacity-50">(0)</span>}
                   </label>
                 )
               })
             })()}
           </div>
         </div>
+
+        {/* Background Search Indicator */}
+        {showBackgroundSearchIndicator && (
+          <div className="mb-6 animate-fade-in">
+            <div className="card-floating p-4 border border-wells-warm-grey/20 bg-wells-light-beige/50">
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 bg-gradient-to-br from-wells-dark-grey to-wells-warm-grey rounded-full flex items-center justify-center shadow-md">
+                    <Loader2 className="w-5 h-5 text-white animate-spin" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium text-wells-dark-grey mb-1">
+                    Searching for more models...
+                  </h4>
+                  <p className="text-xs text-wells-warm-grey">
+                    We're finding additional models that match your search. This won't interrupt your browsing.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-wells-dark-grey/30 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-wells-dark-grey/30 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                    <div className="w-2 h-2 bg-wells-dark-grey/30 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {/* Model Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -300,6 +419,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
             return (
               <div 
                 key={model.id} 
+                data-model-source={model.source}
                 className={`card-floating p-3 hover:shadow-xl transition-all cursor-pointer group flex flex-col h-[350px] ${
                   isTopThree ? 'border-2 border-wells-dark-grey/10' : ''
                 }`}
@@ -397,13 +517,13 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                       <span>⚠️ Variable Output</span>
                     </div>
                   )}
-                  {model.platforms.includes('mobile') && (
+                  {model.platforms?.includes('mobile') && (
                     <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-medium">
                       <Smartphone className="w-3 h-3" />
                       <span>Mobile</span>
                     </div>
                   )}
-                  {model.frameworks.slice(0, 2).map((fw) => (
+                  {model.frameworks?.slice(0, 2).map((fw) => (
                     <div key={fw} className="px-2 py-1 bg-wells-warm-grey/5 rounded text-xs text-wells-dark-grey">
                       {fw}
                     </div>
@@ -556,7 +676,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
       {/* Step 1: Define Your Use Case */}
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-wells-warm-grey/10 rounded-full mb-4">
-          <Sparkles className="w-4 h-4 text-wells-dark-grey" />
+          <Zap className="w-4 h-4 text-wells-dark-grey" />
           <span className="text-sm font-medium text-wells-dark-grey">Step 1</span>
         </div>
         <h2 className="text-3xl font-serif font-bold text-wells-dark-grey mb-3">

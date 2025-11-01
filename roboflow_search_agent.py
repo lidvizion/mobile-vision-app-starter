@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-roboflow_search_agent.py - IMPROVED VERSION
-🔍 Better data extraction with precise selectors and parsing
+roboflow_search_agent.py - FIXED VERSION
+🔍 Accurate project type, API endpoint, and data extraction
 """
 
 import os
+import sys
 import json
 import re
 from pathlib import Path
@@ -23,13 +24,36 @@ RETRY_WAIT = 3
 
 # ---------- Utilities ----------
 def connect_browser(headless=True):
+    quiet_mode = os.getenv("OUTPUT_JSON", "false").lower() == "true"
+    
+    if not quiet_mode:
+        print("🔧 Starting Playwright browser...")
+    
     playwright = sync_playwright().start()
-    browser = playwright.chromium.launch(headless=headless)
+    
+    browser_options = {
+        "headless": headless,
+        "args": [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-accelerated-2d-canvas",
+            "--no-first-run",
+            "--no-zygote",
+            "--disable-gpu"
+        ]
+    }
+    
+    browser = playwright.chromium.launch(**browser_options)
     context = browser.new_context(
         viewport=SCREEN,
         user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
     )
     page = context.new_page()
+    
+    if not quiet_mode:
+        print("✅ Browser connected successfully")
+    
     return playwright, browser, context, page
 
 def extract_number(text: str) -> Optional[str]:
@@ -37,12 +61,10 @@ def extract_number(text: str) -> Optional[str]:
     if not text or text == "N/A":
         return None
     
-    # Handle "4.5k images" -> "4500"
     match = re.search(r'(\d+\.?\d*)\s*[kK]', text)
     if match:
         return str(int(float(match.group(1)) * 1000))
     
-    # Handle regular numbers
     match = re.search(r'(\d+)', text)
     return match.group(1) if match else None
 
@@ -53,55 +75,75 @@ def extract_percentage(text: str) -> Optional[str]:
     match = re.search(r'(\d+\.?\d*)\s*%', text)
     return f"{match.group(1)}%" if match else None
 
-def extract_api_endpoint(page) -> Optional[str]:
-    """Extract API endpoint with multiple strategies"""
+def clean_html_entities(text: str) -> str:
+    """Clean HTML entities from text"""
+    if not text:
+        return text
+    return text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+
+def extract_api_endpoint(page, project_type: str, page_text: str, page_html: str) -> Optional[str]:
+    """Extract API endpoint - prioritizes serverless.roboflow.com (used by all modern models)"""
     
-    # Strategy 1: Look for input field with API URL
-    for selector in ["input[value*='https://detect.roboflow.com']", 
+    # Strategy 1: Look for serverless endpoint in HTML (most common now)
+    serverless_match = re.search(r'https://serverless\.roboflow\.com/[^\s\'"<>]+', page_html)
+    if serverless_match:
+        endpoint = clean_html_entities(serverless_match.group(0))
+        return endpoint
+    
+    # Strategy 2: Look in input fields for any roboflow endpoint
+    for selector in ["input[value*='https://serverless.roboflow.com']",
+                    "input[value*='https://detect.roboflow.com']", 
                     "input[value*='https://classify.roboflow.com']",
-                    "input[value*='https://segment.roboflow.com']",
-                    "input[value*='roboflow.com']"]:
+                    "input[value*='https://segment.roboflow.com']"]:
         el = page.query_selector(selector)
         if el:
             val = el.get_attribute("value")
-            if val and "roboflow.com" in val and ("detect" in val or "classify" in val or "segment" in val):
-                return val
+            if val and "roboflow.com" in val:
+                return clean_html_entities(val)
     
-    # Strategy 2: Look in code blocks and pre tags
+    # Strategy 3: Look in code blocks and text areas
     code_blocks = page.query_selector_all("code, pre, textarea")
     for block in code_blocks:
         try:
             text = block.inner_text()
             if not text:
                 continue
-            # Look for API endpoint pattern
+            
+            # Check for serverless first (most common)
+            match = re.search(r'https://serverless\.roboflow\.com/[^\s\'"<>]+', text)
+            if match:
+                return clean_html_entities(match.group(0))
+            
+            # Then check for legacy endpoints
             match = re.search(r'https://(detect|classify|segment)\.roboflow\.com/[^\s\'"<>]+', text)
             if match:
-                return match.group(0)
+                return clean_html_entities(match.group(0))
         except:
             continue
     
-    # Strategy 3: Look for the endpoint in the page HTML
-    try:
-        html = page.content()
-        match = re.search(r'https://(detect|classify|segment)\.roboflow\.com/[^\s\'"<>]+', html)
-        if match:
-            return match.group(0)
-    except:
-        pass
+    # Strategy 4: Search page text for serverless endpoint
+    serverless_text_match = re.search(r'https://serverless\.roboflow\.com/[^\s\'"<>]+', page_text)
+    if serverless_text_match:
+        return clean_html_entities(serverless_text_match.group(0))
     
-    # Strategy 4: Construct from workspace/project if we can find version info
+    # Strategy 5: Legacy endpoint fallback
+    legacy_match = re.search(r'https://(detect|classify|segment)\.roboflow\.com/[^\s\'"<>]+', page_html)
+    if legacy_match:
+        return clean_html_entities(legacy_match.group(0))
+    
+    # Strategy 6: Construct serverless endpoint from URL if we're on a project page
     try:
         url_parts = page.url.split('/')
-        if len(url_parts) >= 2:
+        if len(url_parts) >= 2 and '/model/' not in page.url:
             workspace = url_parts[-2]
             project = url_parts[-1]
-            # Look for version number in page
-            page_text = page.inner_text("body")
-            version_match = re.search(r'Version\s+(\d+)', page_text)
+            
+            # Look for version number
+            version_match = re.search(r'Model\s+(\d+)', page_text)
             if version_match:
                 version = version_match.group(1)
-                return f"https://detect.roboflow.com/{project}/{version}"
+                # All modern models use serverless endpoint
+                return f"https://serverless.roboflow.com/{project}/{version}"
     except:
         pass
     
@@ -111,10 +153,8 @@ def clean_text(text: str) -> str:
     """Clean extracted text"""
     if not text or text == "N/A":
         return "N/A"
-    # Remove extra whitespace and navigation clutter
     text = re.sub(r'\s+', ' ', text)
     text = text.strip()
-    # Remove common navigation phrases
     noise = ["Go to Roboflow App", "Universe Home", "Sign In or Sign Up", 
              "Roboflow App", "Documentation", "Universe", "Back"]
     for n in noise:
@@ -133,51 +173,35 @@ def scroll_page(page, max_scrolls=15):
         last_height = new_height
 
 # ---------- Model extraction ----------
-def extract_model_details(page) -> Dict:
-    """Extract model details with improved selectors and navigation"""
+def extract_model_details(page, quiet_mode=False) -> Dict:
+    """Extract model details with improved project type and API detection"""
     
-    # First, try clicking on Model tab if it exists (to see metrics)
-    try:
-        model_tab = page.query_selector("a:has-text('Model'), button:has-text('Model')")
-        if model_tab and model_tab.is_visible():
-            model_tab.click()
+    # Ensure we're on the Overview page, not the Model/API page
+    current_url = page.url
+    base_url = current_url.split('/model/')[0] if '/model/' in current_url else current_url
+    
+    # Start on Overview page
+    if '/model/' in current_url or not page.query_selector("text=METRICS"):
+        try:
+            page.goto(base_url, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(2000)
+        except:
+            pass
+    
+    # Make sure Overview tab is selected
+    try:
+        overview_tab = page.query_selector("a:has-text('Overview'), button:has-text('Overview')")
+        if overview_tab and overview_tab.is_visible():
+            overview_tab.click()
+            page.wait_for_timeout(1500)
     except:
         pass
     
     scroll_page(page, max_scrolls=MODEL_SCROLLS)
     
-    # Get initial page text
+    # Get page content
     page_text = page.inner_text("body")
     page_html = page.content()
-    
-    # Try to click API Docs to reveal endpoint (try multiple selectors)
-    api_endpoint = None
-    try:
-        # Try multiple ways to find and click API Docs
-        api_selectors = [
-            "a:has-text('API Docs')",
-            "button:has-text('API Docs')",
-            "[href*='api'], [href*='API']",
-            "text=API Docs"
-        ]
-        
-        for selector in api_selectors:
-            try:
-                api_link = page.query_selector(selector)
-                if api_link and api_link.is_visible():
-                    api_link.click()
-                    page.wait_for_timeout(3000)  # Wait longer for API content to load
-                    print(f"      → Clicked API Docs")
-                    break
-            except:
-                continue
-        
-        # Update page text after clicking
-        page_text = page.inner_text("body")
-        page_html = page.content()
-    except Exception as e:
-        pass
     
     # Extract title
     title = "N/A"
@@ -188,125 +212,211 @@ def extract_model_details(page) -> Dict:
             if title != "N/A" and len(title) > 3:
                 break
     
-    # Extract author (improved)
+    # Extract author
     author = "N/A"
     author_el = page.query_selector("a[href*='/profile']")
     if author_el:
         author = clean_text(author_el.inner_text())
     else:
-        # Look for "by Author Name" pattern
         match = re.search(r'by\s+([A-Za-z0-9\s_-]+?)(?:\n|Updated|\d)', page_text)
         if match:
             author = clean_text(match.group(1))
     
-    # Extract metrics from page text with multiple patterns
+    # FIXED: Extract project type from TAGS section
+    project_type = "N/A"
+    
+    # Strategy 1: Look for TAGS followed by badges/buttons
+    tags_section = re.search(r'TAGS\s+(.*?)(?:CLASSES|Model|Dataset|\n\n)', page_text, re.DOTALL)
+    if tags_section:
+        tags_text = tags_section.group(1)
+        if "Keypoint Detection" in tags_text or "Keypoint" in tags_text:
+            project_type = "Keypoint Detection"
+        elif "Instance Segmentation" in tags_text:
+            project_type = "Instance Segmentation"
+        elif "Object Detection" in tags_text:
+            project_type = "Object Detection"
+        elif "Classification" in tags_text:
+            project_type = "Image Classification"
+    
+    # Strategy 2: Look near project title on page
+    if project_type == "N/A":
+        title_area = page_text[:500]  # Check first 500 chars
+        if "Keypoint Detection" in title_area or "Keypoint" in title_area:
+            project_type = "Keypoint Detection"
+        elif "Instance Segmentation" in title_area:
+            project_type = "Instance Segmentation"
+        elif "Object Detection" in title_area:
+            project_type = "Object Detection"
+        elif "Classification" in title_area:
+            project_type = "Image Classification"
+    
+    # Extract metrics from METRICS section on Overview page
     mAP = None
     precision = None
     recall = None
     
-    # Pattern 1: "mAP 46.0%" or "mAP@50 46.0%"
-    map_patterns = [
-        r'mAP(?:@50)?\s*[:\s]*(\d+\.?\d*)\s*%',
-        r'(?:^|\n)(\d+\.?\d*)\s*%\s*mAP',
-    ]
-    for pattern in map_patterns:
-        match = re.search(pattern, page_text, re.IGNORECASE)
-        if match:
-            mAP = f"{match.group(1)}%"
-            break
+    # Look for METRICS section with percentages
+    metrics_section = re.search(r'METRICS\s+(.*?)(?:Try This Model|CLASSES|\n\n\n)', page_text, re.DOTALL)
+    if metrics_section:
+        metrics_text = metrics_section.group(1)
+        
+        # Extract mAP@50
+        map_match = re.search(r'mAP@50[^\d]*(\d+\.?\d*)\s*%', metrics_text)
+        if map_match:
+            mAP = f"{map_match.group(1)}%"
+        
+        # Extract Precision
+        prec_match = re.search(r'Precision[^\d]*(\d+\.?\d*)\s*%', metrics_text)
+        if prec_match:
+            precision = f"{prec_match.group(1)}%"
+        
+        # Extract Recall
+        recall_match = re.search(r'Recall[^\d]*(\d+\.?\d*)\s*%', metrics_text)
+        if recall_match:
+            recall = f"{recall_match.group(1)}%"
     
-    # Pattern 2: Precision
-    prec_patterns = [
-        r'Precision\s*[:\s]*(\d+\.?\d*)\s*%',
-        r'precision\s*[:\s]*(\d+\.?\d*)\s*%',
-    ]
-    for pattern in prec_patterns:
-        match = re.search(pattern, page_text, re.IGNORECASE)
+    # Fallback: broader search if not found in METRICS section
+    if not mAP:
+        map_patterns = [
+            r'mAP@50[^\d]*(\d+\.?\d*)\s*%',
+            r'mAP[^\d]*(\d+\.?\d*)\s*%',
+        ]
+        for pattern in map_patterns:
+            match = re.search(pattern, page_text)
+            if match:
+                mAP = f"{match.group(1)}%"
+                break
+    
+    if not precision:
+        match = re.search(r'Precision[^\d]*(\d+\.?\d*)\s*%', page_text)
         if match:
             precision = f"{match.group(1)}%"
-            break
     
-    # Pattern 3: Recall
-    recall_patterns = [
-        r'Recall\s*[:\s]*(\d+\.?\d*)\s*%',
-        r'recall\s*[:\s]*(\d+\.?\d*)\s*%',
-    ]
-    for pattern in recall_patterns:
-        match = re.search(pattern, page_text, re.IGNORECASE)
+    if not recall:
+        match = re.search(r'Recall[^\d]*(\d+\.?\d*)\s*%', page_text)
         if match:
             recall = f"{match.group(1)}%"
-            break
     
     # Extract image count
     images_match = re.search(r'(\d+\.?\d*[kK]?)\s*images', page_text)
     images = extract_number(images_match.group(1)) if images_match else None
     
-    # Extract project type
-    project_type = "N/A"
-    if "Object Detection" in page_text:
-        project_type = "Object Detection"
-    elif "Classification" in page_text:
-        project_type = "Image Classification"
-    elif "Segmentation" in page_text:
-        project_type = "Instance Segmentation"
-    
-    # Check if it has a trained model (look for Model count in sidebar)
+    # Check if it has a trained model
     has_model = bool(re.search(r'Model\s+\d+', page_text) or 
                     re.search(r'Version\s+\d+', page_text) or
                     'trained model' in page_text.lower())
     
-    # Extract classes from CLASSES section
+    # Extract classes from CLASSES section - FIXED to get actual class names
     classes = []
     class_count = "0"
-    classes_section = re.search(r'CLASSES\s*\((\d+)\)', page_text)
-    if classes_section:
-        class_count = classes_section.group(1)
-        # Look for class badges/buttons after CLASSES
-        after_classes = page_text[classes_section.end():classes_section.end()+500]
-        # Match class names (shown as buttons/badges)
-        class_matches = re.findall(r'([a-z][a-z0-9_-]{1,20})(?:\s|$)', after_classes)
-        # Filter out common words
-        common_words = {'the', 'and', 'or', 'for', 'to', 'in', 'on', 'at', 'by'}
-        classes = [c for c in class_matches if c not in common_words][:10]
-        classes = list(dict.fromkeys(classes))  # Remove duplicates while preserving order
+    
+    # Find CLASSES section with count
+    classes_match = re.search(r'CLASSES\s*\((\d+)\)', page_text)
+    if classes_match:
+        class_count = classes_match.group(1)
+        
+        # Get the next 300-500 characters after CLASSES
+        start_pos = classes_match.end()
+        class_section = page_text[start_pos:start_pos+500]
+        
+        # Look for actual class badges (they appear as individual words/tokens)
+        # Split by whitespace and filter
+        potential_classes = re.findall(r'\b([a-z][a-z0-9_\-]{0,25})\b', class_section)
+        
+        # Filter out common UI text and keep actual class names
+        ui_noise = {
+            'try', 'this', 'model', 'drop', 'an', 'image', 'or', 'browse', 
+            'your', 'device', 'description', 'for', 'project', 'has', 'not',
+            'been', 'published', 'yet', 'cite', 'license', 'by', 'updated',
+            'views', 'downloads', 'tags', 'classes', 'the', 'and', 'to', 'a',
+            'of', 'in', 'on', 'is', 'it', 'that', 'with'
+        }
+        
+        # Keep classes that look valid
+        for cls in potential_classes:
+            if len(cls) > 1 and cls not in ui_noise and cls not in classes:
+                classes.append(cls)
+                if len(classes) >= int(class_count):
+                    break
+        
+        # Limit to actual class count or 10, whichever is smaller
+        max_classes = min(int(class_count) if class_count.isdigit() else 10, 10)
+        classes = classes[:max_classes]
     
     # Extract tags
     tags = []
-    if "Object Detection" in page_text:
-        tags.append("Object Detection")
-    # Look for model types
+    if project_type != "N/A":
+        tags.append(project_type)
     model_types = re.findall(r'(yolov\d+|yolo|efficientdet|faster-?rcnn|ssd|retinanet)', page_text, re.IGNORECASE)
     if model_types:
         tags.extend([m.lower() for m in model_types[:3]])
     
-    # Extract API endpoint with improved methods
-    api_endpoint = extract_api_endpoint(page)
+    # Now try to get API endpoint by navigating to API Docs
+    api_endpoint = None
+    try:
+        # First try to extract from current page
+        current_page_html = page.content()
+        current_page_text = page.inner_text("body")
+        api_endpoint = extract_api_endpoint(page, project_type, current_page_text, current_page_html)
+        
+        # If not found, try clicking API Docs
+        if not api_endpoint:
+            api_selectors = [
+                "a:has-text('API Docs')",
+                "button:has-text('API Docs')",
+                "text=API Docs",
+            ]
+            
+            for selector in api_selectors:
+                try:
+                    api_link = page.query_selector(selector)
+                    if api_link and api_link.is_visible():
+                        api_link.click()
+                        page.wait_for_timeout(3000)
+                        # Update content after navigation
+                        page_text_api = page.inner_text("body")
+                        page_html_api = page.content()
+                        api_endpoint = extract_api_endpoint(page, project_type, page_text_api, page_html_api)
+                        if api_endpoint:
+                            break
+                except:
+                    continue
+    except:
+        pass
     
-    # If no API found, search more aggressively in HTML and text
-    if not api_endpoint:
-        # Pattern 1: detect.roboflow.com or classify.roboflow.com
-        api_match = re.search(r'(https://(?:detect|classify|segment)\.roboflow\.com/[^\s\'"<>]+)', page_html)
-        if api_match:
-            api_endpoint = api_match.group(1)
-        else:
-            # Pattern 2: Look for workspace/model pattern in API context
-            api_match = re.search(r'roboflow\.com/([^/\s]+/[^/\s]+)', page_html)
-            if api_match:
-                api_endpoint = f"https://detect.roboflow.com/{api_match.group(1)}"
+    # FIXED: Clean up API endpoint (remove query parameters)
+    if api_endpoint and '?' in api_endpoint:
+        api_endpoint = api_endpoint.split('?')[0]
     
-    # Extract model identifier from URL
+    # Extract model identifier from URL - FIXED
     url_parts = page.url.split('/')
-    model_id = f"{url_parts[-2]}/{url_parts[-1]}" if len(url_parts) >= 2 else "N/A"
+    workspace = url_parts[-2] if len(url_parts) >= 2 else "N/A"
+    project = url_parts[-1] if len(url_parts) >= 1 else "N/A"
     
-    # Extract updated time
+    # Clean up if we're on a model page
+    if '/model/' in project:
+        project = project.split('/model/')[0]
+    if '/model/' in workspace:
+        workspace = workspace.split('/model/')[0]
+    
+    model_id = f"{workspace}/{project}" if workspace != "N/A" and project != "N/A" else "N/A"
+    
+    # Extract updated time - FIXED
     updated = "N/A"
-    updated_match = re.search(r'Updated\s+(.+?)(?:\n|Use this|$)', page_text)
-    if updated_match:
-        updated = clean_text(updated_match.group(1))
+    updated_patterns = [
+        r'Updated\s+(\d+\s+(?:year|month|week|day|hour)s?\s+ago)',
+        r'Updated\s+([^•\n]{5,30})',
+    ]
+    for pattern in updated_patterns:
+        updated_match = re.search(pattern, page_text)
+        if updated_match:
+            updated = clean_text(updated_match.group(1))
+            if updated != "N/A" and len(updated) > 3:
+                break
     
     data = {
         "project_title": title,
-        "url": page.url,
+        "url": base_url,  # Use cleaned base URL without /model/ path
         "author": author,
         "project_type": project_type,
         "has_model": has_model,
@@ -322,10 +432,12 @@ def extract_model_details(page) -> Dict:
         "model_identifier": model_id,
     }
     
-    # Summary for logging
-    metrics = f"mAP:{mAP or 'N/A'} P:{precision or 'N/A'} R:{recall or 'N/A'}"
-    api_status = "✓API" if api_endpoint else "✗API"
-    print(f"   ✅ {title[:35]:<35} | {metrics} | {api_status}")
+    # Summary for logging (only if not in quiet mode)
+    if not quiet_mode:
+        metrics = f"mAP:{mAP or 'N/A'} P:{precision or 'N/A'} R:{recall or 'N/A'}"
+        api_status = "✓API" if api_endpoint else "✗API"
+        type_short = project_type.split()[0] if project_type != "N/A" else "N/A"
+        print(f"   ✅ {title[:30]:<30} | {type_short:<12} | {metrics} | {api_status}")
     
     return data
 
@@ -336,7 +448,7 @@ def open_model_with_retry(context, url, quiet_mode=False) -> Optional[Dict]:
         try:
             model_page.goto(url, wait_until="domcontentloaded", timeout=60000)
             model_page.wait_for_timeout(3000)
-            data = extract_model_details(model_page)
+            data = extract_model_details(model_page, quiet_mode=quiet_mode)
             model_page.close()
             return data
         except Exception as e:
@@ -349,30 +461,89 @@ def open_model_with_retry(context, url, quiet_mode=False) -> Optional[Dict]:
 
 # ---------- Search & scrape ----------
 def search_roboflow_models(keywords: str, max_projects: int = 10, headless=True) -> List[Dict]:
+    start_time = time.time()
     playwright, browser, context, page = connect_browser(headless=headless)
     models = []
     
-    # Check if we should suppress logs (API mode)
     quiet_mode = os.getenv("OUTPUT_JSON", "false").lower() == "true"
+    
+    if not quiet_mode:
+        print(f"⏱️ Browser connected in {time.time() - start_time:.2f}s")
 
     try:
-        if not quiet_mode:
-            print("🌐 Connecting to Roboflow Universe…")
-            print(f"🔗 {BASE_URL}/search?q={keywords.replace(' ', '+')}")
+        # Prioritize domain-specific keywords over generic ones
+        # Generic terms that should be deprioritized
+        generic_terms = {'segmentation', 'segformer', 'image-segmentation', 'detection', 'classification', 'object-detection', 'instance-segmentation'}
         
-        search_url = f"{BASE_URL}/search?q={keywords.replace(' ', '+')}"
+        keywords_list = keywords.split()
+        domain_keywords = [k for k in keywords_list if k.lower() not in generic_terms]
+        generic_keywords = [k for k in keywords_list if k.lower() in generic_terms]
+        
+        # Build search query matching Roboflow URL format: domain_keyword + model + instance + segmentation
+        # Example: "basketball+model+instance+segmentation" or "soccer+ball+model+instance+segmentation"
+        prioritized_keywords = []
+        
+        # Add domain-specific keywords first (most important) - e.g., "soccer", "ball"
+        prioritized_keywords.extend(domain_keywords[:2])  # Up to 2 domain keywords
+        
+        # Add "model" keyword (Roboflow search expects this format)
+        if 'model' not in [k.lower() for k in prioritized_keywords]:
+            prioritized_keywords.append('model')
+        
+        # Add task-specific keywords based on what's in the search
+        keywords_lower = keywords.lower()
+        
+        # Add "keypoint detection" if keypoint/pose-related (check first as it's more specific)
+        if (('keypoint' in keywords_lower or 'key-point' in keywords_lower or 'pose' in keywords_lower or 'landmark' in keywords_lower) 
+            and 'keypoint detection' not in keywords_lower):
+            prioritized_keywords.append('keypoint detection')
+        
+        # Add "instance segmentation" if segmentation-related (but not keypoint)
+        elif ('segment' in keywords_lower or 'segmentation' in keywords_lower) and 'instance segmentation' not in keywords_lower:
+            prioritized_keywords.append('instance segmentation')
+        
+        # Add "object detection" if detection-related (but not segmentation or keypoint)
+        elif (('detect' in keywords_lower or 'detection' in keywords_lower) 
+              and 'segment' not in keywords_lower 
+              and 'keypoint' not in keywords_lower 
+              and 'pose' not in keywords_lower):
+            if 'object detection' not in keywords_lower:
+                prioritized_keywords.append('object detection')
+        
+        # Add "image classification" if classification-related (but not detection, segmentation, or keypoint)
+        elif (('classif' in keywords_lower or 'classification' in keywords_lower) 
+              and 'detect' not in keywords_lower 
+              and 'segment' not in keywords_lower 
+              and 'keypoint' not in keywords_lower):
+            # Only add if "image classification" isn't already present as a phrase in keywords
+            # and "classification" isn't already in prioritized keywords
+            has_image_classification_phrase = 'image classification' in keywords_lower
+            has_classification_in_prioritized = 'classification' in [k.lower() for k in prioritized_keywords]
+            if not has_image_classification_phrase and not has_classification_in_prioritized:
+                prioritized_keywords.append('image classification')
+        
+        # Build final search query (limit to 4-5 terms for better Roboflow search results)
+        search_keywords = ' '.join(prioritized_keywords[:5])
+        
+        # Always print URL for debugging (even in quiet mode)
+        search_url = f"{BASE_URL}/search?q={search_keywords.replace(' ', '+')}"
+        # URL logging removed for cleaner output
+        
+        if not quiet_mode:
+            print(f"🎯 Prioritized search keywords (domain first): {search_keywords}")
+            print("🌐 Connecting to Roboflow Universe…")
+            print(f"🔗 {BASE_URL}/search?q={search_keywords.replace(' ', '+')}")
         
         page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
         if not quiet_mode:
-            print("✅ Page loaded")
+            print(f"✅ Page loaded in {time.time() - start_time:.2f}s")
         page.wait_for_timeout(5000)
         
-        # Click "Has a Model" filter to only show projects with trained models
+        # Try to apply "Has a Model" filter
         try:
             if not quiet_mode:
                 print("🔘 Applying 'Has a Model' filter...")
             
-            # Look for the "Has a Model" button/checkbox
             has_model_selectors = [
                 "button:has-text('Has a Model')",
                 "[data-filter='has-model']",
@@ -386,10 +557,10 @@ def search_roboflow_models(keywords: str, max_projects: int = 10, headless=True)
                     filter_btn = page.query_selector(selector)
                     if filter_btn and filter_btn.is_visible():
                         filter_btn.click()
-                        page.wait_for_timeout(3000)  # Wait for results to update
+                        page.wait_for_timeout(3000)
                         if not quiet_mode:
                             print("   ✓ Filter applied")
-                        break
+                            break
                 except:
                     continue
         except Exception as e:
@@ -452,19 +623,6 @@ def search_roboflow_models(keywords: str, max_projects: int = 10, headless=True)
         browser.close()
         playwright.stop()
 
-# ---------- Save JSON ----------
-def save_models_to_json(models: List[Dict], keywords: str):
-    out_dir = Path("roboflow_results")
-    out_dir.mkdir(exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_kw = keywords.replace(" ", "_")
-    filename = out_dir / f"{safe_kw}_{ts}.json"
-
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(models, f, indent=2, ensure_ascii=False)
-
-    print(f"\n💾 {filename}")
-    return filename
 
 # ---------- CLI ----------
 def main():
@@ -472,7 +630,6 @@ def main():
     max_projects = int(os.getenv("MAX_PROJECTS", "6"))
     headless = os.getenv("HEADLESS", "true").lower() == "true"
     
-    # Check if being called from API (should output JSON to stdout)
     output_json = os.getenv("OUTPUT_JSON", "false").lower() == "true"
 
     if not output_json:
@@ -486,19 +643,18 @@ def main():
     
     if results:
         if output_json:
-            # Output JSON to stdout for API consumption
             print(json.dumps(results, ensure_ascii=False))
         else:
-            # Normal CLI mode - save to file and show summary
-            #filename = save_models_to_json(results, keywords)
-            print(f"\n🎉 SUCCESS! Saved {len(results)} models")
+            print(f"\n🎉 SUCCESS! Extracted {len(results)} models")
             
-            # Show summary
             with_models = sum(1 for r in results if r.get('has_model'))
             with_metrics = sum(1 for r in results if r.get('mAP'))
+            with_segmentation = sum(1 for r in results if 'Segmentation' in r.get('project_type', ''))
+            
             print(f"\n📊 Summary:")
             print(f"   • {with_models} projects with trained models")
             print(f"   • {with_metrics} projects with performance metrics")
+            print(f"   • {with_segmentation} instance segmentation projects")
     else:
         if output_json:
             print("[]")

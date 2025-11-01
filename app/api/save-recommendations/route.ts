@@ -69,13 +69,64 @@ export async function POST(request: NextRequest) {
     const { getDatabase } = await import('@/lib/mongodb/connection')
     const db = await getDatabase()
 
-    // Insert recommendation record
-    await db.collection('model_recommendations').insertOne(recommendationRecord)
+    // Deduplicate models by name before saving
+    const uniqueModelsMap = new Map<string, typeof models[0]>()
+    models.forEach(model => {
+      const key = model.name || model.model_id
+      if (key && !uniqueModelsMap.has(key)) {
+        uniqueModelsMap.set(key, model)
+      }
+    })
+    const deduplicatedModels = Array.from(uniqueModelsMap.values())
+
+    // Check if recommendation already exists for this query_id
+    const existingRecommendation = await db.collection('model_recommendations').findOne({
+      query_id: query_id
+    })
+
+    if (existingRecommendation) {
+      // Update existing recommendation, merging unique models
+      const existingModelNames = new Set(existingRecommendation.models?.map((m: any) => m.name || m.model_id) || [])
+      const newModels = deduplicatedModels.filter(m => {
+        const key = m.name || m.model_id
+        return key && !existingModelNames.has(key)
+      })
+
+      if (newModels.length > 0) {
+        await db.collection('model_recommendations').updateOne(
+          { query_id: query_id },
+          { 
+            $set: {
+              models: [...(existingRecommendation.models || []), ...newModels],
+              updated_at: new Date().toISOString()
+            }
+          }
+        )
+        console.log(`✅ Updated recommendations: added ${newModels.length} new models`)
+      } else {
+        console.log(`ℹ️  No new models to add to existing recommendations`)
+      }
+    } else {
+      // Create new recommendation record with deduplicated models
+      const recommendationRecord = {
+        recommendation_id: recommendationId,
+        query_id,
+        query_text,
+        keywords,
+        task_type: task_type || 'detection',
+        models: deduplicatedModels,
+        created_at: new Date().toISOString()
+      }
+      
+      await db.collection('model_recommendations').insertOne(recommendationRecord)
+      console.log(`✅ Saved ${deduplicatedModels.length} unique model recommendations to MongoDB`)
+    }
 
     console.log('✅ Model recommendations saved:', {
       recommendation_id: recommendationId,
       query_id,
-      models_count: models.length
+      models_count: deduplicatedModels.length,
+      original_count: models.length
     })
 
     // Build response
