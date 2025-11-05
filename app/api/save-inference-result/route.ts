@@ -2,17 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 
 /**
  * /api/save-inference-result
- * Purpose: Store HF inference results in MongoDB for caching
+ * Purpose: Store inference results in MongoDB for caching (both HF and Roboflow)
  * 
- * MongoDB Collection: hf_inference_jobs
+ * MongoDB Collections:
+ * - hf_inference_jobs (for Hugging Face models)
+ * - roboflow_inference_jobs (for Roboflow models)
  * 
  * Schema:
  * {
  *   "_id": "uuid-job-123",
  *   "user_id": "uuid-xyz",
- *   "model_id": "roboflow/YOLOv8-Basketball-Detection",
+ *   "model_id": "roboflow/YOLOv8-Basketball-Detection" or "microsoft/resnet-50",
  *   "query": "basketball player shot detection",
  *   "image_url": "https://lidvizion-signed-url.s3.amazonaws.com/sample.jpg",
+ *   "inference_endpoint": "https://serverless.roboflow.com/soccer-ball-mfbf2/1" (Roboflow only),
  *   "response": [
  *     {"label": "basketball_player", "score": 0.97},
  *     {"label": "ball", "score": 0.92}
@@ -27,6 +30,7 @@ interface SaveInferenceRequest {
   query: string
   image_url?: string
   image_base64?: string
+  inference_endpoint?: string // For Roboflow models: the API endpoint URL (e.g., https://serverless.roboflow.com/soccer-ball-mfbf2/1)
   response: Array<{
     label: string
     score: number
@@ -49,6 +53,7 @@ export async function POST(request: NextRequest) {
       query,
       image_url,
       image_base64,
+      inference_endpoint,
       response: predictions
     } = body
 
@@ -63,8 +68,8 @@ export async function POST(request: NextRequest) {
     // Generate unique job ID
     const jobId = `uuid-job-${Date.now()}`
 
-    // Prepare HF inference job record (exact schema from spec)
-    const inferenceJob = {
+    // Prepare inference job record
+    const inferenceJob: any = {
       job_id: jobId,
       user_id: user_id || 'anonymous',
       model_id: model_id,
@@ -73,13 +78,24 @@ export async function POST(request: NextRequest) {
       response: predictions,
       created_at: new Date().toISOString()
     }
+    
+    // Add inference endpoint for Roboflow models (required for future inference calls)
+    if (inference_endpoint) {
+      inferenceJob.inference_endpoint = inference_endpoint
+    }
 
     // Save to MongoDB
     try {
       const { getDatabase } = await import('@/lib/mongodb/connection')
       const db = await getDatabase()
-      await db.collection('hf_inference_jobs').insertOne(inferenceJob)
-      console.log('✅ HF inference job saved to MongoDB:', jobId)
+      
+      // Detect if this is a Roboflow or Hugging Face model
+      const isRoboflow = model_id.startsWith('roboflow/') || model_id.startsWith('roboflow-')
+      const collectionName = isRoboflow ? 'roboflow_inference_jobs' : 'hf_inference_jobs'
+      const sourceLabel = isRoboflow ? 'Roboflow' : 'HF'
+      
+      await db.collection(collectionName).insertOne(inferenceJob)
+      console.log(`✅ ${sourceLabel} inference job saved to MongoDB:`, jobId)
     } catch (mongoError) {
       console.error('MongoDB save error:', mongoError)
       // Continue without failing the request
@@ -119,14 +135,18 @@ export async function GET(request: NextRequest) {
     const { getDatabase } = await import('@/lib/mongodb/connection')
     const db = await getDatabase()
 
+    // Detect model source to determine collection
+    const isRoboflow = model_id && (model_id.startsWith('roboflow/') || model_id.startsWith('roboflow-'))
+    const collectionName = isRoboflow ? 'roboflow_inference_jobs' : 'hf_inference_jobs'
+    
     // Check cache first if model_id and image_url provided
     if (model_id && image_url) {
       const cached = await db
-        .collection('hf_inference_jobs')
+        .collection(collectionName)
         .findOne({ model_id, image_url })
       
       if (cached) {
-        console.log('✅ Cache hit for inference job')
+        console.log(`✅ Cache hit for ${isRoboflow ? 'Roboflow' : 'HF'} inference job`)
         return NextResponse.json({
           success: true,
           cached: true,
@@ -140,9 +160,9 @@ export async function GET(request: NextRequest) {
     if (model_id) query.model_id = model_id
     if (user_id) query.user_id = user_id
 
-    // Fetch results
+    // Fetch results from appropriate collection
     const results = await db
-      .collection('hf_inference_jobs')
+      .collection(collectionName)
       .find(query)
       .sort({ created_at: -1 })
       .limit(limit)

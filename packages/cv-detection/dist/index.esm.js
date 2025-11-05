@@ -423,7 +423,7 @@ function useModelDetection(config) {
                             })];
                     case 2:
                         base64 = _a.sent();
-                        inferenceEndpoint = "https://api-inference.huggingface.co/models/".concat(config.modelId);
+                        inferenceEndpoint = "https://router.huggingface.co/hf-inference/models/".concat(config.modelId);
                         return [4 /*yield*/, fetch(inferenceEndpoint, {
                                 method: 'POST',
                                 headers: {

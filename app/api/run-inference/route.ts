@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { markModelAsWorking, markModelAsFailed } from '@/lib/mongodb/validatedModels'
+import OpenAI from 'openai'
 
 /**
  * /api/run-inference
  * Purpose: Run inference on a Hugging Face model
  * 
- * Endpoint: POST https://api-inference.huggingface.co/models/<model_id>
+ * Endpoint: POST https://router.huggingface.co/hf-inference/models/<model_id>
  * 
  * Example Request:
  * POST /api/run-inference
@@ -243,7 +244,7 @@ async function tryAlternativeInputFormats(
         requestBody = format.input
       }
       
-      const response = await fetch(`https://api-inference.huggingface.co/models/${model_id}`, {
+      const response = await fetch(`https://router.huggingface.co/hf-inference/models/${model_id}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -318,10 +319,12 @@ async function tryAlternativeInputFormats(
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
   const requestId = crypto.randomUUID()
+  let model_id: string = ''
   
   try {
     const body: RunInferenceRequest = await request.json()
-    const { model_id, inputs, parameters } = body
+    const { model_id: modelId, inputs, parameters } = body
+    model_id = modelId
 
     if (!model_id || !inputs) {
       return NextResponse.json(
@@ -348,7 +351,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('🔮 Running inference with enhanced error handling', {
+    console.log('🔮 Running inference with new InferenceClient', {
       requestId,
       modelId: model_id,
       timestamp: new Date().toISOString(),
@@ -357,193 +360,123 @@ export async function POST(request: NextRequest) {
       inputPreview: inputs.substring(0, 50) + '...'
     })
 
-    const inferenceEndpoint = `https://api-inference.huggingface.co/models/${model_id}`
-
-    // HF Inference API supports two main formats:
-    // 1. HTTP/HTTPS URLs (most reliable)
-    // 2. Base64 strings (but MUST be in the full data URL format)
+    // Initialize OpenAI client with Hugging Face router endpoint
+    const client = new OpenAI({
+      baseURL: "https://router.huggingface.co/v1",
+      apiKey: apiKey,
+    })
     
-    // The key insight: HF expects the FULL data URL including the prefix!
-    // Stripping it causes "cannot identify image file" errors
+    console.log('📤 Using OpenAI-compatible endpoint with Hugging Face router:', {
+      inputFormat: inputs.startsWith('data:') ? 'data URL (base64)' : 'HTTP URL',
+      hasParameters: Object.keys(parameters || {}).length > 0,
+      baseURL: "https://router.huggingface.co/v1",
+      provider: 'auto' // Let Hugging Face choose the best provider
+    })
     
-    // Prepare request payload
-    const payload: any = { inputs: inputs } // Send the complete data URL as-is
+    // For computer vision tasks, we need to use the direct inference endpoint
+    // since the OpenAI-compatible endpoint is for chat completions only
+    const inferenceEndpoint = `https://router.huggingface.co/hf-inference/models/${model_id}`
     
-    if (parameters && Object.keys(parameters).length > 0) {
-      payload.parameters = parameters
-      console.log('📝 Including parameters:', parameters)
+    // Prepare the request payload
+    const payload = {
+      inputs: inputs,
+      parameters: parameters || {}
     }
     
-    const requestBody = JSON.stringify(payload)
-    const contentType = 'application/json'
-    
-    console.log('📤 Sending request:', {
-      inputFormat: inputs.startsWith('data:') ? 'data URL (base64)' : 'HTTP URL',
-      hasParameters: Object.keys(parameters || {}).length > 0
+    console.log('🚀 Calling Hugging Face inference endpoint directly:', {
+      endpoint: inferenceEndpoint,
+      modelId: model_id,
+      parameters: JSON.stringify(parameters || {}, null, 2)
     })
     
     const response = await fetch(inferenceEndpoint, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': contentType,
-        'x-request-id': requestId
+        'Content-Type': 'application/json'
       },
-      body: requestBody as BodyInit,
-      // Increase timeout for large base64 images
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000) // 30 seconds
     })
-
+    
     if (!response.ok) {
       const errorText = await response.text()
-      const duration = Date.now() - startTime
-      
-      // Classify the error and determine appropriate action
-      const modelError = classifyError(response.status, errorText, model_id)
-      
-      console.error('❌ Enhanced error handling', {
-        requestId,
-        modelId: model_id,
-        status: response.status,
-        duration,
-        errorType: modelError.type,
-        retryable: modelError.retryable,
-        guidance: modelError.guidance
-      })
-
-      // Auto-validate model status in MongoDB (background task)
-      try {
-        await markModelAsFailed(
-          model_id,
-          detectModelType(model_id),
-          errorText,
-          modelError.type as 'api_unavailable' | 'input_format' | 'loading_state' | 'unknown'
-        )
-        console.log(`❌ Auto-marked ${model_id} as failed (${response.status}) in MongoDB`)
-      } catch (error) {
-        console.error('Auto-validation error:', error)
-      }
-
-      // If it's a retryable error (input format), try alternative formats
-      if (modelError.retryable && modelError.type === 'input_format') {
-        console.log(`🔄 Attempting automatic retry with alternative input formats for ${model_id}`)
-        
-        try {
-          const retryResult = await tryAlternativeInputFormats(model_id, inputs, parameters, apiKey)
-          
-          if (retryResult.success) {
-            console.log(`✅ Retry succeeded for ${model_id} after ${retryResult.retryCount} attempts`)
-            
-            // Auto-validate model as working in MongoDB (background task)
-            try {
-              await markModelAsWorking(
-                model_id,
-                detectModelType(model_id),
-                retryResult.results,
-                'hosted'
-              )
-            } catch (error) {
-              console.error('Auto-validation error after retry:', error)
-            }
-            
-            return NextResponse.json({
-              success: true,
-              model_id,
-              results: retryResult.results,
-              requestId,
-              duration: Date.now() - startTime,
-              timestamp: new Date().toISOString(),
-              retryCount: retryResult.retryCount,
-              retryNote: 'Succeeded after trying alternative input formats'
-            })
-          }
-        } catch (retryError) {
-          console.error(`❌ Retry failed for ${model_id}:`, retryError)
-        }
-      }
-
-      // Return error with enhanced guidance and HF link
-      return NextResponse.json({
-        success: false,
-        model_id,
-        error: {
-          type: modelError.type,
-          message: modelError.message,
-          statusCode: response.status,
-          retryable: modelError.retryable
-        },
-        guidance: modelError.guidance,
-        hfLink: modelError.hfLink,
-        requestId,
-        duration,
-        timestamp: new Date().toISOString(),
-        // Legacy fields for backward compatibility
-        status: response.status,
-        details: errorText,
-        modelUrl: modelError.hfLink,
-        redirectToHF: true
-      }, { status: response.status })
+      throw new Error(`Inference failed: ${response.status} ${response.statusText} - ${errorText}`)
     }
+    
+    const results = await response.json()
 
-    const result = await response.json()
     const duration = Date.now() - startTime
-
-    console.log('✅ HF inference success', {
+    
+    console.log('✅ Inference successful with new InferenceClient', {
       requestId,
       modelId: model_id,
       duration,
-      resultCount: Array.isArray(result) ? result.length : 1,
-      timestamp: new Date().toISOString(),
-      responseType: Array.isArray(result) ? 'array' : typeof result,
-      responseKeys: Array.isArray(result) ? 'N/A' : Object.keys(result || {}).join(', '),
-      sampleResult: Array.isArray(result) ? result[0] : result
+      resultCount: Array.isArray(results) ? results.length : 'not array'
     })
 
-    // 🎯 AUTO-VALIDATE: Mark this model as validated in MongoDB (background task)
+    // Mark model as working in MongoDB (background task)
     try {
-      const { markModelAsValidated } = await import('@/lib/mongodb/validatedModels')
-      
-      // Don't await - run in background to not slow down response
-      markModelAsValidated(
+      await markModelAsWorking(
         model_id,
-        true, // validated: true
-        Array.isArray(result) ? result.slice(0, 3) : result, // Sample output
-        {
-          task_type: 'unknown', // We don't have task_type here, would need to pass it
-          downloads: 0, // Would need to fetch from HF API
-          likes: 0
-        }
-      ).catch(err => console.error('Background validation save failed:', err))
-      
-      console.log(`✅ Auto-validated ${model_id} (marked as working in MongoDB)`)
-    } catch (error) {
-      console.error('Auto-validation error:', error)
+        detectModelType(model_id),
+        results,
+        'hosted'
+      )
+    } catch (dbError) {
+      console.warn('⚠️ Failed to update model status in MongoDB:', dbError)
     }
 
-    // Enhanced success response with tracking information
     return NextResponse.json({
       success: true,
       model_id,
-      results: result,
+      results,
       requestId,
-      duration,
       timestamp: new Date().toISOString(),
-      // Enhanced response format
-      modelStatus: 'working',
-      hfLink: `https://huggingface.co/${model_id}`,
-      guidance: 'Model is working correctly and has been validated.',
-      validationStatus: 'auto-validated'
+      duration
     })
 
-  } catch (error) {
-    console.error('❌ Run inference error:', error)
-    return NextResponse.json(
-      {
-        error: 'Inference request failed',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    )
+  } catch (error: any) {
+    const duration = Date.now() - startTime
+    
+    console.error('❌ Inference failed with new InferenceClient', {
+      requestId,
+      modelId: model_id,
+      duration,
+      error: error.message,
+      errorType: error.name
+    })
+
+    // Mark model as failed in MongoDB (background task)
+    try {
+      await markModelAsFailed(
+        model_id,
+        detectModelType(model_id),
+        error.message,
+        'unknown'
+      )
+      console.log(`❌ Auto-marked ${model_id} as failed in MongoDB`)
+    } catch (dbError) {
+      console.warn('⚠️ Failed to update model status in MongoDB:', dbError)
+    }
+
+    // Create a user-friendly error response
+    const modelError: ModelError = {
+      type: 'unknown',
+      message: error.message || 'Inference failed',
+      retryable: true,
+      guidance: 'Try again later or check if the model is available',
+      hfLink: `https://huggingface.co/${model_id}`
+    }
+
+    return NextResponse.json({
+      success: false,
+      model_id,
+      error: modelError,
+      requestId,
+      timestamp: new Date().toISOString(),
+      duration
+    }, { status: 500 })
   }
 }
 
