@@ -4,6 +4,8 @@ import { Detection, SegmentationRegion, KeypointDetection, Keypoint } from '@/ty
 import { formatConfidence } from '@/lib/utils'
 import SegmentationMaskRenderer from './SegmentationMaskRenderer'
 
+type LabelDisplayMode = 'boxes' | 'labels' | 'confidence' | 'shapes'
+
 interface OverlayRendererProps {
   detections?: Detection[]
   segmentation?: SegmentationRegion[]
@@ -12,6 +14,7 @@ interface OverlayRendererProps {
   imageHeight: number
   task: string
   confidenceThreshold?: number // 0.0 to 1.0, default 0.0
+  labelDisplayMode?: LabelDisplayMode // 'boxes' = no label, 'labels' = label only, 'confidence' = label + confidence
 }
 
 export default function OverlayRenderer({ 
@@ -21,7 +24,8 @@ export default function OverlayRenderer({
   imageWidth, 
   imageHeight, 
   task,
-  confidenceThreshold = 0.0
+  confidenceThreshold = 0.0,
+  labelDisplayMode = 'confidence'
 }: OverlayRendererProps) {
   // Keypoint Detection: Render bounding boxes + keypoints
   if (task === 'keypoint-detection' && keypointDetections && keypointDetections.length > 0) {
@@ -35,17 +39,23 @@ export default function OverlayRenderer({
           const color = colors[index % colors.length]
           
           return (
-            <div key={index} className="animate-scale-in" style={{ animationDelay: `${index * 0.1}s` }}>
+            <div 
+              key={index} 
+              className="absolute animate-scale-in" 
+              style={{ 
+                animationDelay: `${index * 0.1}s`,
+                left: `${(detection.bbox.x / imageWidth) * 100}%`,
+                top: `${(detection.bbox.y / imageHeight) * 100}%`,
+                width: `${(detection.bbox.width / imageWidth) * 100}%`,
+                height: `${(detection.bbox.height / imageHeight) * 100}%`,
+              }}
+            >
               {/* Bounding box */}
               <div
-                className="absolute border-2 rounded shadow-lg"
+                className="absolute inset-0 border-2 rounded shadow-lg"
                 style={{
                   borderColor: color,
                   backgroundColor: `${color}15`,
-                  left: `${(detection.bbox.x / imageWidth) * 100}%`,
-                  top: `${(detection.bbox.y / imageHeight) * 100}%`,
-                  width: `${(detection.bbox.width / imageWidth) * 100}%`,
-                  height: `${(detection.bbox.height / imageHeight) * 100}%`,
                 }}
               />
               
@@ -187,29 +197,42 @@ export default function OverlayRenderer({
                 </>
               )}
               
-              {/* Label */}
-              <div
-                className="absolute text-white text-sm px-3 py-1 rounded-lg font-semibold shadow-lg border"
-                style={{
-                  backgroundColor: color,
-                  borderColor: color,
-                  left: `${(detection.bbox.x / imageWidth) * 100}%`,
-                  top: `${((detection.bbox.y - 35) / imageHeight) * 100}%`,
-                  transform: 'translateX(-50%)',
-                  minWidth: 'max-content'
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-white rounded-full"></div>
-                  <span className="capitalize">{detection.class}</span>
-                  <span className="opacity-90 text-xs">({formatConfidence(detection.confidence)})</span>
-                  {detection.keypoints && (
-                    <span className="opacity-90 text-xs">
-                      • {detection.keypoints.filter(kp => kp.confidence >= confidenceThreshold).length} keypoints
-                    </span>
-                  )}
-                </div>
-              </div>
+              {/* Label attached to top of box */}
+              {labelDisplayMode !== 'boxes' && (() => {
+                const showConfidence = labelDisplayMode === 'confidence'
+                const hasKeypoints = detection.keypoints && detection.keypoints.length > 0
+                
+                // Position label at top-left of box, but allow it to extend beyond if needed
+                // Use left: 0 to align with left edge of box, or center if box is wide enough
+                const boxWidthPercent = (detection.bbox.width / imageWidth) * 100
+                const shouldCenter = boxWidthPercent > 15 // Center if box is wide enough
+                
+                return (
+                  <div
+                    className="absolute text-white text-xs px-2 py-0.5 rounded-t font-medium shadow-md z-10"
+                    style={{
+                      backgroundColor: color,
+                      left: shouldCenter ? '50%' : '0%',
+                      top: '0%',
+                      transform: shouldCenter ? 'translate(-50%, -100%)' : 'translateY(-100%)',
+                      minWidth: 'max-content',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="capitalize">{detection.class}</span>
+                      {showConfidence && (
+                        <span className="opacity-90">{formatConfidence(detection.confidence)}</span>
+                      )}
+                      {hasKeypoints && (
+                        <span className="opacity-90 text-xs">
+                          • {detection.keypoints.filter(kp => kp.confidence >= confidenceThreshold).length} keypoints
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )
         })}
@@ -230,17 +253,23 @@ export default function OverlayRenderer({
           const color = colors[index % colors.length]
           
           return (
-            <div key={index} className="animate-scale-in" style={{ animationDelay: `${index * 0.1}s` }}>
+            <div 
+              key={index} 
+              className="absolute animate-scale-in" 
+              style={{ 
+                animationDelay: `${index * 0.1}s`,
+                left: `${(detection.bbox.x / imageWidth) * 100}%`,
+                top: `${(detection.bbox.y / imageHeight) * 100}%`,
+                width: `${(detection.bbox.width / imageWidth) * 100}%`,
+                height: `${(detection.bbox.height / imageHeight) * 100}%`,
+              }}
+            >
               {/* Bounding box with enhanced styling */}
               <div
-                className="absolute border-2 rounded shadow-lg"
+                className="absolute inset-0 border-2 rounded shadow-lg"
                 style={{
                   borderColor: color,
                   backgroundColor: `${color}15`,
-                  left: `${(detection.bbox.x / imageWidth) * 100}%`,
-                  top: `${(detection.bbox.y / imageHeight) * 100}%`,
-                  width: `${(detection.bbox.width / imageWidth) * 100}%`,
-                  height: `${(detection.bbox.height / imageHeight) * 100}%`,
                 }}
               />
               
@@ -250,8 +279,8 @@ export default function OverlayRenderer({
                 style={{
                   borderColor: color,
                   backgroundColor: color,
-                  left: `${(detection.bbox.x / imageWidth) * 100}%`,
-                  top: `${(detection.bbox.y / imageHeight) * 100}%`,
+                  left: '0%',
+                  top: '0%',
                   transform: 'translate(-50%, -50%)'
                 }}
               />
@@ -260,9 +289,9 @@ export default function OverlayRenderer({
                 style={{
                   borderColor: color,
                   backgroundColor: color,
-                  left: `${((detection.bbox.x + detection.bbox.width) / imageWidth) * 100}%`,
-                  top: `${(detection.bbox.y / imageHeight) * 100}%`,
-                  transform: 'translate(-50%, -50%)'
+                  right: '0%',
+                  top: '0%',
+                  transform: 'translate(50%, -50%)'
                 }}
               />
               <div
@@ -270,9 +299,9 @@ export default function OverlayRenderer({
                 style={{
                   borderColor: color,
                   backgroundColor: color,
-                  left: `${(detection.bbox.x / imageWidth) * 100}%`,
-                  top: `${((detection.bbox.y + detection.bbox.height) / imageHeight) * 100}%`,
-                  transform: 'translate(-50%, -50%)'
+                  left: '0%',
+                  bottom: '0%',
+                  transform: 'translate(-50%, 50%)'
                 }}
               />
               <div
@@ -280,30 +309,42 @@ export default function OverlayRenderer({
                 style={{
                   borderColor: color,
                   backgroundColor: color,
-                  left: `${((detection.bbox.x + detection.bbox.width) / imageWidth) * 100}%`,
-                  top: `${((detection.bbox.y + detection.bbox.height) / imageHeight) * 100}%`,
-                  transform: 'translate(-50%, -50%)'
+                  right: '0%',
+                  bottom: '0%',
+                  transform: 'translate(50%, 50%)'
                 }}
               />
               
-              {/* Enhanced label with better positioning */}
-              <div
-                className="absolute text-white text-sm px-3 py-1 rounded-lg font-semibold shadow-lg border"
-                style={{
-                  backgroundColor: color,
-                  borderColor: color,
-                  left: `${(detection.bbox.x / imageWidth) * 100}%`,
-                  top: `${((detection.bbox.y - 35) / imageHeight) * 100}%`,
-                  transform: 'translateX(-50%)',
-                  minWidth: 'max-content'
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-white rounded-full"></div>
-                  <span className="capitalize">{detection.class}</span>
-                  <span className="opacity-90 text-xs">({formatConfidence(detection.confidence)})</span>
-                </div>
-              </div>
+              {/* Label attached to top of box */}
+              {labelDisplayMode !== 'boxes' && (() => {
+                const showConfidence = labelDisplayMode === 'confidence'
+                
+                // Position label at top-left of box, but allow it to extend beyond if needed
+                // Use left: 0 to align with left edge of box, or center if box is wide enough
+                const boxWidthPercent = (detection.bbox.width / imageWidth) * 100
+                const shouldCenter = boxWidthPercent > 15 // Center if box is wide enough
+                
+                return (
+                  <div
+                    className="absolute text-white text-xs px-2 py-0.5 rounded-t font-medium shadow-md z-10"
+                    style={{
+                      backgroundColor: color,
+                      left: shouldCenter ? '50%' : '0%',
+                      top: '0%',
+                      transform: shouldCenter ? 'translate(-50%, -100%)' : 'translateY(-100%)',
+                      minWidth: 'max-content',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="capitalize">{detection.class}</span>
+                      {showConfidence && (
+                        <span className="opacity-90">{formatConfidence(detection.confidence)}</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )
         })}
@@ -323,19 +364,25 @@ export default function OverlayRenderer({
       return true
     })
     
+    // Determine what to show based on labelDisplayMode
+    const showShapes = labelDisplayMode === 'shapes' || labelDisplayMode === 'confidence'
+    const showLabels = labelDisplayMode === 'labels' || labelDisplayMode === 'confidence'
+    
     return (
       <div className="absolute inset-0 pointer-events-none">
-        {/* Render pixel-level segmentation masks */}
-        <SegmentationMaskRenderer
-          regions={filteredSegmentation}
-          imageWidth={imageWidth}
-          imageHeight={imageHeight}
-          containerWidth={imageWidth}
-          containerHeight={imageHeight}
-        />
+        {/* Render pixel-level segmentation masks/shapes */}
+        {showShapes && (
+          <SegmentationMaskRenderer
+            regions={filteredSegmentation}
+            imageWidth={imageWidth}
+            imageHeight={imageHeight}
+            containerWidth={imageWidth}
+            containerHeight={imageHeight}
+          />
+        )}
         
         {/* Render labels for each region */}
-        {filteredSegmentation.map((region, index) => (
+        {showLabels && filteredSegmentation.map((region, index) => (
           <div key={index} className="animate-fade-in" style={{ animationDelay: `${index * 0.2}s` }}>
             {/* Region label positioned at the center of the region */}
             <div
@@ -352,7 +399,14 @@ export default function OverlayRenderer({
                   style={{ backgroundColor: region.color }}
                 />
                 <span className="capitalize">{region.class}</span>
-                <span className="opacity-70">({Math.round(region.area * 100)}%)</span>
+                {labelDisplayMode === 'confidence' && (
+                  <span className="opacity-70">
+                    {(region as any).confidence !== undefined 
+                      ? formatConfidence((region as any).confidence)
+                      : `(${Math.round(region.area * 100)}%)`
+                    }
+                  </span>
+                )}
               </div>
             </div>
           </div>

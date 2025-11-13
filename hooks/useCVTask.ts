@@ -450,13 +450,13 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
     else if (firstPrediction.bbox && !firstPrediction.mask) {
       // Trust model's task type if it explicitly says detection
       if (modelTaskLower.includes('detection') || (!modelTaskLower.includes('segmentation') && !modelTaskLower.includes('keypoint'))) {
-        task = 'detection'
+      task = 'detection'
       }
     }
     // Image segmentation: has mask or points but no bbox (and model indicates segmentation)
     else if ((firstPrediction.mask || firstPrediction.points) && !firstPrediction.bbox) {
       if (modelTaskLower.includes('segmentation')) {
-        task = 'segmentation'
+      task = 'segmentation'
       }
     }
   }
@@ -559,8 +559,8 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
           }
           
           return {
-            class: detection.class,
-            confidence: detection.confidence,
+          class: detection.class,
+          confidence: detection.confidence,
             bbox: {
               x: bbox.x || detection.x || 0,
               y: bbox.y || detection.y || 0,

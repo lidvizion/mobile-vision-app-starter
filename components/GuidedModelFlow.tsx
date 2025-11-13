@@ -414,7 +414,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           {modelViewStore.displayedModels.map((model, index) => {
             const TaskIcon = taskIcons[model.task as keyof typeof taskIcons] || Grid
             const isTopThree = modelViewStore.currentPage === 1 && index < 3
-            const topRank = index + 1 // Only for first 3 models on page 1
+            const topRank = index + 1 // Only for first 3 models on page 1 
             
             return (
               <div 

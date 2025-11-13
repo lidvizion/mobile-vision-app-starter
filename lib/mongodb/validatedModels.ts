@@ -685,7 +685,7 @@ export async function markModelAsWorking(
     // Only log if this was actually a new write or significant update
     // Check if we just inserted a new document or updated an existing one
     if (updateResult.upsertedCount > 0 || !existingModel || !existingModel.works) {
-      console.log(`✅ Marked ${model_id} as WORKING (${inferenceStatus})`)
+    console.log(`✅ Marked ${model_id} as WORKING (${inferenceStatus})`)
     }
   } catch (error) {
     console.error(`❌ Error marking model as working: ${error}`)

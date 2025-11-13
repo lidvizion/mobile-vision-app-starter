@@ -6,7 +6,7 @@ export const ImageFileSchema = z.object({
     (type) => ['image/jpeg', 'image/png', 'image/webp'].includes(type),
     { message: 'Only JPEG, PNG, and WebP files are supported' }
   ),
-  size: z.number().max(10 * 1024 * 1024, 'File size must be less than 10MB'),
+  size: z.number().max(20 * 1024 * 1024, 'File size must be less than 20MB'),
   name: z.string().min(1, 'File name is required')
 });
 

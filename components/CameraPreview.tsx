@@ -309,9 +309,18 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
             
             <button
               onClick={() => {
-                // Use the selected model ID directly instead of trying to parse it from error message
                 if (selectedModel) {
-                  window.open(`https://huggingface.co/${selectedModel.id}`, '_blank')
+                  // Use modelUrl if available, otherwise construct URL based on source
+                  if (selectedModel.modelUrl) {
+                    window.open(selectedModel.modelUrl, '_blank')
+                  } else if (selectedModel.source === 'roboflow') {
+                    // For Roboflow models, construct URL from model ID
+                    // Model ID format is typically "workspace/project/version" or similar
+                    window.open(`https://universe.roboflow.com/${selectedModel.id}`, '_blank')
+                  } else {
+                    // Default to Hugging Face
+                    window.open(`https://huggingface.co/${selectedModel.id}`, '_blank')
+                  }
                 }
               }}
               className="flex items-center gap-2 px-3 py-2 bg-gray-600 text-white rounded-xl hover:bg-gray-700 transition-colors text-sm font-medium"

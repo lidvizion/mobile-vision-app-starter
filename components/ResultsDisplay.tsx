@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react'
 import { observer } from 'mobx-react-lite'
 import { CVResponse } from '@/types'
 import { formatTimestamp, formatConfidence } from '@/lib/utils'
-import { Clock, Zap, Image as ImageIcon, BarChart3, Target, Tag, Palette, Code, List } from 'lucide-react'
+import { Clock, Zap, Image as ImageIcon, BarChart3, Target, Tag, Palette, Code, List, Settings } from 'lucide-react'
 import OverlayRenderer from './OverlayRenderer'
+import EditableAnnotationOverlay from './EditableAnnotationOverlay'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
 import { modelViewStore } from '@/stores/modelViewStore'
@@ -15,9 +16,14 @@ interface ResultsDisplayProps {
   selectedImage: string | null
 }
 
+type LabelDisplayMode = 'boxes' | 'labels' | 'confidence' | 'shapes'
+
 const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImage }: ResultsDisplayProps) {
   const [viewMode, setViewMode] = useState<'json' | 'classes'>('classes')
   const [sliderValue, setSliderValue] = useState<number>(0)
+  const [labelDisplayMode, setLabelDisplayMode] = useState<LabelDisplayMode>('confidence')
+  const [isEditing, setIsEditing] = useState<boolean>(false)
+  const [isSaving, setIsSaving] = useState<boolean>(false)
   
   // Get confidence threshold from MobX store (this will trigger re-render when it changes)
   const confidenceThreshold = modelViewStore.confidenceThreshold
@@ -29,6 +35,14 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
   
   // Filter results client-side based on confidence threshold
   const filteredDetections = response?.results.detections?.filter(d => d.confidence >= confidenceThreshold) || []
+  const [editedDetections, setEditedDetections] = useState(filteredDetections)
+  
+  // Update editedDetections when filteredDetections change (but not when editing)
+  useEffect(() => {
+    if (!isEditing) {
+      setEditedDetections(filteredDetections)
+    }
+  }, [filteredDetections, isEditing])
   const filteredLabels = response?.results.labels?.filter(l => l.score >= confidenceThreshold) || []
   const filteredKeypointDetections = response?.results.keypoint_detections?.map(detection => ({
     ...detection,
@@ -36,8 +50,8 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
     keypoints: detection.keypoints?.filter(kp => kp.confidence >= confidenceThreshold) || []
   })).filter(d => d.confidence >= confidenceThreshold) || []
   const filteredSegmentationRegions = response?.results.segmentation?.regions?.filter(r => {
-    // Some segmentation regions might not have confidence, include them if they don't
-    // If region has confidence property, filter by it; otherwise include all
+    // Some segmentation regions might not have confidence, include them if they don't 
+    // If region has confidence property, filter by it; otherwise include all 
     return (r as any).confidence === undefined || (r as any).confidence >= confidenceThreshold
   }) || []
   
@@ -109,17 +123,29 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
 
   return (
     <div className="card-floating p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-wells-dark-grey rounded-xl flex items-center justify-center shadow-wells-md">
-            <BarChart3 className="w-4 h-4 text-white" />
+      <div className="mb-6">
+        {/* Header Row */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-wells-dark-grey rounded-xl flex items-center justify-center shadow-wells-md">
+              <BarChart3 className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg font-serif font-semibold text-wells-dark-grey">Analysis Results</h3>
+              <p className="text-sm text-wells-warm-grey">Computer vision analysis complete</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-lg font-serif font-semibold text-wells-dark-grey">Analysis Results</h3>
-            <p className="text-sm text-wells-warm-grey">Computer vision analysis complete</p>
+          <div className={cn(
+            'px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 border shadow-wells-sm',
+            getTaskColor(response.task)
+          )}>
+            <TaskIcon className="w-4 h-4" />
+            <span className="capitalize">{response.task.replace('-', ' ')}</span>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        
+        {/* Controls Row - Roboflow style */}
+        <div className="flex items-center gap-4 flex-wrap">
           {/* Confidence Threshold Slider */}
           <div className="flex items-center gap-2">
             <label className="text-xs font-medium text-wells-dark-grey whitespace-nowrap">
@@ -139,7 +165,7 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
                   modelViewStore.setConfidenceThreshold(thresholdValue)
                 }
               }}
-              className="w-48 h-2 bg-wells-warm-grey rounded-lg appearance-none cursor-pointer accent-wells-dark-grey"
+              className="w-32 h-2 bg-wells-warm-grey rounded-lg appearance-none cursor-pointer accent-wells-dark-grey"
               style={{
                 background: `linear-gradient(to right, #2C2C2C 0%, #2C2C2C ${sliderValue}%, #D4D4D4 ${sliderValue}%, #D4D4D4 100%)`
               }}
@@ -154,13 +180,49 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
               </button>
             )}
           </div>
-          <div className={cn(
-            'px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 border shadow-wells-sm',
-            getTaskColor(response.task)
-          )}>
-            <TaskIcon className="w-4 h-4" />
-            <span className="capitalize">{response.task.replace('-', ' ')}</span>
-          </div>
+          
+          {/* Label Display Mode Dropdown - Roboflow style */}
+          {(response.results.detections && response.results.detections.length > 0) || 
+           (response.results.keypoint_detections && response.results.keypoint_detections.length > 0) ||
+           (response.results.segmentation && response.results.segmentation.regions && response.results.segmentation.regions.length > 0) ? (
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-wells-dark-grey whitespace-nowrap">
+                Label Display:
+              </label>
+              <select
+                value={labelDisplayMode}
+                onChange={(e) => setLabelDisplayMode(e.target.value as LabelDisplayMode)}
+                className="px-3 py-1.5 text-sm border border-wells-warm-grey/30 rounded-lg bg-white text-wells-dark-grey focus:border-wells-dark-grey focus:outline-none min-w-[140px]"
+                disabled={isEditing}
+              >
+                {response.results.segmentation && response.results.segmentation.regions && response.results.segmentation.regions.length > 0 ? (
+                  <>
+                    <option value="shapes">Shapes</option>
+                    <option value="labels">Labels</option>
+                    <option value="confidence">Confidence</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="boxes">Boxes</option>
+                    <option value="labels">Labels</option>
+                    <option value="confidence">Confidence</option>
+                  </>
+                )}
+              </select>
+              <button
+                onClick={() => setIsEditing(!isEditing)}
+                className={cn(
+                  "p-1.5 rounded-lg border transition-colors",
+                  isEditing 
+                    ? "bg-wells-dark-grey text-white border-wells-dark-grey" 
+                    : "bg-white text-wells-dark-grey border-wells-warm-grey/30 hover:bg-wells-warm-grey/10"
+                )}
+                title={isEditing ? "Exit annotation editor" : "Edit annotations"}
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -174,16 +236,110 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
           height={400}
           className="w-full h-full object-contain bg-wells-light-beige"
         />
-        <OverlayRenderer
-          detections={filteredDetections}
-          segmentation={filteredSegmentationRegions}
-          keypointDetections={filteredKeypointDetections}
-          imageWidth={response.image_metadata.width}
-          imageHeight={response.image_metadata.height}
-          task={response.task}
-          confidenceThreshold={confidenceThreshold}
-        />
+        {isEditing && response.results.detections && response.results.detections.length > 0 ? (
+          <EditableAnnotationOverlay
+            detections={editedDetections}
+            imageWidth={response.image_metadata.width}
+            imageHeight={response.image_metadata.height}
+            onDetectionsChange={setEditedDetections}
+            onSave={async (detections) => {
+              setIsSaving(true)
+              try {
+                // Save edited annotations to MongoDB
+                const saveResponse = await fetch('/api/save-edited-annotations', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    original_timestamp: response.timestamp,
+                    original_image_url: selectedImage,
+                    model_id: response.model_version || 'unknown',
+                    task: response.task,
+                    edited_detections: detections,
+                    version: 2
+                  })
+                })
+                
+                if (!saveResponse.ok) {
+                  throw new Error('Failed to save edited annotations')
+                }
+                
+                setIsEditing(false)
+                // Optionally show success message
+              } catch (error) {
+                console.error('Error saving edited annotations:', error)
+                alert('Failed to save edited annotations. Please try again.')
+              } finally {
+                setIsSaving(false)
+              }
+            }}
+            onCancel={() => {
+              setEditedDetections(filteredDetections)
+              setIsEditing(false)
+            }}
+          />
+        ) : (
+          <OverlayRenderer
+            detections={filteredDetections}
+            segmentation={filteredSegmentationRegions}
+            keypointDetections={filteredKeypointDetections}
+            imageWidth={response.image_metadata.width}
+            imageHeight={response.image_metadata.height}
+            task={response.task}
+            confidenceThreshold={confidenceThreshold}
+            labelDisplayMode={labelDisplayMode}
+          />
+        )}
       </div>
+      
+      {/* Save/Cancel buttons when editing */}
+      {isEditing && (
+        <div className="flex items-center gap-2 mb-4">
+          <button
+            onClick={async () => {
+              setIsSaving(true)
+              try {
+                const saveResponse = await fetch('/api/save-edited-annotations', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    original_timestamp: response.timestamp,
+                    original_image_url: selectedImage,
+                    model_id: response.model_version || 'unknown',
+                    task: response.task,
+                    edited_detections: editedDetections,
+                    version: 2
+                  })
+                })
+                
+                if (!saveResponse.ok) {
+                  throw new Error('Failed to save edited annotations')
+                }
+                
+                setIsEditing(false)
+              } catch (error) {
+                console.error('Error saving edited annotations:', error)
+                alert('Failed to save edited annotations. Please try again.')
+              } finally {
+                setIsSaving(false)
+              }
+            }}
+            disabled={isSaving}
+            className="px-4 py-2 bg-wells-dark-grey text-white rounded-lg hover:bg-wells-dark-grey/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSaving ? 'Saving...' : 'Save Annotations'}
+          </button>
+          <button
+            onClick={() => {
+              setEditedDetections(filteredDetections)
+              setIsEditing(false)
+            }}
+            disabled={isSaving}
+            className="px-4 py-2 bg-wells-warm-grey/20 text-wells-dark-grey rounded-lg hover:bg-wells-warm-grey/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Output section with toggle */}
       <div className="bg-wells-light-beige rounded-2xl border border-wells-warm-grey/20 p-4">
