@@ -6,7 +6,7 @@ export const ImageFileSchema = z.object({
     (type) => ['image/jpeg', 'image/png', 'image/webp'].includes(type),
     { message: 'Only JPEG, PNG, and WebP files are supported' }
   ),
-  size: z.number().max(10 * 1024 * 1024, 'File size must be less than 10MB'),
+  size: z.number().max(20 * 1024 * 1024, 'File size must be less than 20MB'),
   name: z.string().min(1, 'File name is required')
 });
 
@@ -31,11 +31,30 @@ export const BoundingBoxSchema = z.object({
   height: z.number().min(0)
 });
 
-// Detection result schema
+// Keypoint schema
+export const KeypointSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  confidence: z.number().min(0).max(1),
+  class_id: z.number().optional(),
+  class: z.string().optional()
+});
+
+// Detection result schema (for object detection)
 export const DetectionSchema = z.object({
   class: z.string(),
   confidence: z.number().min(0).max(1),
   bbox: BoundingBoxSchema
+});
+
+// Keypoint Detection result schema (separate from regular detection)
+export const KeypointDetectionSchema = z.object({
+  class: z.string(),
+  confidence: z.number().min(0).max(1),
+  bbox: BoundingBoxSchema,
+  keypoints: z.array(KeypointSchema), // Required for keypoint detection
+  class_id: z.number().optional(),
+  detection_id: z.string().optional()
 });
 
 // Classification result schema
@@ -45,18 +64,44 @@ export const ClassificationSchema = z.object({
   confidence: z.enum(['high', 'medium', 'low', 'very_low'])
 });
 
+// Pixel strip data schema for segmentation visualization
+export const PixelStripSchema = z.object({
+  contourPoints: z.array(z.object({
+    x: z.number(),
+    y: z.number()
+  })).optional(),
+  centerLine: z.array(z.object({
+    x: z.number(),
+    y: z.number()
+  })).optional(),
+  boundaryPixels: z.array(z.object({
+    x: z.number(),
+    y: z.number(),
+    intensity: z.number().min(0).max(1)
+  })).optional(),
+  dimensions: z.object({
+    width: z.number().min(0),
+    height: z.number().min(0)
+  }).optional()
+}).nullable().optional();
+
 // Segmentation region schema
 export const SegmentationRegionSchema = z.object({
   class: z.string(),
   area: z.number().min(0).max(1),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Color must be a valid hex color'),
   mask: z.string().nullable().optional(), // Base64 mask data
+  points: z.array(z.object({
+    x: z.number(),
+    y: z.number()
+  })).optional(), // Polygon points for segmentation
   bbox: z.object({
     x: z.number().min(0),
     y: z.number().min(0),
     width: z.number().min(0),
     height: z.number().min(0)
-  }).nullable().optional() // Bounding box for instance segmentation
+  }).nullable().optional(), // Bounding box for instance segmentation
+  pixelStrip: PixelStripSchema // Pixel strip data for visualization
 });
 
 // Segmentation schema
@@ -76,12 +121,13 @@ export const ImageMetadataSchema = z.object({
 export const CVResultsSchema = z.object({
   labels: z.array(ClassificationSchema).optional(),
   detections: z.array(DetectionSchema).optional(),
+  keypoint_detections: z.array(KeypointDetectionSchema).optional(), // Separate schema for keypoint detection
   segmentation: SegmentationSchema.optional()
 });
 
 // Main CV Response schema
 export const CVResponseSchema = z.object({
-  task: z.enum(['detection', 'classification', 'segmentation', 'multi-type']),
+  task: z.enum(['detection', 'classification', 'segmentation', 'instance-segmentation', 'keypoint-detection', 'multi-type']),
   timestamp: z.string(),
   model_version: z.string(),
   results: CVResultsSchema,
@@ -161,6 +207,8 @@ export const validateCVResponse = (data: unknown): { isValid: boolean; data?: an
 export type CVResponse = z.infer<typeof CVResponseSchema>;
 export type CVResults = z.infer<typeof CVResultsSchema>;
 export type Detection = z.infer<typeof DetectionSchema>;
+export type KeypointDetection = z.infer<typeof KeypointDetectionSchema>;
+export type Keypoint = z.infer<typeof KeypointSchema>;
 export type Classification = z.infer<typeof ClassificationSchema>;
 export type SegmentationRegion = z.infer<typeof SegmentationRegionSchema>;
 export type ImageMetadata = z.infer<typeof ImageMetadataSchema>;

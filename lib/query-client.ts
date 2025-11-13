@@ -41,5 +41,7 @@ export const queryKeys = {
   cvResults: ['cv-results'] as const,
   cvResult: (id: string) => ['cv-results', id] as const,
   resultHistory: ['result-history'] as const,
-  resultHistoryItem: (id: string) => ['result-history', id] as const
+  resultHistoryItem: (id: string) => ['result-history', id] as const,
+  roboflowSearch: (searchId: string) => ['roboflow-search', searchId] as const,
+  roboflowSearches: ['roboflow-searches'] as const
 };

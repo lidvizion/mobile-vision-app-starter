@@ -7,6 +7,8 @@ export type {
   CVResponse,
   CVResults,
   Detection,
+  KeypointDetection,
+  Keypoint,
   Classification,
   SegmentationRegion,
   ImageMetadata
@@ -14,14 +16,11 @@ export type {
 
 // Model Discovery Types
 export type {
-  ModelMetadata,
-  SearchFilters,
-  ModelSearchResult,
-  ExtractedKeywords
+  ModelMetadata
 } from './models'
 
 // Additional types defined locally
-export type CVTask = 'detection' | 'classification' | 'segmentation' | 'multi-type'
+export type CVTask = 'detection' | 'classification' | 'segmentation' | 'instance-segmentation' | 'multi-type'
 
 export interface ResultHistoryItem {
   image_url: string
