@@ -202,21 +202,86 @@ export default function OverlayRenderer({
                 const showConfidence = labelDisplayMode === 'confidence'
                 const hasKeypoints = detection.keypoints && detection.keypoints.length > 0
                 
-                // Position label at top-left of box, but allow it to extend beyond if needed
-                // Use left: 0 to align with left edge of box, or center if box is wide enough
-                const boxWidthPercent = (detection.bbox.width / imageWidth) * 100
-                const shouldCenter = boxWidthPercent > 15 // Center if box is wide enough
+                // Estimate label text width (rough calculation: ~7px per character for text-xs)
+                const labelText = `${detection.class}${showConfidence ? ` ${formatConfidence(detection.confidence)}` : ''}${hasKeypoints ? ` • ${detection.keypoints.filter(kp => kp.confidence >= confidenceThreshold).length} keypoints` : ''}`
+                const estimatedLabelWidth = labelText.length * 7 + 16 // 7px per char + 16px padding
+                const estimatedLabelHeight = 24 // Approximate height
+                
+                // Calculate box position in pixels (absolute coordinates)
+                const boxLeft = detection.bbox.x
+                const boxTop = detection.bbox.y
+                const boxWidth = detection.bbox.width
+                const boxRight = boxLeft + boxWidth
+                const boxCenterX = boxLeft + boxWidth / 2
+                
+                // Check if label would overflow top edge
+                const hasRoomAbove = boxTop >= estimatedLabelHeight
+                
+                // Check if label would overflow left/right edges when centered
+                const boxWidthPercent = (boxWidth / imageWidth) * 100
+                const shouldCenter = boxWidthPercent > 15
+                
+                // Calculate label position (relative to the box container)
+                let labelLeft = '0%'
+                let labelTop = '0%'
+                let labelTransform = 'translateY(-100%)'
+                
+                if (shouldCenter) {
+                  // Center the label on the box
+                  const labelHalfWidth = estimatedLabelWidth / 2
+                  
+                  // Check if centered label would overflow left edge
+                  if (boxCenterX - labelHalfWidth < 0) {
+                    // Position at left edge of image (shift right)
+                    const shiftRight = (labelHalfWidth - boxCenterX) / boxWidth
+                    labelLeft = `${shiftRight * 100}%`
+                    labelTransform = 'translateY(-100%)'
+                  } 
+                  // Check if centered label would overflow right edge
+                  else if (boxCenterX + labelHalfWidth > imageWidth) {
+                    // Position at right edge of image (shift left)
+                    const overflowRight = (boxCenterX + labelHalfWidth) - imageWidth
+                    const shiftLeft = overflowRight / boxWidth
+                    labelLeft = `${(50 - shiftLeft * 100)}%`
+                    labelTransform = 'translate(-100%, -100%)'
+                  } else {
+                    // Center is fine
+                    labelLeft = '50%'
+                    labelTransform = 'translate(-50%, -100%)'
+                  }
+                } else {
+                  // Left-aligned label
+                  // Check if label would overflow left edge
+                  if (boxLeft < estimatedLabelWidth) {
+                    // Shift label right to stay within bounds
+                    const shiftRight = (estimatedLabelWidth - boxLeft) / boxWidth
+                    labelLeft = `${shiftRight * 100}%`
+                  }
+                  // Check if label would overflow right edge
+                  else if (boxLeft + estimatedLabelWidth > imageWidth) {
+                    // Position at right edge of box
+                    labelLeft = `${((imageWidth - boxLeft) / boxWidth) * 100}%`
+                    labelTransform = 'translate(-100%, -100%)'
+                  }
+                }
+                
+                // If no room above, show label below the box
+                if (!hasRoomAbove) {
+                  labelTop = '100%'
+                  labelTransform = labelTransform.replace('-100%', '0%')
+                }
                 
                 return (
                   <div
                     className="absolute text-white text-xs px-2 py-0.5 rounded-t font-medium shadow-md z-10"
                     style={{
                       backgroundColor: color,
-                      left: shouldCenter ? '50%' : '0%',
-                      top: '0%',
-                      transform: shouldCenter ? 'translate(-50%, -100%)' : 'translateY(-100%)',
+                      left: labelLeft,
+                      top: labelTop,
+                      transform: labelTransform,
                       minWidth: 'max-content',
-                      whiteSpace: 'nowrap'
+                      whiteSpace: 'nowrap',
+                      maxWidth: '90%' // Prevent overflow
                     }}
                   >
                     <div className="flex items-center gap-1.5">
@@ -319,21 +384,86 @@ export default function OverlayRenderer({
               {labelDisplayMode !== 'boxes' && (() => {
                 const showConfidence = labelDisplayMode === 'confidence'
                 
-                // Position label at top-left of box, but allow it to extend beyond if needed
-                // Use left: 0 to align with left edge of box, or center if box is wide enough
-                const boxWidthPercent = (detection.bbox.width / imageWidth) * 100
-                const shouldCenter = boxWidthPercent > 15 // Center if box is wide enough
+                // Estimate label text width (rough calculation: ~7px per character for text-xs)
+                const labelText = `${detection.class}${showConfidence ? ` ${formatConfidence(detection.confidence)}` : ''}`
+                const estimatedLabelWidth = labelText.length * 7 + 16 // 7px per char + 16px padding
+                const estimatedLabelHeight = 24 // Approximate height
+                
+                // Calculate box position in pixels (absolute coordinates)
+                const boxLeft = detection.bbox.x
+                const boxTop = detection.bbox.y
+                const boxWidth = detection.bbox.width
+                const boxRight = boxLeft + boxWidth
+                const boxCenterX = boxLeft + boxWidth / 2
+                
+                // Check if label would overflow top edge
+                const hasRoomAbove = boxTop >= estimatedLabelHeight
+                
+                // Check if label would overflow left/right edges when centered
+                const boxWidthPercent = (boxWidth / imageWidth) * 100
+                const shouldCenter = boxWidthPercent > 15
+                
+                // Calculate label position (relative to the box container)
+                let labelLeft = '0%'
+                let labelTop = '0%'
+                let labelTransform = 'translateY(-100%)'
+                
+                if (shouldCenter) {
+                  // Center the label on the box
+                  const labelHalfWidth = estimatedLabelWidth / 2
+                  
+                  // Check if centered label would overflow left edge
+                  if (boxCenterX - labelHalfWidth < 0) {
+                    // Position at left edge of image (shift right)
+                    const shiftRight = (labelHalfWidth - boxCenterX) / boxWidth
+                    labelLeft = `${shiftRight * 100}%`
+                    labelTransform = 'translateY(-100%)'
+                  } 
+                  // Check if centered label would overflow right edge
+                  else if (boxCenterX + labelHalfWidth > imageWidth) {
+                    // Position at right edge of image (shift left)
+                    const overflowRight = (boxCenterX + labelHalfWidth) - imageWidth
+                    const shiftLeft = overflowRight / boxWidth
+                    labelLeft = `${(50 - shiftLeft * 100)}%`
+                    labelTransform = 'translate(-100%, -100%)'
+                  } else {
+                    // Center is fine
+                    labelLeft = '50%'
+                    labelTransform = 'translate(-50%, -100%)'
+                  }
+                } else {
+                  // Left-aligned label
+                  // Check if label would overflow left edge
+                  if (boxLeft < estimatedLabelWidth) {
+                    // Shift label right to stay within bounds
+                    const shiftRight = (estimatedLabelWidth - boxLeft) / boxWidth
+                    labelLeft = `${shiftRight * 100}%`
+                  }
+                  // Check if label would overflow right edge
+                  else if (boxLeft + estimatedLabelWidth > imageWidth) {
+                    // Position at right edge of box
+                    labelLeft = `${((imageWidth - boxLeft) / boxWidth) * 100}%`
+                    labelTransform = 'translate(-100%, -100%)'
+                  }
+                }
+                
+                // If no room above, show label below the box
+                if (!hasRoomAbove) {
+                  labelTop = '100%'
+                  labelTransform = labelTransform.replace('-100%', '0%')
+                }
                 
                 return (
                   <div
                     className="absolute text-white text-xs px-2 py-0.5 rounded-t font-medium shadow-md z-10"
                     style={{
                       backgroundColor: color,
-                      left: shouldCenter ? '50%' : '0%',
-                      top: '0%',
-                      transform: shouldCenter ? 'translate(-50%, -100%)' : 'translateY(-100%)',
+                      left: labelLeft,
+                      top: labelTop,
+                      transform: labelTransform,
                       minWidth: 'max-content',
-                      whiteSpace: 'nowrap'
+                      whiteSpace: 'nowrap',
+                      maxWidth: '90%' // Prevent overflow
                     }}
                   >
                     <div className="flex items-center gap-1.5">
