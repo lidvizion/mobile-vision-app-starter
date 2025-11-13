@@ -22,7 +22,9 @@ export default function EditableAnnotationOverlay({
   onCancel
 }: EditableAnnotationOverlayProps) {
   const [editingDetection, setEditingDetection] = useState<number | null>(null)
+  const [editingField, setEditingField] = useState<'class' | 'confidence' | null>(null)
   const [editingClass, setEditingClass] = useState<string>('')
+  const [editingConfidence, setEditingConfidence] = useState<string>('')
   const [dragging, setDragging] = useState<number | null>(null)
   const [resizing, setResizing] = useState<{ index: number; corner: 'nw' | 'ne' | 'sw' | 'se' } | null>(null)
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
@@ -30,9 +32,9 @@ export default function EditableAnnotationOverlay({
 
   const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
 
-  // Handle mouse down for dragging
+  // Handle mouse down for dragging 
   const handleMouseDown = (e: React.MouseEvent, index: number, type: 'drag' | 'resize', corner?: 'nw' | 'ne' | 'sw' | 'se') => {
-    // Don't start dragging if we're editing a class name
+    // Don't start dragging if we're editing a class name or confidence
     if (editingDetection !== null) {
       return
     }
@@ -61,7 +63,7 @@ export default function EditableAnnotationOverlay({
     }
   }
 
-  // Handle mouse move for dragging/resizing
+  // Handle mouse move for dragging/resizing 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!containerRef.current) return
@@ -156,7 +158,20 @@ export default function EditableAnnotationOverlay({
     e.preventDefault()
     e.stopPropagation()
     setEditingDetection(index)
+    setEditingField('class')
     setEditingClass(detections[index].class)
+    // Cancel any ongoing drag/resize
+    setDragging(null)
+    setResizing(null)
+  }
+
+  const handleConfidenceEdit = (e: React.MouseEvent, index: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setEditingDetection(index)
+    setEditingField('confidence')
+    // Convert confidence (0-1) to percentage (0-100) for editing
+    setEditingConfidence((detections[index].confidence * 100).toFixed(1))
     // Cancel any ongoing drag/resize
     setDragging(null)
     setResizing(null)
@@ -167,7 +182,21 @@ export default function EditableAnnotationOverlay({
     updatedDetections[index].class = editingClass
     onDetectionsChange(updatedDetections)
     setEditingDetection(null)
+    setEditingField(null)
     setEditingClass('')
+  }
+
+  const handleConfidenceSave = (index: number) => {
+    const updatedDetections = [...detections]
+    // Convert percentage (0-100) to confidence (0-1)
+    const confidenceValue = parseFloat(editingConfidence)
+    if (!isNaN(confidenceValue) && confidenceValue >= 0 && confidenceValue <= 100) {
+      updatedDetections[index].confidence = confidenceValue / 100
+      onDetectionsChange(updatedDetections)
+    }
+    setEditingDetection(null)
+    setEditingField(null)
+    setEditingConfidence('')
   }
 
   const handleDelete = (index: number) => {
@@ -268,7 +297,7 @@ export default function EditableAnnotationOverlay({
                 e.preventDefault()
               }}
             >
-              {editingDetection === index ? (
+              {editingDetection === index && editingField === 'class' ? (
                 <div className="flex items-center gap-1" onMouseDown={(e) => e.stopPropagation()}>
                   <input
                     type="text"
@@ -283,6 +312,7 @@ export default function EditableAnnotationOverlay({
                         handleClassSave(index)
                       } else if (e.key === 'Escape') {
                         setEditingDetection(null)
+                        setEditingField(null)
                         setEditingClass('')
                       }
                     }}
@@ -306,7 +336,61 @@ export default function EditableAnnotationOverlay({
                       e.stopPropagation()
                       e.preventDefault()
                       setEditingDetection(null)
+                      setEditingField(null)
                       setEditingClass('')
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="px-1 py-0.5 text-xs bg-red-500 hover:bg-red-600 rounded text-white"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : editingDetection === index && editingField === 'confidence' ? (
+                <div className="flex items-center gap-1" onMouseDown={(e) => e.stopPropagation()}>
+                  <span className="capitalize">{detection.class}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={editingConfidence}
+                    onChange={(e) => {
+                      e.stopPropagation()
+                      setEditingConfidence(e.target.value)
+                    }}
+                    onKeyDown={(e) => {
+                      e.stopPropagation()
+                      if (e.key === 'Enter') {
+                        handleConfidenceSave(index)
+                      } else if (e.key === 'Escape') {
+                        setEditingDetection(null)
+                        setEditingField(null)
+                        setEditingConfidence('')
+                      }
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="px-1 py-0.5 text-xs bg-white text-wells-dark-grey rounded border border-wells-warm-grey/30 focus:outline-none focus:border-wells-dark-grey w-16"
+                    autoFocus
+                  />
+                  <span className="text-xs">%</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      e.preventDefault()
+                      handleConfidenceSave(index)
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="px-1 py-0.5 text-xs bg-green-500 hover:bg-green-600 rounded text-white"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      e.preventDefault()
+                      setEditingDetection(null)
+                      setEditingField(null)
+                      setEditingConfidence('')
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                     className="px-1 py-0.5 text-xs bg-red-500 hover:bg-red-600 rounded text-white"
@@ -323,7 +407,13 @@ export default function EditableAnnotationOverlay({
                   >
                     {detection.class}
                   </span>
-                  <span className="opacity-90">{formatConfidence(detection.confidence)}</span>
+                  <span 
+                    className="opacity-90 cursor-pointer hover:underline"
+                    onClick={(e) => handleConfidenceEdit(e, index)}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    {formatConfidence(detection.confidence)}
+                  </span>
                   <button
                     onClick={(e) => {
                       e.stopPropagation()

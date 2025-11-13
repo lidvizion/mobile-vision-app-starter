@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { observer } from 'mobx-react-lite'
 import { CVResponse } from '@/types'
 import { formatTimestamp, formatConfidence } from '@/lib/utils'
@@ -34,7 +34,11 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
   }, [confidenceThreshold])
   
   // Filter results client-side based on confidence threshold
-  const filteredDetections = response?.results.detections?.filter(d => d.confidence >= confidenceThreshold) || []
+  // Use useMemo to prevent dependency issues in useEffect
+  const filteredDetections = useMemo(
+    () => response?.results.detections?.filter(d => d.confidence >= confidenceThreshold) || [],
+    [response?.results.detections, confidenceThreshold]
+  )
   const [editedDetections, setEditedDetections] = useState(filteredDetections)
   
   // Update editedDetections when filteredDetections change (but not when editing)
