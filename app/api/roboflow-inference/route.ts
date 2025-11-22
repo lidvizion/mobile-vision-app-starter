@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { spawn } from 'child_process'
-import path from 'path'
+
 import { markModelAsWorking, markModelAsFailed } from '@/lib/mongodb/validatedModels'
+
+// Allow longer execution time for inference in serverless environments
+export const maxDuration = 30; // 30 seconds for Amplify/Vercel
 
 /**
  * /api/roboflow-inference
@@ -48,7 +50,7 @@ function extractModelIdFromUrl(model_url: string): string {
         return `roboflow/${parts[0]}`
       }
     }
-    
+
     // Handle detect.roboflow.com format: https://detect.roboflow.com/?model=name&version=X
     if (model_url.includes('detect.roboflow.com')) {
       const modelMatch = model_url.match(/model=([^&]+)/)
@@ -61,7 +63,7 @@ function extractModelIdFromUrl(model_url: string): string {
         return `roboflow/${parts[0]}`
       }
     }
-    
+
     // Handle segment.roboflow.com format (same as detect)
     if (model_url.includes('segment.roboflow.com')) {
       const modelMatch = model_url.match(/model=([^&]+)/)
@@ -73,7 +75,7 @@ function extractModelIdFromUrl(model_url: string): string {
         return `roboflow/${parts[0]}`
       }
     }
-    
+
     // Handle universe.roboflow.com format: https://universe.roboflow.com/workspace/project
     if (model_url.includes('universe.roboflow.com')) {
       const parts = model_url.replace('https://universe.roboflow.com/', '').split('/')
@@ -84,7 +86,7 @@ function extractModelIdFromUrl(model_url: string): string {
   } catch (error) {
     console.warn('Failed to extract model ID from URL:', error)
   }
-  
+
   return 'roboflow/unknown'
 }
 
@@ -99,7 +101,7 @@ function inferTaskType(model_url: string, providedTaskType?: string): string {
       .split('-')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ')
-    
+
     // Handle special cases
     if (normalized.toLowerCase().includes('keypoint') || normalized.toLowerCase().includes('key-point') || normalized.toLowerCase().includes('pose')) {
       return 'Keypoint Detection'
@@ -110,10 +112,10 @@ function inferTaskType(model_url: string, providedTaskType?: string): string {
     if (normalized.toLowerCase().includes('detection')) {
       return 'Object Detection'
     }
-    
+
     return normalized
   }
-  
+
   // Infer from URL
   if (model_url.includes('segment.roboflow.com')) {
     return 'Instance Segmentation'
@@ -123,7 +125,7 @@ function inferTaskType(model_url: string, providedTaskType?: string): string {
   }
   // Note: Roboflow may add a dedicated keypoint endpoint in the future
   // For now, keypoint detection models may use detect.roboflow.com
-  
+
   // Default
   return 'Object Detection'
 }
@@ -136,8 +138,8 @@ export async function POST(request: NextRequest) {
     console.log('📊 Received inference parameters:', JSON.stringify(parameters, null, 2))
 
     // Use API key from request, or fallback to server's environment variable
-    const finalApiKey = api_key && api_key !== 'server_env_var' 
-      ? api_key 
+    const finalApiKey = api_key && api_key !== 'server_env_var'
+      ? api_key
       : (process.env.ROBOFLOW_API_KEY || api_key)
 
     if (!model_url || !finalApiKey || !image) {
@@ -148,302 +150,275 @@ export async function POST(request: NextRequest) {
     }
 
     // Extract or use provided model_id
-    // Normalize model_id to use roboflow/ prefix format for consistency
     let extractedModelId = model_id || extractModelIdFromUrl(model_url)
-    
-    // If model_id is provided but doesn't have roboflow/ prefix, normalize it
+
+    // Normalize model_id
     if (extractedModelId && !extractedModelId.startsWith('roboflow/')) {
-      // Handle different formats:
-      // 1. roboflow-tomas-gear-mxzjq/soccer-ball-mfbf2-1762011570126-0 (from search results)
-      // 2. roboflow-soccer-ball-mfbf2-1762011570126-0 (from search results)
-      // Should become: roboflow/soccer-ball-mfbf2
-      
-      // Try to extract from URL first (most reliable)
       const urlExtracted = extractModelIdFromUrl(model_url)
       if (urlExtracted && urlExtracted !== 'roboflow/unknown') {
         extractedModelId = urlExtracted
       } else {
-        // Fallback: try to parse the provided model_id
-        // Match pattern: roboflow-<workspace>/<project>-<timestamp>-<index>
-        // or: roboflow-<project>-<timestamp>-<index>
         const match = extractedModelId.match(/roboflow[\/-](.+?)(?:-\d+-\d+)?$/)
         if (match) {
           const identifier = match[1]
-          // If it has workspace/project format, extract just project
           if (identifier.includes('/')) {
             const parts = identifier.split('/')
             extractedModelId = `roboflow/${parts[parts.length - 1]}`
           } else {
-            // Remove any trailing timestamp/index pattern (numbers separated by dashes)
             const cleaned = identifier.replace(/-\d+-\d+$/, '')
             extractedModelId = `roboflow/${cleaned}`
           }
         } else {
-          // Last resort: use URL extraction
           extractedModelId = extractModelIdFromUrl(model_url)
         }
       }
     }
-    
+
     const inferredTaskType = inferTaskType(model_url, task_type)
-    
+
     console.log(`🔍 Running Roboflow inference on: ${model_url}`)
     console.log(`📋 Model ID: ${extractedModelId}, Task Type: ${inferredTaskType}`)
 
     const startTime = Date.now()
 
-    // Use Python script for inference with proper SDK authentication
-    // Pass image data via stdin to avoid E2BIG error (command line argument size limit)
-    const pythonScript = path.join(process.cwd(), 'roboflow_inference.py')
-    const venvPython = path.join(process.cwd(), 'venv', 'bin', 'python')
-    
-    // Pass model_url, api_key, and parameters as arguments, image via stdin
-    // Ensure parameters is always a valid JSON string
-    const parametersJson = parameters && Object.keys(parameters).length > 0 
-      ? JSON.stringify(parameters)
-      : '{}'
-    
-    const pythonProcess = spawn(venvPython, [
-      pythonScript,
-      model_url,
-      finalApiKey,
-      parametersJson
-    ], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 40000 // 70 second timeout (60s for API + 10s buffer)
-    })
-    
-    let stdout = ''
-    let stderr = ''
-    let stdinErrorMessage: string | null = null
+    // --- Node.js Inference Logic (Ported from Python) ---
 
-    // Set up stdout/stderr listeners BEFORE writing to stdin
-    // This ensures we capture all output
-    pythonProcess.stdout.on('data', (data) => {
-      stdout += data.toString()
-    })
+    // 1. Determine Endpoint and Parse URL
+    let apiEndpoint = '';
+    let useServerless = false;
+    let modelName = 'unknown';
+    let version = 'unknown';
 
-    pythonProcess.stderr.on('data', (data) => {
-      stderr += data.toString()
-    })
-
-    pythonProcess.stdin.on('error', (error: Error) => {
-      stdinErrorMessage = error.message
-      console.error('Stdin error:', error)
-    })
-    
-    // Wait for stdin to finish writing before waiting for process to close
-    await new Promise<void>((resolve, reject) => {
-      const writeCallback = (error: Error | null | undefined) => {
-        if (error) {
-          stdinErrorMessage = error.message
-          console.error('Error writing to stdin:', error)
-          reject(error)
-        } else {
-          pythonProcess.stdin.end((endError: Error | null | undefined) => {
-            if (endError) {
-              stdinErrorMessage = endError.message
-              reject(endError)
-            } else {
-              resolve()
-            }
-          })
-        }
-      }
-      
-      // Check if stdin is writable before writing
-      if (pythonProcess.stdin.writable) {
-        pythonProcess.stdin.write(image, writeCallback)
+    if (model_url.includes('serverless.roboflow.com')) {
+      // format: https://serverless.roboflow.com/project-name/version
+      const urlClean = model_url.split('?')[0];
+      const parts = urlClean.replace('https://serverless.roboflow.com/', '').split('/');
+      if (parts.length >= 2) {
+        modelName = parts[0];
+        version = parts[1];
+        apiEndpoint = `https://serverless.roboflow.com/${modelName}/${version}`;
+        useServerless = true;
       } else {
-        reject(new Error('Stdin is not writable'))
+        throw new Error('Invalid serverless URL format');
       }
-    }).catch((error) => {
-      // Error already handled above, but log it
-      if (error && !stdinErrorMessage) {
-        stdinErrorMessage = error.message || 'Unknown stdin error'
-      }
-    })
-
-    // Wait for process to complete and ensure all output is captured
-    const exitCode = await new Promise<number>((resolve) => {
-      pythonProcess.on('close', (code) => {
-        // Give streams a moment to finish flushing
-        setTimeout(() => {
-          resolve(code || 0)
-        }, 200)
-      })
-      
-      // Also handle error events
-      pythonProcess.on('error', (error) => {
-        console.error('Python process error:', error)
-        stderr += error.message
-        resolve(1)
-      })
-    })
-
-    // Check for stdin errors first
-    if (stdinErrorMessage !== null) {
-      console.error('Stdin write error:', stdinErrorMessage)
-      return NextResponse.json(
-        { 
-          error: 'Failed to send image data to inference script', 
-          details: stdinErrorMessage
-        },
-        { status: 500 }
-      )
-    }
-
-    if (exitCode !== 0) {
-      console.error('Python script failed:', stderr)
-      
-      // Mark model as failed in MongoDB (background task)
-      try {
-        await markModelAsFailed(
-          extractedModelId,
-          inferredTaskType,
-          stderr || 'Python script execution failed',
-          'unknown'
-        )
-      } catch (dbError) {
-        console.warn('⚠️ Failed to update model status in MongoDB:', dbError)
-      }
-      
-      return NextResponse.json(
-        { 
-          error: 'Inference failed', 
-          details: stderr || 'Python script execution failed'
-        },
-        { status: 500 }
-      )
-    }
-
-    try {
-      // Check if stdout is empty
-      if (!stdout || stdout.trim().length === 0) {
-        console.error('⚠️ Python script produced no stdout output')
-        console.error('Python stderr:', stderr || '(empty)')
-        console.error('Exit code:', exitCode)
-        throw new Error('Python script produced no output. Check stderr for errors.')
-      }
-      
-      // Extract JSON from stdout (handle Roboflow loading messages)
-      const jsonMatch = stdout.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) {
-        console.error('⚠️ No JSON found in Python output')
-        console.error('Python stdout:', stdout.substring(0, 500))
-        console.error('Python stderr:', stderr || '(empty)')
-        throw new Error('No JSON found in Python output')
-      }
-      
-      const result = JSON.parse(jsonMatch[0])
-      
-      if (!result.success) {
-        // Mark model as failed in MongoDB only for actual API/execution errors
-        // Empty/null results are valid (just means no detections found) - don't mark as failed
-        const errorMessage = result.error || 'Unknown error'
-        
-        // Only mark as failed if it's a real error (API failure, timeout, etc.)
-        // NOT if it's:
-        // - Empty/null results (valid - just means no detections)
-        // - Parameter-related issues (shouldn't mark model as failed)
-        // - Attribute errors from Python (code issues, not model issues)
-        const isRealError = errorMessage && 
-          errorMessage !== 'Unknown error' &&
-          !errorMessage.toLowerCase().includes('null') && 
-          !errorMessage.toLowerCase().includes('empty') &&
-          !errorMessage.toLowerCase().includes('no predictions') &&
-          !errorMessage.toLowerCase().includes('parameter') &&
-          !errorMessage.toLowerCase().includes("'str' object has no attribute") &&
-          !errorMessage.toLowerCase().includes("attribute") &&
-          (errorMessage.toLowerCase().includes('api request failed') ||
-           errorMessage.toLowerCase().includes('timeout') ||
-           errorMessage.toLowerCase().includes('status') ||
-           errorMessage.toLowerCase().includes('not found') ||
-           errorMessage.toLowerCase().includes('invalid url') ||
-           errorMessage.toLowerCase().includes('authentication') ||
-           errorMessage.toLowerCase().includes('unauthorized'))
-        
-        if (isRealError) {
-          try {
-            await markModelAsFailed(
-              extractedModelId,
-              inferredTaskType,
-              errorMessage,
-              'unknown'
-            )
-          } catch (dbError) {
-            console.warn('⚠️ Failed to update model status in MongoDB:', dbError)
-          }
+    } else if (model_url.includes('detect.roboflow.com') || model_url.includes('segment.roboflow.com')) {
+      // format: https://detect.roboflow.com/project/version or ?model=...
+      const baseUrl = model_url.includes('segment') ? 'https://segment.roboflow.com/' : 'https://detect.roboflow.com/';
+      if (model_url.includes('?model=')) {
+        const modelMatch = model_url.match(/model=([^&]+)/);
+        const versionMatch = model_url.match(/version=([^&]+)/);
+        if (modelMatch && versionMatch) {
+          modelName = modelMatch[1];
+          version = versionMatch[1];
         } else {
-          // Log but don't mark as failed for non-critical errors
-          console.warn(`⚠️ Inference returned error but not marking model as failed: ${errorMessage}`)
+          throw new Error('Could not extract model name and version from URL');
         }
-        
-        return NextResponse.json(
-          { 
-            error: 'Inference failed', 
-            details: errorMessage
-          },
-          { status: 500 }
-        )
+      } else {
+        const parts = model_url.replace(baseUrl, '').split('/');
+        if (parts.length >= 2) {
+          modelName = parts[0];
+          version = parts[1];
+        } else {
+          throw new Error('Invalid detect URL format');
+        }
       }
-
-      const processingTime = Date.now() - startTime
-
-      // Extract model info from the URL
-      const urlParts = model_url.split('/')
-      const modelName = urlParts[urlParts.length - 2] || 'Unknown Model'
-      const version = urlParts[urlParts.length - 1] || '1'
-
-      const responseData: RoboflowInferenceResponse = {
-        success: true,
-        results: result.predictions || [],
-        predictions: result.predictions || [], // Also include predictions for keypoint detection
-        model_info: {
-          name: modelName,
-          url: model_url,
-          version: version
-        },
-        processing_time: processingTime,
-        timestamp: new Date().toISOString()
-      }
-
-      // Mark model as working in MongoDB (background task)
-      try {
-        await markModelAsWorking(
-          extractedModelId,
-          inferredTaskType,
-          result.predictions || [],
-          'hosted'
-        )
-        // Note: markModelAsWorking already logs the success message
-      } catch (dbError) {
-        console.warn('⚠️ Failed to update model status in MongoDB:', dbError)
-      }
-
-      console.log(`✅ Roboflow inference completed in ${processingTime}ms`)
-      return NextResponse.json(responseData)
-
-    } catch (parseError) {
-      console.error('Failed to parse Python output:', parseError)
-      console.error('Python stdout:', stdout)
-      console.error('Python stderr:', stderr)
-      
-      return NextResponse.json(
-        { 
-          error: 'Failed to parse inference results', 
-          details: 'Invalid JSON from Python script'
-        },
-        { status: 500 }
-      )
+      apiEndpoint = `${baseUrl}${modelName}/${version}`;
+      useServerless = false;
+    } else {
+      throw new Error('Please provide a serverless.roboflow.com or detect.roboflow.com URL');
     }
 
-  } catch (error) {
+    // 2. Prepare Image Data
+    let imageBase64 = image;
+    if (imageBase64.startsWith('data:')) {
+      imageBase64 = imageBase64.split(',')[1];
+    }
+
+    // 3. Prepare Query Parameters
+    const queryParams = new URLSearchParams({
+      api_key: finalApiKey
+    });
+    if (parameters.confidence) queryParams.append('confidence', parameters.confidence.toString());
+    if (parameters.overlap) queryParams.append('overlap', parameters.overlap.toString());
+    if (parameters.max_detections) queryParams.append('max_detections', parameters.max_detections.toString());
+
+    // 4. Make API Request
+    let response;
+    const fullUrl = `${apiEndpoint}?${queryParams.toString()}`;
+
+    if (useServerless) {
+      // Serverless endpoint: POST raw base64 string with x-www-form-urlencoded
+      response = await fetch(fullUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: imageBase64
+      });
+    } else {
+      // Detect endpoint: POST multipart/form-data
+      const formData = new FormData();
+      // Convert base64 to Blob
+      const binaryString = atob(imageBase64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'image/jpeg' });
+      formData.append('file', blob, 'image.jpg');
+
+      response = await fetch(fullUrl, {
+        method: 'POST',
+        body: formData
+      });
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API request failed with status ${response.status}: ${errorText}`);
+    }
+
+    const result = await response.json();
+
+    // 5. Normalize Response (Ported from Python)
+    const predictions: any[] = [];
+
+    // Helper to add prediction
+    const addPred = (p: any) => {
+      predictions.push({
+        class: p.class || p.top || 'unknown',
+        confidence: p.confidence || p.score || 0.0,
+        score: p.confidence || p.score || 0.0,
+        ...p // Include other fields
+      });
+    };
+
+    if (result.top) {
+      // Simple classification
+      predictions.push({
+        class: result.top,
+        confidence: result.confidence || 0.0,
+        score: result.confidence || 0.0
+      });
+    } else if (result.predictions) {
+      if (Array.isArray(result.predictions)) {
+        // Detection or List Classification
+        if (result.predictions.length > 0) {
+          const first = result.predictions[0];
+          // Check if it's classification (no bbox)
+          if (!first.x && !first.bbox && (first.top || first.class)) {
+            result.predictions.forEach((p: any) => addPred(p));
+          } else {
+            // Detection / Segmentation
+            result.predictions.forEach((pred: any) => {
+              if (typeof pred !== 'object') return;
+
+              const centerX = pred.x || 0;
+              const centerY = pred.y || 0;
+              const width = pred.width || 0;
+              const height = pred.height || 0;
+
+              const x = centerX - (width / 2);
+              const y = centerY - (height / 2);
+
+              const predData: any = {
+                class: pred.class || 'unknown',
+                confidence: pred.confidence || 0.0,
+                bbox: {
+                  x, y, width, height,
+                  center_x: centerX,
+                  center_y: centerY
+                },
+                // Keep original fields
+                x: centerX, y: centerY, width, height
+              };
+
+              if (pred.points) predData.points = pred.points;
+              if (pred.mask) predData.mask = pred.mask;
+              if (pred.class_id !== undefined) predData.class_id = pred.class_id;
+              if (pred.detection_id) predData.detection_id = pred.detection_id;
+              if (pred.keypoints) predData.keypoints = pred.keypoints;
+
+              predictions.push(predData);
+            });
+          }
+        }
+      } else if (typeof result.predictions === 'object') {
+        // Dictionary Classification
+        Object.entries(result.predictions).forEach(([className, predData]: [string, any]) => {
+          predictions.push({
+            class: className,
+            confidence: predData.confidence || 0.0,
+            score: predData.confidence || 0.0,
+            class_id: predData.class_id
+          });
+        });
+        predictions.sort((a, b) => b.confidence - a.confidence);
+      }
+    } else if (Array.isArray(result)) {
+      // List format
+      result.forEach((p: any) => addPred(p));
+    } else if (result.class) {
+      // Fallback
+      addPred(result);
+    }
+
+    const processingTime = Date.now() - startTime
+
+    const responseData: RoboflowInferenceResponse = {
+      success: true,
+      results: predictions,
+      predictions: predictions,
+      model_info: {
+        name: modelName,
+        url: model_url,
+        version: version
+      },
+      processing_time: processingTime,
+      timestamp: new Date().toISOString()
+    }
+
+    // Mark model as working in MongoDB (background task)
+    try {
+      await markModelAsWorking(
+        extractedModelId,
+        inferredTaskType,
+        predictions,
+        'hosted'
+      )
+    } catch (dbError) {
+      console.warn('⚠️ Failed to update model status in MongoDB:', dbError)
+    }
+
+    console.log(`✅ Roboflow inference completed in ${processingTime}ms`)
+    return NextResponse.json(responseData)
+
+  } catch (error: any) {
     console.error('Roboflow inference error:', error)
+
+    // Attempt to mark as failed if we have model ID
+    // We need to re-extract model ID here since it might fail before extraction
+    try {
+      const body = await request.clone().json().catch(() => ({}));
+      const { model_url, task_type, model_id } = body;
+      if (model_url) {
+        const extractedModelId = model_id || extractModelIdFromUrl(model_url);
+        const inferredTaskType = inferTaskType(model_url, task_type);
+        await markModelAsFailed(
+          extractedModelId || 'unknown',
+          inferredTaskType,
+          error.message || 'Unknown error',
+          'unknown'
+        );
+      }
+    } catch (e) {
+      // Ignore error during error handling
+    }
+
     return NextResponse.json(
-      { 
-        error: 'Internal server error', 
-        details: error instanceof Error ? error.message : 'Unknown error' 
+      {
+        error: 'Inference failed',
+        details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
     )
