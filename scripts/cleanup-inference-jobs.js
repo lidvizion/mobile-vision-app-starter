@@ -16,84 +16,80 @@ async function cleanupInferenceJobs() {
     console.log('✅ Connected to MongoDB\n')
     
     const db = client.db('vision_sdk')
+    const inferenceJobs = db.collection('inference_jobs')
     
-    // Clean up old roboflow_inference_jobs (older than 7 days)
-    console.log('📊 Cleaning up old roboflow_inference_jobs...')
-    const roboflowJobs = db.collection('roboflow_inference_jobs')
-    const roboflowCount = await roboflowJobs.countDocuments()
-    console.log(`   Current count: ${roboflowCount}`)
+    // Get current counts by host
+    const totalCount = await inferenceJobs.countDocuments()
+    const roboflowCount = await inferenceJobs.countDocuments({ host: 'roboflow' })
+    const huggingfaceCount = await inferenceJobs.countDocuments({ host: 'huggingface' })
+    
+    console.log('📊 Current inference_jobs statistics:')
+    console.log(`   Total: ${totalCount}`)
+    console.log(`   - roboflow: ${roboflowCount}`)
+    console.log(`   - huggingface: ${huggingfaceCount}`)
     
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
     
-    // Delete jobs older than 7 days
-    const roboflowResult = await roboflowJobs.deleteMany({
+    // Clean up old inference jobs (older than 7 days) for all hosts
+    console.log('\n📊 Cleaning up old inference_jobs (older than 7 days)...')
+    const deleteResult = await inferenceJobs.deleteMany({
       $or: [
         { created_at: { $lt: sevenDaysAgo.toISOString() } },
         { timestamp: { $lt: sevenDaysAgo.toISOString() } },
         { 'metadata.timestamp': { $lt: sevenDaysAgo.toISOString() } }
       ]
     })
-    console.log(`   ✅ Deleted ${roboflowResult.deletedCount} old roboflow_inference_jobs`)
+    console.log(`   ✅ Deleted ${deleteResult.deletedCount} old inference jobs`)
     
-    // If still over limit, delete more (keep only last 50)
-    const remainingRoboflow = await roboflowJobs.countDocuments()
-    if (remainingRoboflow > 50) {
-      const toDelete = remainingRoboflow - 50
-      const oldestJobs = await roboflowJobs.find({})
-        .sort({ created_at: 1, timestamp: 1, 'metadata.timestamp': 1 })
-        .limit(toDelete)
-        .toArray()
-      
-      const idsToDelete = oldestJobs.map(job => job._id)
-      if (idsToDelete.length > 0) {
-        const extraDelete = await roboflowJobs.deleteMany({ _id: { $in: idsToDelete } })
-        console.log(`   ✅ Deleted ${extraDelete.deletedCount} additional roboflow_inference_jobs (keeping last 50)`)
+    // If still over limit, delete more (keep only last 50 per host)
+    const remainingTotal = await inferenceJobs.countDocuments()
+    if (remainingTotal > 100) {
+      // Clean up roboflow jobs
+      const remainingRoboflow = await inferenceJobs.countDocuments({ host: 'roboflow' })
+      if (remainingRoboflow > 50) {
+        const toDelete = remainingRoboflow - 50
+        const oldestRoboflowJobs = await inferenceJobs.find({ host: 'roboflow' })
+          .sort({ created_at: 1, timestamp: 1, 'metadata.timestamp': 1 })
+          .limit(toDelete)
+          .toArray()
+        
+        const idsToDelete = oldestRoboflowJobs.map(job => job._id)
+        if (idsToDelete.length > 0) {
+          const extraDelete = await inferenceJobs.deleteMany({ _id: { $in: idsToDelete } })
+          console.log(`   ✅ Deleted ${extraDelete.deletedCount} additional roboflow jobs (keeping last 50)`)
+        }
       }
-    }
-    
-    // Clean up old hf_inference_jobs (older than 7 days)
-    console.log('\n📊 Cleaning up old hf_inference_jobs...')
-    const hfJobs = db.collection('hf_inference_jobs')
-    const hfCount = await hfJobs.countDocuments()
-    console.log(`   Current count: ${hfCount}`)
-    
-    const hfResult = await hfJobs.deleteMany({
-      $or: [
-        { created_at: { $lt: sevenDaysAgo.toISOString() } },
-        { timestamp: { $lt: sevenDaysAgo.toISOString() } },
-        { 'metadata.timestamp': { $lt: sevenDaysAgo.toISOString() } }
-      ]
-    })
-    console.log(`   ✅ Deleted ${hfResult.deletedCount} old hf_inference_jobs`)
-    
-    // If still over limit, delete more (keep only last 50)
-    const remainingHf = await hfJobs.countDocuments()
-    if (remainingHf > 50) {
-      const toDelete = remainingHf - 50
-      const oldestJobs = await hfJobs.find({})
-        .sort({ created_at: 1, timestamp: 1, 'metadata.timestamp': 1 })
-        .limit(toDelete)
-        .toArray()
       
-      const idsToDelete = oldestJobs.map(job => job._id)
-      if (idsToDelete.length > 0) {
-        const extraDelete = await hfJobs.deleteMany({ _id: { $in: idsToDelete } })
-        console.log(`   ✅ Deleted ${extraDelete.deletedCount} additional hf_inference_jobs (keeping last 50)`)
+      // Clean up huggingface jobs
+      const remainingHf = await inferenceJobs.countDocuments({ host: 'huggingface' })
+      if (remainingHf > 50) {
+        const toDelete = remainingHf - 50
+        const oldestHfJobs = await inferenceJobs.find({ host: 'huggingface' })
+          .sort({ created_at: 1, timestamp: 1, 'metadata.timestamp': 1 })
+          .limit(toDelete)
+          .toArray()
+        
+        const idsToDelete = oldestHfJobs.map(job => job._id)
+        if (idsToDelete.length > 0) {
+          const extraDelete = await inferenceJobs.deleteMany({ _id: { $in: idsToDelete } })
+          console.log(`   ✅ Deleted ${extraDelete.deletedCount} additional huggingface jobs (keeping last 50)`)
+        }
       }
     }
     
     // Get updated stats
     console.log('\n📊 Updated Collection Statistics:')
-    const roboflowStats = await db.command({ collStats: 'roboflow_inference_jobs' })
-    const hfStats = await db.command({ collStats: 'hf_inference_jobs' })
+    const stats = await db.command({ collStats: 'inference_jobs' })
+    const sizeMB = ((stats.storageSize || 0) + (stats.totalIndexSize || 0)) / (1024 * 1024)
     
-    const roboflowSizeMB = ((roboflowStats.storageSize || 0) + (roboflowStats.totalIndexSize || 0)) / (1024 * 1024)
-    const hfSizeMB = ((hfStats.storageSize || 0) + (hfStats.totalIndexSize || 0)) / (1024 * 1024)
+    const finalTotal = await inferenceJobs.countDocuments()
+    const finalRoboflow = await inferenceJobs.countDocuments({ host: 'roboflow' })
+    const finalHuggingface = await inferenceJobs.countDocuments({ host: 'huggingface' })
     
-    console.log(`   roboflow_inference_jobs: ${await roboflowJobs.countDocuments()} documents, ${roboflowSizeMB.toFixed(2)} MB`)
-    console.log(`   hf_inference_jobs: ${await hfJobs.countDocuments()} documents, ${hfSizeMB.toFixed(2)} MB`)
-    console.log(`   Total: ${(roboflowSizeMB + hfSizeMB).toFixed(2)} MB`)
+    console.log(`   inference_jobs: ${finalTotal} documents, ${sizeMB.toFixed(2)} MB`)
+    console.log(`     - roboflow: ${finalRoboflow}`)
+    console.log(`     - huggingface: ${finalHuggingface}`)
     
     console.log('\n✅ Cleanup completed!')
     

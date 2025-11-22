@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useCVTask } from '@/hooks/useCVTask'
 import { useResultHistory } from '@/hooks/useResultHistory'
 import GuidedModelFlow from '@/components/GuidedModelFlow'
@@ -21,7 +21,8 @@ export default function Home() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [viewingHistoryItem, setViewingHistoryItem] = useState<ResultHistoryItem | null>(null)
 
-  const handleImageProcessed = (response: any) => {
+  // Memoize handleImageProcessed to prevent unnecessary re-renders
+  const handleImageProcessed = useCallback((response: any) => {
     if (selectedImage) {
       addResult({
         image_url: selectedImage,
@@ -29,7 +30,7 @@ export default function Home() {
         response
       })
     }
-  }
+  }, [selectedImage, currentTask, addResult])
 
   const handleViewHistoryItem = (item: ResultHistoryItem) => {
     setViewingHistoryItem(item)

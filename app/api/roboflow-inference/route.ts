@@ -135,9 +135,14 @@ export async function POST(request: NextRequest) {
 
     console.log('📊 Received inference parameters:', JSON.stringify(parameters, null, 2))
 
-    if (!model_url || !api_key || !image) {
+    // Use API key from request, or fallback to server's environment variable
+    const finalApiKey = api_key && api_key !== 'server_env_var' 
+      ? api_key 
+      : (process.env.ROBOFLOW_API_KEY || api_key)
+
+    if (!model_url || !finalApiKey || !image) {
       return NextResponse.json(
-        { error: 'model_url, api_key, and image are required' },
+        { error: 'model_url, api_key (or ROBOFLOW_API_KEY env var), and image are required' },
         { status: 400 }
       )
     }
@@ -193,34 +198,27 @@ export async function POST(request: NextRequest) {
     const venvPython = path.join(process.cwd(), 'venv', 'bin', 'python')
     
     // Pass model_url, api_key, and parameters as arguments, image via stdin
+    // Ensure parameters is always a valid JSON string
+    const parametersJson = parameters && Object.keys(parameters).length > 0 
+      ? JSON.stringify(parameters)
+      : '{}'
+    
     const pythonProcess = spawn(venvPython, [
       pythonScript,
       model_url,
-      api_key,
-      JSON.stringify(parameters)
+      finalApiKey,
+      parametersJson
     ], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 30000 // 30 second timeout
+      timeout: 40000 // 70 second timeout (60s for API + 10s buffer)
     })
     
-    // Write image data to stdin (handle errors)
-    let stdinErrorMessage: string | null = null
-    pythonProcess.stdin.on('error', (error: Error) => {
-      stdinErrorMessage = error.message
-      console.error('Stdin error:', error)
-    })
-    
-    pythonProcess.stdin.write(image, (error: Error | null | undefined) => {
-      if (error) {
-        stdinErrorMessage = error.message
-        console.error('Error writing to stdin:', error)
-      }
-      pythonProcess.stdin.end()
-    })
-
     let stdout = ''
     let stderr = ''
+    let stdinErrorMessage: string | null = null
 
+    // Set up stdout/stderr listeners BEFORE writing to stdin
+    // This ensures we capture all output
     pythonProcess.stdout.on('data', (data) => {
       stdout += data.toString()
     })
@@ -229,9 +227,57 @@ export async function POST(request: NextRequest) {
       stderr += data.toString()
     })
 
+    pythonProcess.stdin.on('error', (error: Error) => {
+      stdinErrorMessage = error.message
+      console.error('Stdin error:', error)
+    })
+    
+    // Wait for stdin to finish writing before waiting for process to close
+    await new Promise<void>((resolve, reject) => {
+      const writeCallback = (error: Error | null | undefined) => {
+        if (error) {
+          stdinErrorMessage = error.message
+          console.error('Error writing to stdin:', error)
+          reject(error)
+        } else {
+          pythonProcess.stdin.end((endError: Error | null | undefined) => {
+            if (endError) {
+              stdinErrorMessage = endError.message
+              reject(endError)
+            } else {
+              resolve()
+            }
+          })
+        }
+      }
+      
+      // Check if stdin is writable before writing
+      if (pythonProcess.stdin.writable) {
+        pythonProcess.stdin.write(image, writeCallback)
+      } else {
+        reject(new Error('Stdin is not writable'))
+      }
+    }).catch((error) => {
+      // Error already handled above, but log it
+      if (error && !stdinErrorMessage) {
+        stdinErrorMessage = error.message || 'Unknown stdin error'
+      }
+    })
+
+    // Wait for process to complete and ensure all output is captured
     const exitCode = await new Promise<number>((resolve) => {
       pythonProcess.on('close', (code) => {
-        resolve(code || 0)
+        // Give streams a moment to finish flushing
+        setTimeout(() => {
+          resolve(code || 0)
+        }, 200)
+      })
+      
+      // Also handle error events
+      pythonProcess.on('error', (error) => {
+        console.error('Python process error:', error)
+        stderr += error.message
+        resolve(1)
       })
     })
 
@@ -272,31 +318,71 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+      // Check if stdout is empty
+      if (!stdout || stdout.trim().length === 0) {
+        console.error('⚠️ Python script produced no stdout output')
+        console.error('Python stderr:', stderr || '(empty)')
+        console.error('Exit code:', exitCode)
+        throw new Error('Python script produced no output. Check stderr for errors.')
+      }
+      
       // Extract JSON from stdout (handle Roboflow loading messages)
       const jsonMatch = stdout.match(/\{[\s\S]*\}/)
       if (!jsonMatch) {
+        console.error('⚠️ No JSON found in Python output')
+        console.error('Python stdout:', stdout.substring(0, 500))
+        console.error('Python stderr:', stderr || '(empty)')
         throw new Error('No JSON found in Python output')
       }
       
       const result = JSON.parse(jsonMatch[0])
       
       if (!result.success) {
-        // Mark model as failed in MongoDB
-        try {
-          await markModelAsFailed(
-            extractedModelId,
-            inferredTaskType,
-            result.error || 'Unknown error',
-            'unknown'
-          )
-        } catch (dbError) {
-          console.warn('⚠️ Failed to update model status in MongoDB:', dbError)
+        // Mark model as failed in MongoDB only for actual API/execution errors
+        // Empty/null results are valid (just means no detections found) - don't mark as failed
+        const errorMessage = result.error || 'Unknown error'
+        
+        // Only mark as failed if it's a real error (API failure, timeout, etc.)
+        // NOT if it's:
+        // - Empty/null results (valid - just means no detections)
+        // - Parameter-related issues (shouldn't mark model as failed)
+        // - Attribute errors from Python (code issues, not model issues)
+        const isRealError = errorMessage && 
+          errorMessage !== 'Unknown error' &&
+          !errorMessage.toLowerCase().includes('null') && 
+          !errorMessage.toLowerCase().includes('empty') &&
+          !errorMessage.toLowerCase().includes('no predictions') &&
+          !errorMessage.toLowerCase().includes('parameter') &&
+          !errorMessage.toLowerCase().includes("'str' object has no attribute") &&
+          !errorMessage.toLowerCase().includes("attribute") &&
+          (errorMessage.toLowerCase().includes('api request failed') ||
+           errorMessage.toLowerCase().includes('timeout') ||
+           errorMessage.toLowerCase().includes('status') ||
+           errorMessage.toLowerCase().includes('not found') ||
+           errorMessage.toLowerCase().includes('invalid url') ||
+           errorMessage.toLowerCase().includes('authentication') ||
+           errorMessage.toLowerCase().includes('unauthorized'))
+        
+        if (isRealError) {
+          try {
+            await markModelAsFailed(
+              extractedModelId,
+              inferredTaskType,
+              errorMessage,
+              'unknown'
+            )
+          } catch (dbError) {
+            console.warn('⚠️ Failed to update model status in MongoDB:', dbError)
+          }
+        } else {
+          // Log but don't mark as failed for non-critical errors
+          console.warn(`⚠️ Inference returned error but not marking model as failed: ${errorMessage}`)
         }
         
         return NextResponse.json(
           { 
             error: 'Inference failed', 
-            details: result.error || 'Unknown error'
+            details: errorMessage
           },
           { status: 500 }
         )

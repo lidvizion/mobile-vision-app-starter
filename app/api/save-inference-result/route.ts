@@ -4,13 +4,13 @@ import { NextRequest, NextResponse } from 'next/server'
  * /api/save-inference-result
  * Purpose: Store inference results in MongoDB for caching (both HF and Roboflow)
  * 
- * MongoDB Collections:
- * - hf_inference_jobs (for Hugging Face models)
- * - roboflow_inference_jobs (for Roboflow models)
+ * MongoDB Collection:
+ * - inference_jobs (unified collection for all inference providers)
  * 
  * Schema:
  * {
  *   "_id": "uuid-job-123",
+ *   "host": "roboflow" | "huggingface" | etc.,
  *   "user_id": "uuid-xyz",
  *   "model_id": "roboflow/YOLOv8-Basketball-Detection" or "microsoft/resnet-50",
  *   "query": "basketball player shot detection",
@@ -68,9 +68,14 @@ export async function POST(request: NextRequest) {
     // Generate unique job ID
     const jobId = `uuid-job-${Date.now()}`
 
+    // Determine host/provider based on model_id
+    const isRoboflow = model_id.startsWith('roboflow/') || model_id.startsWith('roboflow-')
+    const host = isRoboflow ? 'roboflow' : 'huggingface'
+
     // Prepare inference job record
     const inferenceJob: any = {
       job_id: jobId,
+      host: host,
       user_id: user_id || 'anonymous',
       model_id: model_id,
       query: query,
@@ -89,13 +94,8 @@ export async function POST(request: NextRequest) {
       const { getDatabase } = await import('@/lib/mongodb/connection')
       const db = await getDatabase()
       
-      // Detect if this is a Roboflow or Hugging Face model
-      const isRoboflow = model_id.startsWith('roboflow/') || model_id.startsWith('roboflow-')
-      const collectionName = isRoboflow ? 'roboflow_inference_jobs' : 'hf_inference_jobs'
-      const sourceLabel = isRoboflow ? 'Roboflow' : 'HF'
-      
-      await db.collection(collectionName).insertOne(inferenceJob)
-      console.log(`✅ ${sourceLabel} inference job saved to MongoDB:`, jobId)
+      await db.collection('inference_jobs').insertOne(inferenceJob)
+      console.log(`✅ ${host} inference job saved to MongoDB:`, jobId)
     } catch (mongoError) {
       console.error('MongoDB save error:', mongoError)
       // Continue without failing the request
@@ -135,18 +135,14 @@ export async function GET(request: NextRequest) {
     const { getDatabase } = await import('@/lib/mongodb/connection')
     const db = await getDatabase()
 
-    // Detect model source to determine collection
-    const isRoboflow = model_id && (model_id.startsWith('roboflow/') || model_id.startsWith('roboflow-'))
-    const collectionName = isRoboflow ? 'roboflow_inference_jobs' : 'hf_inference_jobs'
-    
     // Check cache first if model_id and image_url provided
     if (model_id && image_url) {
       const cached = await db
-        .collection(collectionName)
+        .collection('inference_jobs')
         .findOne({ model_id, image_url })
       
       if (cached) {
-        console.log(`✅ Cache hit for ${isRoboflow ? 'Roboflow' : 'HF'} inference job`)
+        console.log(`✅ Cache hit for ${cached.host || 'unknown'} inference job`)
         return NextResponse.json({
           success: true,
           cached: true,
@@ -160,9 +156,9 @@ export async function GET(request: NextRequest) {
     if (model_id) query.model_id = model_id
     if (user_id) query.user_id = user_id
 
-    // Fetch results from appropriate collection
+    // Fetch results from unified collection
     const results = await db
-      .collection(collectionName)
+      .collection('inference_jobs')
       .find(query)
       .sort({ created_at: -1 })
       .limit(limit)

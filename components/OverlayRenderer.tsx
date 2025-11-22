@@ -27,7 +27,7 @@ export default function OverlayRenderer({
   confidenceThreshold = 0.0,
   labelDisplayMode = 'confidence'
 }: OverlayRendererProps) {
-  // Keypoint Detection: Render bounding boxes + keypoints
+  // Keypoint Detection: Render keypoints with skeleton lines (Roboflow style - no bounding boxes)
   if (task === 'keypoint-detection' && keypointDetections && keypointDetections.length > 0) {
     // Filter by confidence threshold
     const filteredKeypointDetections = keypointDetections.filter(detection => detection.confidence >= confidenceThreshold)
@@ -38,72 +38,138 @@ export default function OverlayRenderer({
           const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
           const color = colors[index % colors.length]
           
+          // Filter keypoints by confidence
+          const visibleKeypoints = (detection.keypoints || []).filter(kp => kp.confidence >= confidenceThreshold)
+          
+          if (visibleKeypoints.length === 0) return null
+          
           return (
             <div 
               key={index} 
-              className="absolute animate-scale-in" 
+              className="absolute inset-0 animate-scale-in" 
               style={{ 
                 animationDelay: `${index * 0.1}s`,
-                left: `${(detection.bbox.x / imageWidth) * 100}%`,
-                top: `${(detection.bbox.y / imageHeight) * 100}%`,
-                width: `${(detection.bbox.width / imageWidth) * 100}%`,
-                height: `${(detection.bbox.height / imageHeight) * 100}%`,
               }}
             >
-              {/* Bounding box */}
-              <div
-                className="absolute inset-0 border-2 rounded shadow-lg"
-                style={{
-                  borderColor: color,
-                  backgroundColor: `${color}15`,
-                }}
-              />
-              
-              {/* Keypoints connected by lines */}
-              {detection.keypoints && detection.keypoints.length > 0 && (
-                <>
+              {/* Keypoints connected by skeleton lines (Roboflow style) */}
                   {(() => {
-                    // Filter to only high-confidence keypoints based on confidence threshold
-                    const highConfidenceKeypoints = detection.keypoints.filter(kp => kp.confidence >= confidenceThreshold)
+                // Filter to only high-confidence keypoints
+                const highConfidenceKeypoints = visibleKeypoints
                     
                     if (highConfidenceKeypoints.length < 2) {
-                      // Not enough keypoints to draw lines
+                  // Not enough keypoints to draw lines - just show dots
                       return (
                         <>
-                          {detection.keypoints.map((kp, kpIndex) => {
-                            if (kp.confidence < confidenceThreshold) return null
-                            return (
+                      {highConfidenceKeypoints.map((kp, kpIndex) => (
                               <div
-                                key={`kp-${kpIndex}-${kp.class_id || kp.class}`}
+                          key={`kp-${kpIndex}-${kp.class_id || kp.class || kpIndex}`}
                                 className="absolute rounded-full border-2 shadow-md z-10"
                                 style={{
                                   backgroundColor: color,
                                   borderColor: '#FFFFFF',
                                   left: `${(kp.x / imageWidth) * 100}%`,
                                   top: `${(kp.y / imageHeight) * 100}%`,
-                                  width: '8px',
-                                  height: '8px',
+                            width: '10px',
+                            height: '10px',
                                   transform: 'translate(-50%, -50%)',
-                                  opacity: Math.max(0.6, kp.confidence)
+                            opacity: Math.max(0.7, kp.confidence)
                                 }}
                                 title={`${kp.class || `Keypoint ${kpIndex}`}: ${(kp.confidence * 100).toFixed(1)}%`}
                               />
-                            )
-                          })}
+                      ))}
                         </>
                       )
                     }
                     
                     // Calculate distance between two keypoints
-                    const distance = (kp1: typeof highConfidenceKeypoints[0], kp2: typeof highConfidenceKeypoints[0]) => {
+                const distance = (kp1: Keypoint, kp2: Keypoint) => {
                       return Math.sqrt(Math.pow(kp2.x - kp1.x, 2) + Math.pow(kp2.y - kp1.y, 2))
                     }
                     
-                    // Calculate average distance to nearest neighbors to determine connection threshold
+                // Smart skeleton connection logic
+                // NOTE: Roboflow does NOT provide skeleton connection data in the API response
+                // Skeleton connections are manually defined in project settings but are only used
+                // for visualization in Roboflow's UI, not returned via API
+                // 
+                // Priority 1: Use heuristic detection for human pose models (anatomical connections)
+                // Priority 2: Use proximity-based connections for other models
+                const connectionPairs: Array<[Keypoint, Keypoint]> = []
+                
+                // Helper function to find keypoint by class name or class_id
+                const findKeypoint = (name: string, id?: number): Keypoint | undefined => {
+                  return highConfidenceKeypoints.find(kp => 
+                    (kp.class && kp.class.toLowerCase().includes(name.toLowerCase())) ||
+                    (id !== undefined && kp.class_id === id)
+                  )
+                }
+                
+                // Check if this looks like a human pose model (has head, shoulders, etc.)
+                const hasHead = findKeypoint('head', 2)
+                const hasLeftShoulder = findKeypoint('left-shoulder', 0) || findKeypoint('left_shoulder', 0)
+                const hasRightShoulder = findKeypoint('right-shoulder', 1) || findKeypoint('right_shoulder', 1)
+                const isHumanPose = hasHead || (hasLeftShoulder && hasRightShoulder)
+                
+                if (isHumanPose) {
+                  // Human pose skeleton connections (anatomical structure)
+                  // Head connections
+                  const head = findKeypoint('head', 2)
+                  const leftShoulder = findKeypoint('left-shoulder', 0) || findKeypoint('left_shoulder', 0)
+                  const rightShoulder = findKeypoint('right-shoulder', 1) || findKeypoint('right_shoulder', 1)
+                  
+                  if (head && leftShoulder) connectionPairs.push([head, leftShoulder])
+                  if (head && rightShoulder) connectionPairs.push([head, rightShoulder])
+                  
+                  // Shoulder line
+                  if (leftShoulder && rightShoulder) connectionPairs.push([leftShoulder, rightShoulder])
+                  
+                  // Left arm: shoulder -> elbow -> wrist
+                  const leftElbow = findKeypoint('left-elbow', 3) || findKeypoint('left_elbow', 3)
+                  const leftWrist = findKeypoint('left-wrist', 6) || findKeypoint('left_wrist', 6)
+                  if (leftShoulder && leftElbow) connectionPairs.push([leftShoulder, leftElbow])
+                  if (leftElbow && leftWrist) connectionPairs.push([leftElbow, leftWrist])
+                  
+                  // Right arm: shoulder -> elbow -> wrist
+                  const rightElbow = findKeypoint('right-elbow', 4) || findKeypoint('right_elbow', 4)
+                  const rightWrist = findKeypoint('right-wrist', 5) || findKeypoint('right_wrist', 5)
+                  if (rightShoulder && rightElbow) connectionPairs.push([rightShoulder, rightElbow])
+                  if (rightElbow && rightWrist) connectionPairs.push([rightElbow, rightWrist])
+                  
+                  // Left side: shoulder -> hip -> knee -> ankle
+                  const leftHip = findKeypoint('left-hip', 7) || findKeypoint('left_hip', 7)
+                  const leftKnee = findKeypoint('left-knee', 9) || findKeypoint('left_knee', 9)
+                  const leftAnkle = findKeypoint('left-ankle', 12) || findKeypoint('left_ankle', 12)
+                  if (leftShoulder && leftHip) connectionPairs.push([leftShoulder, leftHip])
+                  if (leftHip && leftKnee) connectionPairs.push([leftHip, leftKnee])
+                  if (leftKnee && leftAnkle) connectionPairs.push([leftKnee, leftAnkle])
+                  
+                  // Right side: shoulder -> hip -> knee -> ankle
+                  const rightHip = findKeypoint('right-hip', 8) || findKeypoint('right_hip', 8)
+                  const rightKnee = findKeypoint('right-knee', 10) || findKeypoint('right_knee', 10)
+                  const rightAnkle = findKeypoint('right-ankle', 11) || findKeypoint('right_ankle', 11)
+                  if (rightShoulder && rightHip) connectionPairs.push([rightShoulder, rightHip])
+                  if (rightHip && rightKnee) connectionPairs.push([rightHip, rightKnee])
+                  if (rightKnee && rightAnkle) connectionPairs.push([rightKnee, rightAnkle])
+                  
+                  // Hip line
+                  if (leftHip && rightHip) connectionPairs.push([leftHip, rightHip])
+                } else {
+                  // Fallback: Use proximity-based connections for non-human pose models
+                  // This creates connections based on spatial proximity
+                  // Sort keypoints by y-coordinate (top to bottom) and x-coordinate (left to right)
+                  const sortedKeypoints = [...highConfidenceKeypoints].sort((a, b) => {
+                    // First sort by y (vertical position)
+                    if (Math.abs(a.y - b.y) > 20) {
+                      return a.y - b.y
+                    }
+                    // Then by x (horizontal position)
+                    return a.x - b.x
+                  })
+                  
+                  // Calculate average distance to nearest neighbors
                     const distances: number[] = []
-                    highConfidenceKeypoints.forEach((kp, i) => {
+                  sortedKeypoints.forEach((kp, i) => {
                       let minDist = Infinity
-                      highConfidenceKeypoints.forEach((otherKp, j) => {
+                    sortedKeypoints.forEach((otherKp, j) => {
                         if (i !== j) {
                           const dist = distance(kp, otherKp)
                           if (dist < minDist) minDist = dist
@@ -115,186 +181,120 @@ export default function OverlayRenderer({
                       ? distances.reduce((a, b) => a + b, 0) / distances.length 
                       : 100
                     
-                    // Connection threshold: connect if distance is less than 2x the average nearest neighbor distance
-                    const connectionThreshold = avgNearestDistance * 2
-                    
-                    // Separate keypoints into groups by class_id/class to potentially form separate polygons
-                    // Sort by class_id or parse class as number for consistent ordering
-                    const sortedKeypoints = [...highConfidenceKeypoints].sort((a, b) => {
-                      if (a.class_id !== undefined && b.class_id !== undefined) {
-                        return a.class_id - b.class_id
-                      }
-                      const aNum = a.class ? parseInt(a.class, 10) : a.class_id || 0
-                      const bNum = b.class ? parseInt(b.class, 10) : b.class_id || 0
-                      return aNum - bNum
-                    })
-                    
-                    // Generate connections: connect keypoints sequentially in sorted order
-                    // Only connect consecutive keypoints that are within reasonable distance
-                    const connectionPairs: Array<[Keypoint, Keypoint]> = []
-                    
-                    sortedKeypoints.forEach((kp, i) => {
-                      // Connect to next keypoint in sorted order if within threshold
-                      if (i < sortedKeypoints.length - 1) {
-                        const nextKp = sortedKeypoints[i + 1]
-                        const nextDist = distance(kp, nextKp)
-                        if (nextDist < connectionThreshold) {
-                          connectionPairs.push([kp, nextKp])
+                  // Connection threshold: connect if distance is less than 3x the average nearest neighbor distance
+                  const connectionThreshold = avgNearestDistance * 3
+                  
+                  // Generate connections: connect keypoints that are close
+                  sortedKeypoints.forEach((kp, i) => {
+                    sortedKeypoints.forEach((otherKp, j) => {
+                      if (i !== j) {
+                        const dist = distance(kp, otherKp)
+                        if (dist < connectionThreshold) {
+                          // Check if this pair already exists (avoid duplicates)
+                          const exists = connectionPairs.some(([k1, k2]) => 
+                            (k1 === kp && k2 === otherKp) || (k1 === otherKp && k2 === kp)
+                          )
+                          if (!exists) {
+                            connectionPairs.push([kp, otherKp])
+                          }
                         }
+                      }
+                    })
+                  })
+                }
+                
+                // Remove duplicate connections
+                const uniquePairs: Array<[Keypoint, Keypoint]> = []
+                connectionPairs.forEach(([kp1, kp2]) => {
+                  const exists = uniquePairs.some(([k1, k2]) => 
+                    (k1 === kp1 && k2 === kp2) || (k1 === kp2 && k2 === kp1)
+                  )
+                  if (!exists) {
+                    uniquePairs.push([kp1, kp2])
                       }
                     })
                     
                     return (
                       <>
-                        {/* Draw lines connecting keypoints based on proximity and sorted order */}
+                    {/* Draw skeleton lines connecting keypoints (Roboflow style) */}
                         <svg
                           className="absolute inset-0 pointer-events-none"
                           style={{ width: '100%', height: '100%', overflow: 'visible' }}
                           viewBox={`0 0 ${imageWidth} ${imageHeight}`}
                           preserveAspectRatio="none"
                         >
-                          {connectionPairs.map(([kp1, kp2], lineIndex) => (
+                      {uniquePairs.map(([kp1, kp2], lineIndex) => {
+                        const avgConfidence = (kp1.confidence + kp2.confidence) / 2
+                        return (
                             <line
-                              key={`line-${lineIndex}-${kp1.class_id || kp1.class}-${kp2.class_id || kp2.class}`}
+                            key={`line-${lineIndex}-${kp1.class_id || kp1.class || 'kp'}-${kp2.class_id || kp2.class || 'kp'}`}
                               x1={kp1.x}
                               y1={kp1.y}
                               x2={kp2.x}
                               y2={kp2.y}
-                              stroke="#00FFFF"
-                              strokeWidth="5"
-                              strokeOpacity={Math.max(0.7, Math.min(kp1.confidence, kp2.confidence))}
+                            stroke={color}
+                            strokeWidth="3"
+                            strokeOpacity={Math.max(0.6, avgConfidence)}
                               strokeLinecap="round"
                               strokeLinejoin="round"
                             />
-                          ))}
+                        )
+                      })}
                         </svg>
                         
-                        {/* Render keypoint dots */}
-                        {detection.keypoints.map((kp, kpIndex) => {
-                          if (kp.confidence < confidenceThreshold) return null
-                          
-                          return (
-                            <div
-                              key={`kp-${kpIndex}-${kp.class_id || kp.class}`}
-                              className="absolute rounded-full border-2 shadow-md z-10"
+                    {/* Render keypoint dots (Roboflow style - colored circles) */}
+                    {highConfidenceKeypoints.map((kp, kpIndex) => (
+                      <div
+                        key={`kp-${kpIndex}-${kp.class_id || kp.class || kpIndex}`}
+                        className="absolute rounded-full border-2 shadow-lg z-10"
                               style={{
                                 backgroundColor: color,
                                 borderColor: '#FFFFFF',
                                 left: `${(kp.x / imageWidth) * 100}%`,
                                 top: `${(kp.y / imageHeight) * 100}%`,
-                                width: '8px',
-                                height: '8px',
+                          width: '10px',
+                          height: '10px',
                                 transform: 'translate(-50%, -50%)',
-                                opacity: Math.max(0.6, kp.confidence)
+                          opacity: Math.max(0.8, kp.confidence)
                               }}
                               title={`${kp.class || `Keypoint ${kpIndex}`}: ${(kp.confidence * 100).toFixed(1)}%`}
                             />
-                          )
-                        })}
+                    ))}
                       </>
                     )
                   })()}
-                </>
-              )}
               
-              {/* Label attached to top of box */}
-              {labelDisplayMode !== 'boxes' && (() => {
+              {/* Optional label (Roboflow typically doesn't show labels for keypoint detection) */}
+              {labelDisplayMode !== 'boxes' && labelDisplayMode === 'confidence' && (() => {
                 const showConfidence = labelDisplayMode === 'confidence'
                 const hasKeypoints = detection.keypoints && detection.keypoints.length > 0
+                const keypointCount = visibleKeypoints.length
                 
-                // Estimate label text width (rough calculation: ~7px per character for text-xs)
-                const labelText = `${detection.class}${showConfidence ? ` ${formatConfidence(detection.confidence)}` : ''}${hasKeypoints ? ` • ${detection.keypoints.filter(kp => kp.confidence >= confidenceThreshold).length} keypoints` : ''}`
-                const estimatedLabelWidth = labelText.length * 7 + 16 // 7px per char + 16px padding
-                const estimatedLabelHeight = 24 // Approximate height
+                // For keypoint detection, show minimal label at top-left of keypoint area
+                // Find the topmost keypoint to position label
+                if (visibleKeypoints.length === 0) return null
                 
-                // Calculate box position in pixels (absolute coordinates)
-                const boxLeft = detection.bbox.x
-                const boxTop = detection.bbox.y
-                const boxWidth = detection.bbox.width
-                const boxRight = boxLeft + boxWidth
-                const boxCenterX = boxLeft + boxWidth / 2
+                const topmostKeypoint = visibleKeypoints.reduce((top, kp) => 
+                  kp.y < top.y ? kp : top, visibleKeypoints[0]
+                )
                 
-                // Check if label would overflow top edge
-                const hasRoomAbove = boxTop >= estimatedLabelHeight
-                
-                // Check if label would overflow left/right edges when centered
-                const boxWidthPercent = (boxWidth / imageWidth) * 100
-                const shouldCenter = boxWidthPercent > 15
-                
-                // Calculate label position (relative to the box container)
-                let labelLeft = '0%'
-                let labelTop = '0%'
-                let labelTransform = 'translateY(-100%)'
-                
-                if (shouldCenter) {
-                  // Center the label on the box
-                  const labelHalfWidth = estimatedLabelWidth / 2
-                  
-                  // Check if centered label would overflow left edge
-                  if (boxCenterX - labelHalfWidth < 0) {
-                    // Position at left edge of image (shift right)
-                    const shiftRight = (labelHalfWidth - boxCenterX) / boxWidth
-                    labelLeft = `${shiftRight * 100}%`
-                    labelTransform = 'translateY(-100%)'
-                  } 
-                  // Check if centered label would overflow right edge
-                  else if (boxCenterX + labelHalfWidth > imageWidth) {
-                    // Position at right edge of image (shift left)
-                    const overflowRight = (boxCenterX + labelHalfWidth) - imageWidth
-                    const shiftLeft = overflowRight / boxWidth
-                    labelLeft = `${(50 - shiftLeft * 100)}%`
-                    labelTransform = 'translate(-100%, -100%)'
-                  } else {
-                    // Center is fine
-                    labelLeft = '50%'
-                    labelTransform = 'translate(-50%, -100%)'
-                  }
-                } else {
-                  // Left-aligned label
-                  // Check if label would overflow left edge
-                  if (boxLeft < estimatedLabelWidth) {
-                    // Shift label right to stay within bounds
-                    const shiftRight = (estimatedLabelWidth - boxLeft) / boxWidth
-                    labelLeft = `${shiftRight * 100}%`
-                  }
-                  // Check if label would overflow right edge
-                  else if (boxLeft + estimatedLabelWidth > imageWidth) {
-                    // Position at right edge of box
-                    labelLeft = `${((imageWidth - boxLeft) / boxWidth) * 100}%`
-                    labelTransform = 'translate(-100%, -100%)'
-                  }
-                }
-                
-                // If no room above, show label below the box
-                if (!hasRoomAbove) {
-                  labelTop = '100%'
-                  labelTransform = labelTransform.replace('-100%', '0%')
-                }
+                const labelText = `${detection.class}${showConfidence ? ` ${formatConfidence(detection.confidence)}` : ''}${hasKeypoints ? ` • ${keypointCount} pts` : ''}`
+                const estimatedLabelWidth = labelText.length * 7 + 16
                 
                 return (
                   <div
-                    className="absolute text-white text-xs px-2 py-0.5 rounded-t font-medium shadow-md z-10"
+                    className="absolute text-white text-xs px-2 py-1 rounded font-semibold shadow-lg border z-20"
                     style={{
-                      backgroundColor: color,
-                      left: labelLeft,
-                      top: labelTop,
-                      transform: labelTransform,
+                      backgroundColor: `${color}E6`, // 90% opacity
+                      borderColor: color,
+                      left: `${(topmostKeypoint.x / imageWidth) * 100}%`,
+                      top: `${((topmostKeypoint.y - 30) / imageHeight) * 100}%`,
+                      transform: 'translate(-50%, -100%)',
                       minWidth: 'max-content',
-                      whiteSpace: 'nowrap',
-                      maxWidth: '90%' // Prevent overflow
+                      maxWidth: `${Math.min(estimatedLabelWidth, imageWidth * 0.3)}px`
                     }}
                   >
-                    <div className="flex items-center gap-1.5">
-                      <span className="capitalize">{detection.class}</span>
-                      {showConfidence && (
-                        <span className="opacity-90">{formatConfidence(detection.confidence)}</span>
-                      )}
-                      {hasKeypoints && (
-                        <span className="opacity-90 text-xs">
-                          • {detection.keypoints.filter(kp => kp.confidence >= confidenceThreshold).length} keypoints
-                        </span>
-                      )}
-                    </div>
+                    {labelText}
                   </div>
                 )
               })()}
@@ -484,14 +484,14 @@ export default function OverlayRenderer({
 
   if ((task === 'segmentation' || task === 'instance-segmentation') && segmentation) {
     // Filter by confidence threshold (segmentation regions may have confidence or we use area as proxy)
-    // Note: Segmentation regions might not have confidence, so we filter if they do, otherwise show all
     const filteredSegmentation = segmentation.filter(region => {
-      // Check if region has confidence field, otherwise include all
-      if ('confidence' in region && typeof (region as any).confidence === 'number') {
+      // If confidence exists, use it; otherwise use area as a proxy (area is 0-1, similar to confidence)
+      if ((region as any).confidence !== undefined && typeof (region as any).confidence === 'number') {
         return (region as any).confidence >= confidenceThreshold
       }
-      // If no confidence field, include all regions (area-based filtering could be added later)
-      return true
+      // Use area as proxy for confidence threshold (area is also 0-1)
+      // Filter out regions with very small area when threshold is high
+      return region.area >= confidenceThreshold
     })
     
     // Determine what to show based on labelDisplayMode

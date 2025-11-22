@@ -17,22 +17,36 @@ async function analyzeInferenceJobs() {
     
     const db = client.db('vision_sdk')
     
-    // Analyze roboflow_inference_jobs
-    console.log('📊 Analyzing roboflow_inference_jobs...\n')
-    const roboflowJobs = db.collection('roboflow_inference_jobs')
-    const roboflowDocs = await roboflowJobs.find({}).limit(5).toArray()
+    // Analyze inference_jobs by host
+    console.log('📊 Analyzing inference_jobs...\n')
+    const inferenceJobs = db.collection('inference_jobs')
     
-    if (roboflowDocs.length > 0) {
-      console.log('Sample document structure:')
-      console.log('Keys:', Object.keys(roboflowDocs[0]))
+    // Get counts by host
+    const totalJobs = await inferenceJobs.countDocuments()
+    const roboflowCount = await inferenceJobs.countDocuments({ host: 'roboflow' })
+    const huggingfaceCount = await inferenceJobs.countDocuments({ host: 'huggingface' })
+    const otherHosts = await inferenceJobs.distinct('host')
+    
+    console.log(`Total inference_jobs: ${totalJobs}`)
+    console.log(`  - roboflow: ${roboflowCount}`)
+    console.log(`  - huggingface: ${huggingfaceCount}`)
+    if (otherHosts.length > 2) {
+      console.log(`  - Other hosts: ${otherHosts.filter(h => h !== 'roboflow' && h !== 'huggingface').join(', ')}`)
+    }
+    
+    // Analyze sample documents
+    const sampleDocs = await inferenceJobs.find({}).limit(5).toArray()
+    
+    if (sampleDocs.length > 0) {
+      console.log('\nSample document structure:')
+      console.log('Keys:', Object.keys(sampleDocs[0]))
       console.log('\nSample document size estimate:')
       
-      // Estimate size of each document
-      for (let i = 0; i < Math.min(3, roboflowDocs.length); i++) {
-        const doc = roboflowDocs[i]
+      for (let i = 0; i < Math.min(3, sampleDocs.length); i++) {
+        const doc = sampleDocs[i]
         const docStr = JSON.stringify(doc)
         const sizeKB = Buffer.byteLength(docStr, 'utf8') / 1024
-        console.log(`  Document ${i + 1}: ${sizeKB.toFixed(2)} KB`)
+        console.log(`  Document ${i + 1} (host: ${doc.host || 'unknown'}): ${sizeKB.toFixed(2)} KB`)
         console.log(`    Keys: ${Object.keys(doc).join(', ')}`)
         if (doc.response) {
           const responseStr = JSON.stringify(doc.response)
@@ -44,40 +58,6 @@ async function analyzeInferenceJobs() {
         }
       }
     }
-    
-    // Get total count and check for large documents
-    const totalRoboflow = await roboflowJobs.countDocuments()
-    console.log(`\nTotal roboflow_inference_jobs: ${totalRoboflow}`)
-    
-    // Analyze hf_inference_jobs
-    console.log('\n📊 Analyzing hf_inference_jobs...\n')
-    const hfJobs = db.collection('hf_inference_jobs')
-    const hfDocs = await hfJobs.find({}).limit(5).toArray()
-    
-    if (hfDocs.length > 0) {
-      console.log('Sample document structure:')
-      console.log('Keys:', Object.keys(hfDocs[0]))
-      console.log('\nSample document size estimate:')
-      
-      for (let i = 0; i < Math.min(3, hfDocs.length); i++) {
-        const doc = hfDocs[i]
-        const docStr = JSON.stringify(doc)
-        const sizeKB = Buffer.byteLength(docStr, 'utf8') / 1024
-        console.log(`  Document ${i + 1}: ${sizeKB.toFixed(2)} KB`)
-        console.log(`    Keys: ${Object.keys(doc).join(', ')}`)
-        if (doc.response) {
-          const responseStr = JSON.stringify(doc.response)
-          const responseSizeKB = Buffer.byteLength(responseStr, 'utf8') / 1024
-          console.log(`    Response size: ${responseSizeKB.toFixed(2)} KB`)
-        }
-        if (doc.image_data || doc.image) {
-          console.log(`    Contains image data: YES`)
-        }
-      }
-    }
-    
-    const totalHf = await hfJobs.countDocuments()
-    console.log(`\nTotal hf_inference_jobs: ${totalHf}`)
     
   } catch (error) {
     console.error('❌ Error:', error)

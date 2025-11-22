@@ -79,6 +79,10 @@ export async function getValidatedModels(
       'microsoft/resnet-50'
     ]
     
+    // ✅ STRICT FILTERING: For HF models, only include Facebook, Microsoft, NVIDIA + Live/Hosted
+    // Roboflow models are always included
+    const strictTrustedOrgs = ['facebook/', 'microsoft/', 'nvidia/']
+    
     const query: any = { 
       validated: true,
       // Exclude text classification models
@@ -94,7 +98,25 @@ export async function getValidatedModels(
         { 'tags': { $not: { $regex: 'offensive', $options: 'i' } } },
         { 'tags': { $not: { $regex: 'question-detection', $options: 'i' } } },
         { 'tags': { $not: { $regex: 'ai-text-detection', $options: 'i' } } },
-        { 'tags': { $not: { $regex: 'document-analysis', $options: 'i' } } }
+        { 'tags': { $not: { $regex: 'document-analysis', $options: 'i' } } },
+        // ✅ STRICT HF FILTERING: Only Facebook, Microsoft, NVIDIA + Live/Hosted
+        // Include Roboflow models OR HF models from trusted orgs that are live/hosted
+        {
+          $or: [
+            // Roboflow models (always include)
+            { model_id: { $regex: /^roboflow/i } },
+            // HF models: must be from trusted org AND live/hosted
+            {
+              model_id: { $regex: new RegExp(`^(${strictTrustedOrgs.map(org => org.replace('/', '\\/')).join('|')})`, 'i') },
+              $or: [
+                { inferenceStatus: { $in: ['live', 'hosted', 'warm'] } },
+                { hosted: true },
+                { warm: true },
+                { supportsInference: true }
+              ]
+            }
+          ]
+        }
       ]
     }
     
@@ -174,9 +196,25 @@ export async function getValidatedModels(
     }
     
     // Fetch priority models separately (always include them, regardless of keywords)
+    // But still apply strict filtering: only trusted orgs + live/hosted for HF models
     const priorityQuery: any = {
       model_id: { $in: priorityModelIds },
-      validated: true
+      validated: true,
+      // Apply same strict filtering for priority models
+      $or: [
+        // Roboflow models (always include)
+        { model_id: { $regex: /^roboflow/i } },
+        // HF models: must be from trusted org AND live/hosted
+        {
+          model_id: { $regex: new RegExp(`^(${strictTrustedOrgs.map(org => org.replace('/', '\\/')).join('|')})`, 'i') },
+          $or: [
+            { inferenceStatus: { $in: ['live', 'hosted', 'warm'] } },
+            { hosted: true },
+            { warm: true },
+            { supportsInference: true }
+          ]
+        }
+      ]
     }
     
     // Get both priority models and keyword-matched models

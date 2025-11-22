@@ -10,6 +10,7 @@ import EditableAnnotationOverlay from './EditableAnnotationOverlay'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
 import { modelViewStore } from '@/stores/modelViewStore'
+import { useNotification } from '@/contexts/NotificationContext'
 
 interface ResultsDisplayProps {
   response: CVResponse | null
@@ -24,6 +25,7 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
   const [labelDisplayMode, setLabelDisplayMode] = useState<LabelDisplayMode>('confidence')
   const [isEditing, setIsEditing] = useState<boolean>(false)
   const [isSaving, setIsSaving] = useState<boolean>(false)
+  const { showNotification } = useNotification()
   
   // Get confidence threshold from MobX store (this will trigger re-render when it changes)
   const confidenceThreshold = modelViewStore.confidenceThreshold
@@ -41,35 +43,64 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
   )
   const [editedDetections, setEditedDetections] = useState(filteredDetections)
   
-  // Update editedDetections when filteredDetections change (but not when editing)
+  const filteredLabels = useMemo(
+    () => response?.results.labels?.filter(l => l.score >= confidenceThreshold) || [],
+    [response?.results.labels, confidenceThreshold]
+  )
+  const [editedLabels, setEditedLabels] = useState(filteredLabels)
+  
+  const filteredKeypointDetections = useMemo(
+    () => response?.results.keypoint_detections?.map(detection => ({
+      ...detection,
+      // Filter keypoints within each detection
+      keypoints: detection.keypoints?.filter(kp => kp.confidence >= confidenceThreshold) || []
+    })).filter(d => d.confidence >= confidenceThreshold) || [],
+    [response?.results.keypoint_detections, confidenceThreshold]
+  )
+  const [editedKeypointDetections, setEditedKeypointDetections] = useState(filteredKeypointDetections)
+  
+  const filteredSegmentationRegions = useMemo(
+    () => response?.results.segmentation?.regions?.filter(r => {
+      // Segmentation regions typically don't have confidence, but may have it
+      // If confidence exists, use it; otherwise use area as a proxy (area is 0-1, similar to confidence)
+      if ((r as any).confidence !== undefined && typeof (r as any).confidence === 'number') {
+        return (r as any).confidence >= confidenceThreshold
+      }
+      // Use area as proxy for confidence threshold (area is also 0-1)
+      // Filter out regions with very small area when threshold is high
+      return r.area >= confidenceThreshold
+    }) || [],
+    [response?.results.segmentation?.regions, confidenceThreshold]
+  )
+  const [editedSegmentationRegions, setEditedSegmentationRegions] = useState(filteredSegmentationRegions)
+  
+  // Update edited annotations when filtered annotations change (but not when editing)
   useEffect(() => {
     if (!isEditing) {
       setEditedDetections(filteredDetections)
+      setEditedLabels(filteredLabels)
+      setEditedKeypointDetections(filteredKeypointDetections)
+      setEditedSegmentationRegions(filteredSegmentationRegions)
     }
-  }, [filteredDetections, isEditing])
-  const filteredLabels = response?.results.labels?.filter(l => l.score >= confidenceThreshold) || []
-  const filteredKeypointDetections = response?.results.keypoint_detections?.map(detection => ({
-    ...detection,
-    // Filter keypoints within each detection
-    keypoints: detection.keypoints?.filter(kp => kp.confidence >= confidenceThreshold) || []
-  })).filter(d => d.confidence >= confidenceThreshold) || []
-  const filteredSegmentationRegions = response?.results.segmentation?.regions?.filter(r => {
-    // Some segmentation regions might not have confidence, include them if they don't 
-    // If region has confidence property, filter by it; otherwise include all 
-    return (r as any).confidence === undefined || (r as any).confidence >= confidenceThreshold
-  }) || []
+  }, [filteredDetections, filteredLabels, filteredKeypointDetections, filteredSegmentationRegions, isEditing])
   
   // Create filtered response for JSON view
+  // When editing, use edited annotations; otherwise use filtered annotations
+  const detectionsForDisplay = isEditing ? editedDetections : filteredDetections
+  const labelsForDisplay = isEditing ? editedLabels : filteredLabels
+  const keypointDetectionsForDisplay = isEditing ? editedKeypointDetections : filteredKeypointDetections
+  const segmentationRegionsForDisplay = isEditing ? editedSegmentationRegions : filteredSegmentationRegions
+  
   const filteredResponse = response ? {
     ...response,
     results: {
       ...response.results,
-      detections: filteredDetections,
-      labels: filteredLabels,
-      keypoint_detections: filteredKeypointDetections,
+      detections: detectionsForDisplay,
+      labels: labelsForDisplay,
+      keypoint_detections: keypointDetectionsForDisplay,
       segmentation: response.results.segmentation ? {
         ...response.results.segmentation,
-        regions: filteredSegmentationRegions
+        regions: segmentationRegionsForDisplay
       } : undefined
     }
   } : null
@@ -188,31 +219,37 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
           {/* Label Display Mode Dropdown - Roboflow style */}
           {(response.results.detections && response.results.detections.length > 0) || 
            (response.results.keypoint_detections && response.results.keypoint_detections.length > 0) ||
-           (response.results.segmentation && response.results.segmentation.regions && response.results.segmentation.regions.length > 0) ? (
+           (response.results.segmentation && response.results.segmentation.regions && response.results.segmentation.regions.length > 0) ||
+           (response.results.labels && response.results.labels.length > 0) ? (
             <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-wells-dark-grey whitespace-nowrap">
-                Label Display:
-              </label>
-              <select
-                value={labelDisplayMode}
-                onChange={(e) => setLabelDisplayMode(e.target.value as LabelDisplayMode)}
-                className="px-3 py-1.5 text-sm border border-wells-warm-grey/30 rounded-lg bg-white text-wells-dark-grey focus:border-wells-dark-grey focus:outline-none min-w-[140px]"
-                disabled={isEditing}
-              >
-                {response.results.segmentation && response.results.segmentation.regions && response.results.segmentation.regions.length > 0 ? (
-                  <>
-                    <option value="shapes">Shapes</option>
-                    <option value="labels">Labels</option>
-                    <option value="confidence">Confidence</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="boxes">Boxes</option>
-                    <option value="labels">Labels</option>
-                    <option value="confidence">Confidence</option>
-                  </>
-                )}
-              </select>
+              {/* Only show label display mode for tasks with visual overlays (not classification) */}
+              {response.task !== 'classification' && (
+                <>
+                  <label className="text-xs font-medium text-wells-dark-grey whitespace-nowrap">
+                    Label Display:
+                  </label>
+                  <select
+                    value={labelDisplayMode}
+                    onChange={(e) => setLabelDisplayMode(e.target.value as LabelDisplayMode)}
+                    className="px-3 py-1.5 text-sm border border-wells-warm-grey/30 rounded-lg bg-white text-wells-dark-grey focus:border-wells-dark-grey focus:outline-none min-w-[140px]"
+                    disabled={isEditing}
+                  >
+                    {response.results.segmentation && response.results.segmentation.regions && response.results.segmentation.regions.length > 0 ? (
+                      <>
+                        <option value="shapes">Shapes</option>
+                        <option value="labels">Labels</option>
+                        <option value="confidence">Confidence</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="boxes">Boxes</option>
+                        <option value="labels">Labels</option>
+                        <option value="confidence">Confidence</option>
+                      </>
+                    )}
+                  </select>
+                </>
+              )}
               <button
                 onClick={() => setIsEditing(!isEditing)}
                 className={cn(
@@ -240,48 +277,68 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
           height={400}
           className="w-full h-full object-contain bg-wells-light-beige"
         />
-        {isEditing && response.results.detections && response.results.detections.length > 0 ? (
+        {isEditing && (
           <EditableAnnotationOverlay
-            detections={editedDetections}
+            detections={editedDetections.length > 0 ? editedDetections : undefined}
+            labels={editedLabels.length > 0 ? editedLabels : undefined}
+            segmentationRegions={editedSegmentationRegions.length > 0 ? editedSegmentationRegions : undefined}
+            keypointDetections={editedKeypointDetections.length > 0 ? editedKeypointDetections : undefined}
             imageWidth={response.image_metadata.width}
             imageHeight={response.image_metadata.height}
+            confidenceThreshold={confidenceThreshold}
+            task={response.task}
             onDetectionsChange={setEditedDetections}
-            onSave={async (detections) => {
+            onLabelsChange={setEditedLabels}
+            onSegmentationChange={setEditedSegmentationRegions}
+            onKeypointDetectionsChange={setEditedKeypointDetections}
+            onSave={async (annotations) => {
               setIsSaving(true)
               try {
-                // Save edited annotations to MongoDB
+                // Save edited annotations to MongoDB (stored in inference_jobs collection)
                 const saveResponse = await fetch('/api/save-edited-annotations', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
+                    job_id: (response as any).job_id, // Use job_id if available (most reliable)
                     original_timestamp: response.timestamp,
                     original_image_url: selectedImage,
                     model_id: response.model_version || 'unknown',
                     task: response.task,
-                    edited_detections: detections,
-                    version: 2
+                    edited_detections: annotations.detections,
+                    edited_labels: annotations.labels,
+                    edited_segmentation: annotations.segmentation,
+                    edited_keypoint_detections: annotations.keypoint_detections
                   })
                 })
                 
                 if (!saveResponse.ok) {
-                  throw new Error('Failed to save edited annotations')
+                  const errorData = await saveResponse.json().catch(() => ({ error: 'Unknown error' }))
+                  throw new Error(errorData.error || errorData.details || 'Failed to save edited annotations')
                 }
                 
+                const result = await saveResponse.json()
+                console.log('✅ Annotations saved successfully:', result)
                 setIsEditing(false)
-                // Optionally show success message
+                // Show success message
+                showNotification(`Annotations saved successfully as version ${result.version}!`, 'success')
               } catch (error) {
                 console.error('Error saving edited annotations:', error)
-                alert('Failed to save edited annotations. Please try again.')
+                const errorMessage = error instanceof Error ? error.message : 'Failed to save edited annotations. Please try again.'
+                showNotification(`${errorMessage}\n\nNote: Make sure the original inference was saved to the database.`, 'error', 8000)
               } finally {
                 setIsSaving(false)
               }
             }}
             onCancel={() => {
               setEditedDetections(filteredDetections)
+              setEditedLabels(filteredLabels)
+              setEditedKeypointDetections(filteredKeypointDetections)
+              setEditedSegmentationRegions(filteredSegmentationRegions)
               setIsEditing(false)
             }}
           />
-        ) : (
+        )}
+        {!isEditing && (
           <OverlayRenderer
             detections={filteredDetections}
             segmentation={filteredSegmentationRegions}
@@ -306,23 +363,32 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
+                    job_id: (response as any).job_id, // Use job_id if available (most reliable)
                     original_timestamp: response.timestamp,
                     original_image_url: selectedImage,
                     model_id: response.model_version || 'unknown',
                     task: response.task,
-                    edited_detections: editedDetections,
-                    version: 2
+                    edited_detections: editedDetections.length > 0 ? editedDetections : undefined,
+                    edited_labels: editedLabels.length > 0 ? editedLabels : undefined,
+                    edited_segmentation: editedSegmentationRegions.length > 0 ? editedSegmentationRegions : undefined,
+                    edited_keypoint_detections: editedKeypointDetections.length > 0 ? editedKeypointDetections : undefined
                   })
                 })
                 
                 if (!saveResponse.ok) {
-                  throw new Error('Failed to save edited annotations')
+                  const errorData = await saveResponse.json().catch(() => ({ error: 'Unknown error' }))
+                  throw new Error(errorData.error || errorData.details || 'Failed to save edited annotations')
                 }
                 
+                const result = await saveResponse.json()
+                console.log('✅ Annotations saved successfully:', result)
                 setIsEditing(false)
+                // Show success message
+                showNotification(`Annotations saved successfully as version ${result.version}!`, 'success')
               } catch (error) {
                 console.error('Error saving edited annotations:', error)
-                alert('Failed to save edited annotations. Please try again.')
+                const errorMessage = error instanceof Error ? error.message : 'Failed to save edited annotations. Please try again.'
+                showNotification(`${errorMessage}\n\nNote: Make sure the original inference was saved to the database.`, 'error', 8000)
               } finally {
                 setIsSaving(false)
               }
@@ -335,6 +401,9 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
           <button
             onClick={() => {
               setEditedDetections(filteredDetections)
+              setEditedLabels(filteredLabels)
+              setEditedKeypointDetections(filteredKeypointDetections)
+              setEditedSegmentationRegions(filteredSegmentationRegions)
               setIsEditing(false)
             }}
             disabled={isSaving}
@@ -395,7 +464,14 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
           {viewMode === 'json' ? (
             <div>
               <div className="mb-2 text-xs text-wells-warm-grey flex items-center justify-between">
-                <span>Filtered by confidence threshold: {Math.floor(confidenceThreshold * 100)}%</span>
+                <div className="flex items-center gap-2">
+                  <span>Filtered by confidence threshold: {Math.floor(confidenceThreshold * 100)}%</span>
+                  {isEditing && (
+                    <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">
+                      Showing Edited Annotations
+                    </span>
+                  )}
+                </div>
                 {confidenceThreshold > 0 && (
                   <button
                     onClick={() => modelViewStore.resetConfidenceThreshold()}
@@ -412,22 +488,27 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
           ) : (
             <div className="space-y-2">
               {/* Detection Results */}
-              {response.results.detections && response.results.detections.length > 0 && (
+              {detectionsForDisplay && detectionsForDisplay.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <Target className="w-4 h-4 text-red-600" />
                     <span className="text-sm font-medium text-wells-dark-grey">Detections</span>
                     <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">
-                      {filteredDetections.length} / {response.results.detections.length} objects
+                      {detectionsForDisplay.length} / {response.results.detections?.length || 0} objects
                     </span>
-                    {filteredDetections.length < response.results.detections.length && (
+                    {!isEditing && response.results.detections && filteredDetections.length < response.results.detections.length && (
                       <span className="px-2 py-1 bg-wells-warm-grey/20 text-wells-warm-grey text-xs font-medium rounded-full">
                         ({response.results.detections.length - filteredDetections.length} hidden)
                       </span>
                     )}
+                    {isEditing && (
+                      <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                        Editing
+                      </span>
+                    )}
                   </div>
                   <div className="space-y-2">
-                    {filteredDetections.map((detection, index) => (
+                    {detectionsForDisplay.map((detection, index) => (
                       <div key={index} className="flex items-center justify-between p-3 bg-wells-light-beige rounded-lg border border-wells-warm-grey/20">
                         <div className="flex items-center gap-3">
                           <div className="w-2 h-2 bg-red-500 rounded-full"></div>
@@ -449,16 +530,21 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
                     <Tag className="w-4 h-4 text-blue-600" />
                     <span className="text-sm font-medium text-wells-dark-grey">Classifications</span>
                     <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
-                      {filteredLabels.length} / {response.results.labels.length} items
+                      {labelsForDisplay.length} / {response.results.labels.length} items
                     </span>
-                    {filteredLabels.length < response.results.labels.length && (
+                    {labelsForDisplay.length < response.results.labels.length && (
                       <span className="px-2 py-1 bg-wells-warm-grey/20 text-wells-warm-grey text-xs font-medium rounded-full">
-                        ({response.results.labels.length - filteredLabels.length} hidden)
+                        ({response.results.labels.length - labelsForDisplay.length} hidden)
+                      </span>
+                    )}
+                    {isEditing && (
+                      <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                        Editing
                       </span>
                     )}
                   </div>
                   <div className="space-y-2">
-                    {filteredLabels.map((label, index) => (
+                    {labelsForDisplay.map((label, index) => (
                       <div key={index} className="flex items-center justify-between p-3 bg-wells-light-beige rounded-lg border border-wells-warm-grey/20">
                         <div className="flex items-center gap-3">
                           <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
@@ -486,11 +572,16 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
                         ? 'bg-emerald-100 text-emerald-700'
                         : 'bg-green-100 text-green-700'
                     }`}>
-                      {filteredSegmentationRegions.length} / {response.results.segmentation.regions.length} {response.task === 'instance-segmentation' || response.results.segmentation.regions.some(r => r.bbox) ? 'instances' : 'regions'}
+                      {segmentationRegionsForDisplay.length} / {response.results.segmentation.regions.length} {response.task === 'instance-segmentation' || response.results.segmentation.regions.some(r => r.bbox) ? 'instances' : 'regions'}
                     </span>
-                    {filteredSegmentationRegions.length < response.results.segmentation.regions.length && (
+                    {segmentationRegionsForDisplay.length < response.results.segmentation.regions.length && (
                       <span className="px-2 py-1 bg-wells-warm-grey/20 text-wells-warm-grey text-xs font-medium rounded-full">
-                        ({response.results.segmentation.regions.length - filteredSegmentationRegions.length} hidden)
+                        ({response.results.segmentation.regions.length - segmentationRegionsForDisplay.length} hidden)
+                      </span>
+                    )}
+                    {isEditing && (
+                      <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                        Editing
                       </span>
                     )}
                     <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-700">
@@ -498,7 +589,7 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {filteredSegmentationRegions.map((region, index) => (
+                    {segmentationRegionsForDisplay.map((region, index) => (
                       <div key={index} className="flex items-center justify-between p-3 bg-wells-light-beige rounded-lg border border-wells-warm-grey/20">
                         <div className="flex items-center gap-3">
                           <div 
@@ -538,16 +629,21 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
                     <Target className="w-4 h-4 text-purple-600" />
                     <span className="text-sm font-medium text-wells-dark-grey">Keypoint Detections</span>
                     <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
-                      {filteredKeypointDetections.length} / {response.results.keypoint_detections.length} objects
+                      {keypointDetectionsForDisplay.length} / {response.results.keypoint_detections.length} objects
                     </span>
-                    {filteredKeypointDetections.length < response.results.keypoint_detections.length && (
+                    {keypointDetectionsForDisplay.length < response.results.keypoint_detections.length && (
                       <span className="px-2 py-1 bg-wells-warm-grey/20 text-wells-warm-grey text-xs font-medium rounded-full">
-                        ({response.results.keypoint_detections.length - filteredKeypointDetections.length} hidden)
+                        ({response.results.keypoint_detections.length - keypointDetectionsForDisplay.length} hidden)
+                      </span>
+                    )}
+                    {isEditing && (
+                      <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                        Editing
                       </span>
                     )}
                   </div>
                   <div className="space-y-2">
-                    {filteredKeypointDetections.map((detection, index) => (
+                    {keypointDetectionsForDisplay.map((detection, index) => (
                       <div key={index} className="p-3 bg-wells-light-beige rounded-lg border border-wells-warm-grey/20">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-3">
