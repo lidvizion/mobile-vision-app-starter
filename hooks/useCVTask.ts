@@ -38,12 +38,38 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             inferenceEndpoint: selectedModel.inferenceEndpoint
           })
           
+          // Compress image if it's too large (to avoid 413 Request Entity Too Large errors)
+          let processedImageFile = imageFile
+          try {
+            const { compressImage, needsCompression, getFileSizeString } = await import('@/lib/imageUtils')
+            if (needsCompression(imageFile, 500)) { // Compress if > 500KB
+              logger.info('Image is large, compressing before sending', context, {
+                originalSize: getFileSizeString(imageFile),
+                fileName: imageFile.name
+              })
+              processedImageFile = await compressImage(imageFile, {
+                maxWidth: 2048,
+                maxHeight: 2048,
+                quality: 0.85,
+                maxSizeKB: 500
+              })
+              logger.info('Image compressed successfully', context, {
+                originalSize: getFileSizeString(imageFile),
+                compressedSize: getFileSizeString(processedImageFile),
+                compressionRatio: `${((1 - processedImageFile.size / imageFile.size) * 100).toFixed(1)}%`
+              })
+            }
+          } catch (compressionError) {
+            logger.warn('Image compression failed, using original image', context, compressionError as Error)
+            // Continue with original image if compression fails
+          }
+          
           // Convert image to base64
           const base64 = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader()
             reader.onloadend = () => resolve(reader.result as string)
             reader.onerror = reject
-            reader.readAsDataURL(imageFile)
+            reader.readAsDataURL(processedImageFile)
           })
           
           // Prepare task-specific parameters for better compatibility
@@ -123,10 +149,10 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
           
           const inferenceData = await response.json()
           
-          // Get actual image dimensions
+          // Get actual image dimensions (use processed image if compressed)
           let imageDimensions: { width: number; height: number } | undefined
           try {
-            imageDimensions = await getImageDimensions(imageFile)
+            imageDimensions = await getImageDimensions(processedImageFile)
             logger.info('Image dimensions retrieved', context, imageDimensions)
           } catch (dimError) {
             logger.warn('Failed to get image dimensions, using defaults', context, dimError as Error)
