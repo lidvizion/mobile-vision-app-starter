@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 
+// Allow longer execution time for Puppeteer scraping in serverless environments
+export const maxDuration = 60; // 60 seconds for Amplify/Vercel
+
 // Extend globalThis to include our cache
 declare global {
   var searchCache: Map<string, any[]> | undefined
@@ -13,83 +16,83 @@ async function fetchModelDescription(modelId: string): Promise<string | null> {
   try {
     const readmeUrl = `https://huggingface.co/${modelId}/raw/main/README.md`
     const response = await fetch(readmeUrl)
-    
+
     if (!response.ok) {
       return null
     }
-    
+
     const readmeContent = await response.text()
-    
+
     // Extract description from README
     // Look for content after the YAML front matter (---)
     const lines = readmeContent.split('\n')
     let inYamlFrontMatter = false
     let description = ''
     let foundMeaningfulContent = false
-    
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
-      
+
       // Check for YAML front matter boundaries
       if (line.trim() === '---') {
         inYamlFrontMatter = !inYamlFrontMatter
         continue
       }
-      
+
       // Skip YAML front matter
       if (inYamlFrontMatter) {
         continue
       }
-      
+
       // Skip empty lines at the start
       if (line.trim() === '') {
         continue
       }
-      
+
       // Skip markdown headers, images, and other formatting
-      if (line.startsWith('#') || 
-          line.startsWith('![') || 
-          line.startsWith('|') ||
-          line.startsWith('```') ||
-          line.startsWith('<!--') ||
-          line.trim() === '') {
+      if (line.startsWith('#') ||
+        line.startsWith('![') ||
+        line.startsWith('|') ||
+        line.startsWith('```') ||
+        line.startsWith('<!--') ||
+        line.trim() === '') {
         continue
       }
-      
+
       // Look for meaningful content (not just HTML comments or boilerplate)
       const cleanLine = line.trim()
-      if (cleanLine.length > 20 && 
-          !cleanLine.toLowerCase().includes('this model card has been generated') &&
-          !cleanLine.toLowerCase().includes('provide a quick summary') &&
-          !cleanLine.toLowerCase().includes('model-index') &&
-          !cleanLine.toLowerCase().includes('metrics:') &&
-          !cleanLine.startsWith('<!--')) {
+      if (cleanLine.length > 20 &&
+        !cleanLine.toLowerCase().includes('this model card has been generated') &&
+        !cleanLine.toLowerCase().includes('provide a quick summary') &&
+        !cleanLine.toLowerCase().includes('model-index') &&
+        !cleanLine.toLowerCase().includes('metrics:') &&
+        !cleanLine.startsWith('<!--')) {
         description = cleanLine
         foundMeaningfulContent = true
         break
       }
     }
-    
+
     // If no meaningful content found, try to get a better description
     if (!foundMeaningfulContent) {
       // Look for any paragraph that might contain useful info
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim()
-        if (line.length > 30 && 
-            line.includes(' ') && // Contains spaces (likely a sentence)
-            !line.startsWith('#') &&
-            !line.startsWith('!') &&
-            !line.startsWith('|') &&
-            !line.startsWith('```') &&
-            !line.startsWith('<!--') &&
-            !line.toLowerCase().includes('model-index') &&
-            !line.toLowerCase().includes('metrics:')) {
+        if (line.length > 30 &&
+          line.includes(' ') && // Contains spaces (likely a sentence)
+          !line.startsWith('#') &&
+          !line.startsWith('!') &&
+          !line.startsWith('|') &&
+          !line.startsWith('```') &&
+          !line.startsWith('<!--') &&
+          !line.toLowerCase().includes('model-index') &&
+          !line.toLowerCase().includes('metrics:')) {
           description = line
           break
         }
       }
     }
-    
+
     // Clean up the description
     if (description) {
       // Remove HTML comments first
@@ -101,17 +104,17 @@ async function fetchModelDescription(modelId: string): Promise<string | null> {
         .replace(/`([^`]+)`/g, '$1') // Remove code formatting
         .replace(/^[^\w]*/, '') // Remove leading non-word characters
         .trim()
-      
+
       // Only return if it's a reasonable length and meaningful content
-      if (description.length > 10 && description.length < 200 && 
-          !description.toLowerCase().includes('model-index') &&
-          !description.toLowerCase().includes('metrics:') &&
-          !description.toLowerCase().includes('this model card has been generated') &&
-          !description.toLowerCase().includes('provide a quick summary')) {
+      if (description.length > 10 && description.length < 200 &&
+        !description.toLowerCase().includes('model-index') &&
+        !description.toLowerCase().includes('metrics:') &&
+        !description.toLowerCase().includes('this model card has been generated') &&
+        !description.toLowerCase().includes('provide a quick summary')) {
         return description
       }
     }
-    
+
     return null
   } catch (error) {
     console.warn(`Failed to fetch description for ${modelId}:`, error)
@@ -129,7 +132,7 @@ async function fetchMultipleModelDescriptions(modelIds: string[]): Promise<Recor
       description: await fetchModelDescription(modelId)
     }))
   )
-  
+
   return results.reduce((acc, { modelId, description }) => {
     acc[modelId] = description
     return acc
@@ -154,68 +157,68 @@ function determineModelType(model: any, classes?: string[]): {
   }
 } {
   const pipelineTag = model.pipeline_tag?.toLowerCase() || ''
-  
+
   // Tier 1: Custom/Task-specific CV models with explicit classes
   if (classes && classes.length > 0 && classes[0] !== 'LABEL_0') {
     // Determine specific task type based on pipeline tag and model name
     let taskType: 'object-detection' | 'classification' | 'segmentation' | 'keypoint-detection' | 'captioning' | 'qa' | 'embedding' | 'general' = 'general'
-            let displayFormat: {
-              type: 'bounding-boxes' | 'labels' | 'masks' | 'text' | 'embeddings' | 'general'
-              requiresImage: boolean
-              requiresText: boolean
-              outputType: 'structured' | 'text' | 'numerical'
-              visualization: 'overlay' | 'sidebar' | 'modal' | 'inline'
-            } = {
-              type: 'general',
-              requiresImage: true,
-              requiresText: false,
-              outputType: 'structured',
-              visualization: 'sidebar'
-            }
-    
+    let displayFormat: {
+      type: 'bounding-boxes' | 'labels' | 'masks' | 'text' | 'embeddings' | 'general'
+      requiresImage: boolean
+      requiresText: boolean
+      outputType: 'structured' | 'text' | 'numerical'
+      visualization: 'overlay' | 'sidebar' | 'modal' | 'inline'
+    } = {
+      type: 'general',
+      requiresImage: true,
+      requiresText: false,
+      outputType: 'structured',
+      visualization: 'sidebar'
+    }
+
     // Check model name and description for task type clues
     const modelName = model.name?.toLowerCase() || ''
     const modelDescription = model.description?.toLowerCase() || ''
     const combinedText = `${pipelineTag} ${modelName} ${modelDescription}`
-    
-    if (combinedText.includes('object-detection') || 
-        combinedText.includes('detection') || 
-        combinedText.includes('yolo') || 
-        combinedText.includes('detr') ||
-        combinedText.includes('faster-rcnn') ||
-        combinedText.includes('retinanet') ||
-        combinedText.includes('bounding') ||
-        combinedText.includes('bbox')) {
+
+    if (combinedText.includes('object-detection') ||
+      combinedText.includes('detection') ||
+      combinedText.includes('yolo') ||
+      combinedText.includes('detr') ||
+      combinedText.includes('faster-rcnn') ||
+      combinedText.includes('retinanet') ||
+      combinedText.includes('bounding') ||
+      combinedText.includes('bbox')) {
       taskType = 'object-detection'
       displayFormat.type = 'bounding-boxes'
       displayFormat.visualization = 'overlay'
-    } else if (combinedText.includes('classification') || 
-               combinedText.includes('image-classification') ||
-               combinedText.includes('classify') ||
-               combinedText.includes('resnet') ||
-               combinedText.includes('vit') ||
-               combinedText.includes('efficientnet')) {
+    } else if (combinedText.includes('classification') ||
+      combinedText.includes('image-classification') ||
+      combinedText.includes('classify') ||
+      combinedText.includes('resnet') ||
+      combinedText.includes('vit') ||
+      combinedText.includes('efficientnet')) {
       taskType = 'classification'
       displayFormat.type = 'labels'
-    } else if (combinedText.includes('segmentation') || 
-               combinedText.includes('mask') ||
-               combinedText.includes('deeplab') ||
-               combinedText.includes('unet') ||
-               combinedText.includes('mask-rcnn')) {
+    } else if (combinedText.includes('segmentation') ||
+      combinedText.includes('mask') ||
+      combinedText.includes('deeplab') ||
+      combinedText.includes('unet') ||
+      combinedText.includes('mask-rcnn')) {
       taskType = 'segmentation'
       displayFormat.type = 'masks'
       displayFormat.visualization = 'overlay'
     } else if (combinedText.includes('keypoint') ||
-               combinedText.includes('key-point') ||
-               combinedText.includes('pose') ||
-               combinedText.includes('landmark') ||
-               pipelineTag.includes('keypoint')) {
+      combinedText.includes('key-point') ||
+      combinedText.includes('pose') ||
+      combinedText.includes('landmark') ||
+      pipelineTag.includes('keypoint')) {
       taskType = 'keypoint-detection'
       displayFormat.type = 'bounding-boxes' // Keypoints are typically shown with bounding boxes
       displayFormat.visualization = 'overlay'
       displayFormat.outputType = 'structured'
     }
-    
+
     return {
       type: 'custom',
       tier: 1,
@@ -225,17 +228,17 @@ function determineModelType(model: any, classes?: string[]): {
       displayFormat
     }
   }
-  
+
   // Tier 2: Generative vision-language models
   const modelName = model.name?.toLowerCase() || ''
   const modelDescription = model.description?.toLowerCase() || ''
   const combinedText = `${pipelineTag} ${modelName} ${modelDescription}`
-  
+
   const generativeTags = ['image-to-text', 'multimodal', 'text-generation', 'visual-question-answering', 'image-captioning']
   const generativeKeywords = ['blip', 'llava', 'llama', 'phi', 'qwen', 'instruct', 'caption', 'captioning', 'vision-language', 'vlm', 'vision-language-model']
-  
-  if (generativeTags.some(tag => pipelineTag.includes(tag)) || 
-      generativeKeywords.some(keyword => combinedText.includes(keyword))) {
+
+  if (generativeTags.some(tag => pipelineTag.includes(tag)) ||
+    generativeKeywords.some(keyword => combinedText.includes(keyword))) {
     let taskType: 'captioning' | 'qa' | 'general' = 'general'
     let displayFormat: {
       type: 'bounding-boxes' | 'labels' | 'masks' | 'text' | 'embeddings' | 'general'
@@ -250,20 +253,20 @@ function determineModelType(model: any, classes?: string[]): {
       outputType: 'text',
       visualization: 'modal'
     }
-    
-    if (combinedText.includes('captioning') || 
-        combinedText.includes('image-to-text') || 
-        combinedText.includes('caption') ||
-        combinedText.includes('blip')) {
+
+    if (combinedText.includes('captioning') ||
+      combinedText.includes('image-to-text') ||
+      combinedText.includes('caption') ||
+      combinedText.includes('blip')) {
       taskType = 'captioning'
       displayFormat.visualization = 'sidebar'
-    } else if (combinedText.includes('question-answering') || 
-               combinedText.includes('qa') ||
-               combinedText.includes('instruct')) {
+    } else if (combinedText.includes('question-answering') ||
+      combinedText.includes('qa') ||
+      combinedText.includes('instruct')) {
       taskType = 'qa'
       displayFormat.requiresText = true
     }
-    
+
     return {
       type: 'generative',
       tier: 2,
@@ -273,7 +276,7 @@ function determineModelType(model: any, classes?: string[]): {
       displayFormat
     }
   }
-  
+
   // Tier 3: Unspecified/Legacy models
   return {
     type: 'unspecified',
@@ -297,19 +300,19 @@ function determineModelType(model: any, classes?: string[]): {
 function calculateEnhancedRelevance(model: any, keywords: string[], classes?: string[]): number {
   const modelTypeInfo = determineModelType(model, classes)
   let baseScore = 0
-  
+
   // HIGHEST PRIORITY: Known working models (verified to work with Inference API)
   if (model.isKnownWorking) {
     baseScore += 500 // Massive boost to ensure these appear first
   }
-  
+
   // Base keyword relevance
   const modelText = `${model.name} ${model.description} ${model.tags?.join(' ') || ''}`.toLowerCase()
-  const keywordMatches = keywords.filter(keyword => 
+  const keywordMatches = keywords.filter(keyword =>
     modelText.includes(keyword.toLowerCase())
   ).length
   baseScore += keywordMatches * 20
-  
+
   // Tier-based scoring
   switch (modelTypeInfo.tier) {
     case 1: // Custom models with classes
@@ -329,18 +332,18 @@ function calculateEnhancedRelevance(model: any, keywords: string[], classes?: st
       baseScore += 10
       break
   }
-  
+
   // Downloads bonus (logarithmic to prevent huge models from dominating)
   baseScore += Math.log(model.downloads + 1) * 5
-  
+
   // Bonus for models from trusted organizations (more likely to work)
-  if (model.id?.startsWith('microsoft/') || 
-      model.id?.startsWith('google/') || 
-      model.id?.startsWith('facebook/') ||
-      model.id?.startsWith('openai/')) {
+  if (model.id?.startsWith('microsoft/') ||
+    model.id?.startsWith('google/') ||
+    model.id?.startsWith('facebook/') ||
+    model.id?.startsWith('openai/')) {
     baseScore += 100
   }
-  
+
   return baseScore
 }
 
@@ -367,7 +370,7 @@ function mapPipelineTagToTaskType(pipelineTag: string): string {
     'image-to-3d': 'Image to 3D',
     'text-to-3d': 'Text to 3D'
   }
-  
+
   return taskTypeMap[pipelineTag] || 'Object Detection'
 }
 
@@ -377,32 +380,32 @@ function mapPipelineTagToTaskType(pipelineTag: string): string {
 function calculateKeywordRelevance(model: NormalizedModel, keywords: string[]): number {
   let score = 0
   const modelText = `${model.name} ${model.description} ${(model.tags || []).join(' ')}`.toLowerCase()
-  
+
   keywords.forEach(keyword => {
     const lowerKeyword = keyword.toLowerCase()
-    
+
     // Exact keyword match in model name (highest score)
     if (model.name.toLowerCase().includes(lowerKeyword)) {
       score += 200
     }
-    
+
     // Keyword match in description
     if (model.description.toLowerCase().includes(lowerKeyword)) {
       score += 100
     }
-    
+
     // Keyword match in tags
     if (model.tags?.some(tag => tag.toLowerCase().includes(lowerKeyword))) {
       score += 150
     }
-    
+
     // Partial keyword match (word boundary)
     const regex = new RegExp(`\\b${lowerKeyword}`, 'i')
     if (regex.test(modelText)) {
       score += 50
     }
   })
-  
+
   return score
 }
 
@@ -472,142 +475,139 @@ interface NormalizedModel {
   }
 }
 
-import { spawn } from "child_process";
-import path from "path";
-import { getValidatedModels, searchValidatedModels, saveRoboflowModelToValidated } from '@/lib/mongodb/validatedModels';
 
-async function searchRoboflowModelsPython(keywords: string[], taskType: string): Promise<any[]> {
-  const startTime = Date.now();
+import { getValidatedModels, searchValidatedModels, saveRoboflowModelToValidated } from '@/lib/mongodb/validatedModels';
+import type { RoboflowModel } from '../../lib/roboflowScraper';
+
+async function searchRoboflowModelsPython(keywords: string[], taskType: string): Promise<NormalizedModel[]> {
   try {
-    // Prioritize domain-specific keywords over generic ones (same logic as HF search)
+    console.log(`🐍 Starting Roboflow search (Node.js Scraper) for: ${keywords.join(', ')}`)
+
+    // Import the Node.js scraper dynamically
+    const { searchRoboflowModelsNode } = await import('../../lib/roboflowScraper');
+
+    // Prepare keywords logic (same as before)
     const genericTerms = new Set(['segmentation', 'segformer', 'image-segmentation', 'detection', 'classification', 'object-detection', 'instance-segmentation'])
     const domainKeywords = keywords.filter(k => !genericTerms.has(k.toLowerCase()))
     const genericKeywords = keywords.filter(k => genericTerms.has(k.toLowerCase()))
-    
-    // Build search query prioritizing domain keywords (e.g., "soccer", "ball")
-    // Format: domain_keywords + "model" + "instance segmentation" (matching Roboflow URL format)
+
     let prioritizedKeywords: string[] = []
-    
-    // Add domain-specific keywords first (most important) - e.g., "soccer", "ball"
-    prioritizedKeywords.push(...domainKeywords.slice(0, 2)) // Up to 2 domain keywords
-    
-    // Add "model" keyword if not already present (Roboflow search expects this)
+    prioritizedKeywords.push(...domainKeywords.slice(0, 2))
     if (!prioritizedKeywords.some(k => k.toLowerCase() === 'model')) {
       prioritizedKeywords.push('model')
     }
-    
-    // Add task type keywords based on search intent
+
+    // Add task type keywords
     const keywordsLower = keywords.join(" ").toLowerCase();
     const taskTypeLower = taskType?.toLowerCase() || "";
-    
-    const isSegmentationRequest = 
-      keywordsLower.includes('segment') || 
-      keywordsLower.includes('segmentation') ||
-      taskTypeLower.includes('segmentation') ||
-      taskTypeLower.includes('segment');
-    
-    const isDetectionRequest = 
-      (keywordsLower.includes('detect') || keywordsLower.includes('detection')) &&
-      !keywordsLower.includes('segment') && // Not segmentation
-      (taskTypeLower.includes('detection') || taskTypeLower.includes('detect'));
-    
-    const isClassificationRequest = 
-      (keywordsLower.includes('classif') || keywordsLower.includes('classification')) &&
-      !keywordsLower.includes('detect') && // Not detection
-      !keywordsLower.includes('segment') && // Not segmentation
-      (taskTypeLower.includes('classification') || taskTypeLower.includes('classif'));
-    
-    const isKeypointDetectionRequest = 
-      (keywordsLower.includes('keypoint') || keywordsLower.includes('key-point') || keywordsLower.includes('pose') || keywordsLower.includes('landmark')) ||
-      (taskTypeLower.includes('keypoint') || taskTypeLower.includes('key-point') || taskTypeLower.includes('pose'));
-    
+
+    const isSegmentationRequest = keywordsLower.includes('segment') || taskTypeLower.includes('segment');
+    const isDetectionRequest = (keywordsLower.includes('detect') || taskTypeLower.includes('detect')) && !isSegmentationRequest;
+    const isClassificationRequest = (keywordsLower.includes('classif') || taskTypeLower.includes('classif')) && !isDetectionRequest && !isSegmentationRequest;
+
     if (isSegmentationRequest && !prioritizedKeywords.some(k => k.toLowerCase().includes('instance'))) {
       prioritizedKeywords.push('instance segmentation')
-    } else if (isKeypointDetectionRequest && !prioritizedKeywords.some(k => k.toLowerCase().includes('keypoint'))) {
-      prioritizedKeywords.push('keypoint detection')
-    } else if (isDetectionRequest && !prioritizedKeywords.some(k => k.toLowerCase().includes('object detection'))) {
+    } else if (isDetectionRequest && !prioritizedKeywords.some(k => k.toLowerCase().includes('object'))) {
       prioritizedKeywords.push('object detection')
     } else if (isClassificationRequest && !prioritizedKeywords.some(k => k.toLowerCase().includes('classification'))) {
       prioritizedKeywords.push('image classification')
     }
-    
-    // Build final search query matching Roboflow URL format: keyword1+keyword2+model+instance+segmentation
-    // Limit to 4-5 terms for better Roboflow search results
+
     const searchQuery = prioritizedKeywords.slice(0, 5).join(" ");
-    
-    const venvPython = path.join(process.cwd(), "venv", "bin", "python");
-    const pythonScript = path.join(process.cwd(), "roboflow_search_agent.py");
-    
-    const pythonProcess = spawn(venvPython, [pythonScript], {
-      env: {
-        ...process.env,
-        SEARCH_KEYWORDS: searchQuery,
-        MAX_PROJECTS: "4",
-        OUTPUT_JSON: 'true',  // 🔑 Key fix: Enable JSON stdout mode
-        HEADLESS: 'true',
-        // Ensure virtual environment is used
-        VIRTUAL_ENV: path.join(process.cwd(), 'venv'),
-        PATH: `${path.join(process.cwd(), 'venv', 'bin')}:${process.env.PATH}`,
-        // Add display environment for headless mode
-        DISPLAY: process.env.DISPLAY || ':0'
-      },
-      cwd: process.cwd(),  // 🔑 CRITICAL: Set working directory
-      stdio: ['pipe', 'pipe', 'pipe']  // Explicit stdio configuration
-    });
 
-    let stdout = "";
-    let stderr = "";
+    // Call the Node.js scraper
+    const rawModels = await searchRoboflowModelsNode(searchQuery, 6); // Max 6 models
 
-    pythonProcess.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-    
-    pythonProcess.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    // Wait for Python script to complete naturally
-    const exitCode = await new Promise<number>((resolve, reject) => {
-      pythonProcess.on("close", (code) => {
-        resolve(code ?? 0);
-      });
-
-      pythonProcess.on("error", (error) => {
-        console.error("❌ Python process error:", error);
-        reject(error);
-      });
-    });
-
-    const duration = Date.now() - startTime;
-
-    if (exitCode !== 0) {
-      console.error(`❌ Python script exited with code ${exitCode}`);
-      console.error(`📝 Full stderr: ${stderr}`);
+    if (!rawModels || rawModels.length === 0) {
+      console.log("❌ No models found via Node.js scraper");
       return [];
     }
 
-    // ---------------- Robust JSON extraction ----------------
-    // Look for first "[" and last "]" to extract JSON array
-    const jsonStart = stdout.indexOf("[");
-    const jsonEnd = stdout.lastIndexOf("]");
-    
-    if (jsonStart === -1 || jsonEnd === -1) {
-      console.warn("⚠️ No JSON array found in Python stdout, checking stderr as fallback");
-      // Fallback: try stderr
-      const errJsonStart = stderr.indexOf("[");
-      const errJsonEnd = stderr.lastIndexOf("]");
-      if (errJsonStart === -1 || errJsonEnd === -1) {
-        console.error("❌ No JSON found in Python output at all");
-        return [];
-      }
-      return parsePythonJson(stderr.slice(errJsonStart, errJsonEnd + 1), keywords, searchQuery, taskType);
-    }
+    // Transform results to NormalizedModel format
+    // Re-using the logic from the Python response parsing
+    const modelsWithScores = rawModels.map((model: RoboflowModel, index: number) => {
+      let relevanceScore = 0
+      const modelText = `${model.project_title || ''} ${model.url || ''} ${(model.classes || []).join(' ')}`.toLowerCase()
 
-    const jsonString = stdout.slice(jsonStart, jsonEnd + 1);
-    return parsePythonJson(jsonString, keywords, searchQuery, taskType);
+      domainKeywords.forEach(keyword => {
+        if (modelText.includes(keyword.toLowerCase())) relevanceScore += 100
+      })
+
+      if (model.has_model) relevanceScore += 50
+      if (model.mAP) relevanceScore += 30
+
+      return { model, relevanceScore, index }
+    });
+
+    modelsWithScores.sort((a: any, b: any) => b.relevanceScore - a.relevanceScore);
+
+    const validModels = modelsWithScores.map(({ model, index }: { model: any, index: number }) => {
+      let modelName = model.project_title || model.model_name || "Roboflow Model";
+      if (modelName === "Models" || modelName === "N/A" || !modelName) {
+        const url = model.url || model.model_url || "";
+        const urlMatch = url.match(/\/universe\.roboflow\.com\/[^\/]+\/([^\/]+)\//);
+        if (urlMatch && urlMatch[1]) {
+          modelName = urlMatch[1].replace(/-/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+        }
+      }
+
+      // Extract model identifier for MongoDB
+      const modelIdentifier = model.model_identifier || model.url?.split('/').slice(-2, -1)[0] || 'unknown'
+
+      // Save to MongoDB in background (don't await - fire and forget)
+      saveRoboflowModelToValidated(modelIdentifier, {
+        name: modelName,
+        author: model.author || "Roboflow Universe",
+        task_type: taskType,
+        api_endpoint: model.api_endpoint || model.model_url,
+        classes: model.classes || [],
+        tags: model.tags || keywords,
+        mAP: model.mAP,
+        training_images: model.training_images
+      }).catch(err => {
+        console.warn(`⚠️ Failed to save Roboflow model ${modelIdentifier} to MongoDB:`, err)
+      })
+
+      // Map Roboflow project type to our standardized task types
+      let mappedTask = taskType;
+      if (model.project_type) {
+        const pt = model.project_type.toLowerCase();
+        if (pt.includes('instance segmentation')) mappedTask = 'instance-segmentation';
+        else if (pt.includes('object detection')) mappedTask = 'object-detection';
+        else if (pt.includes('keypoint')) mappedTask = 'keypoint-detection';
+        else if (pt.includes('classification')) mappedTask = 'classification';
+      }
+
+      return {
+        id: `roboflow-${model.model_identifier || 'unknown'}-${Date.now()}-${index}`,
+        name: modelName,
+        source: "roboflow" as const,
+        description: `Roboflow model for ${searchQuery}`,
+        url: model.url,
+        modelUrl: model.url,
+        task: mappedTask,
+        author: model.author || "Roboflow Universe",
+        downloads: 0,
+        tags: model.tags || keywords,
+        classes: model.classes || [],
+        frameworks: ["Roboflow"],
+        platforms: ["web", "mobile"],
+        supportsInference: true,
+        inferenceEndpoint: model.api_endpoint,
+        apiKey: process.env.ROBOFLOW_API_KEY,
+        isKnownWorking: true,
+        mAP: model.mAP,
+        precision: model.precision,
+        recall: model.recall,
+        trainingImages: model.training_images,
+      };
+    });
+
+    console.log(`✅ Processed ${validModels.length} Roboflow models from Node.js scraper`);
+    return validModels;
 
   } catch (error) {
-    console.error("❌ Python Roboflow search failed:", error);
+    console.error('❌ Error in searchRoboflowModelsNode:', error);
     return [];
   }
 }
@@ -621,18 +621,18 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
     // Separate domain-specific keywords from generic ones
     const genericTerms = new Set(['segmentation', 'segformer', 'image-segmentation', 'detection', 'classification', 'object-detection', 'instance-segmentation'])
     const domainKeywords = keywords.filter(k => !genericTerms.has(k.toLowerCase()))
-    
+
     // Calculate relevance score for each model based on domain keyword matches
     interface ModelWithScore {
       model: any
       relevanceScore: number
       index: number
     }
-    
+
     const modelsWithScores: ModelWithScore[] = modelData.map((model: any, index: number) => {
       let relevanceScore = 0
       const modelText = `${model.project_title || ''} ${model.url || ''} ${(model.classes || []).join(' ')}`.toLowerCase()
-      
+
       // Higher score for domain keyword matches
       domainKeywords.forEach(keyword => {
         const lowerKeyword = keyword.toLowerCase()
@@ -655,10 +655,10 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
           }
         }
       })
-      
+
       return { model, relevanceScore, index }
     })
-    
+
     // Sort by relevance score (highest first), then by original index
     modelsWithScores.sort((a: ModelWithScore, b: ModelWithScore) => {
       if (b.relevanceScore !== a.relevanceScore) {
@@ -666,11 +666,11 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
       }
       return a.index - b.index
     })
-    
-    console.log(`🎯 Re-ranked models by domain keyword relevance. Top scores:`, 
-      modelsWithScores.slice(0, 3).map((m: ModelWithScore) => ({ 
-        title: m.model.project_title, 
-        score: m.relevanceScore 
+
+    console.log(`🎯 Re-ranked models by domain keyword relevance. Top scores:`,
+      modelsWithScores.slice(0, 3).map((m: ModelWithScore) => ({
+        title: m.model.project_title,
+        score: m.relevanceScore
       }))
     )
 
@@ -685,10 +685,10 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
           modelName = urlMatch[1].replace(/-/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
         }
       }
-      
+
       // Extract model identifier for MongoDB
       const modelIdentifier = model.model_identifier || model.url?.split('/').slice(-2, -1)[0] || 'unknown'
-      
+
       // Save to MongoDB in background (don't await - fire and forget)
       saveRoboflowModelToValidated(modelIdentifier, {
         name: modelName,
@@ -702,43 +702,43 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
       }).catch(err => {
         console.warn(`⚠️ Failed to save Roboflow model ${modelIdentifier} to MongoDB:`, err)
       })
-      
+
       return {
         id: `roboflow-${model.model_identifier || model.url || model.model_url || 'unknown'}-${Date.now()}-${index}`,
         name: modelName,
-      source: "roboflow",
-          description: model.description || `Roboflow model for ${searchQuery}`,
+        source: "roboflow",
+        description: model.description || `Roboflow model for ${searchQuery}`,
         url: model.url || model.model_url || "https://universe.roboflow.com",
         modelUrl: model.url || model.model_url || "https://universe.roboflow.com",
-          task: taskType,
-      author: model.author || "Roboflow Universe",
-          downloads: 0,
-          tags: model.tags || keywords,
-          classes: model.classes || [],
-      frameworks: ["Roboflow"],
-      platforms: ["web", "mobile"],
-          supportsInference: true,
-          inferenceEndpoint: model.api_endpoint || model.model_url,
+        task: taskType,
+        author: model.author || "Roboflow Universe",
+        downloads: 0,
+        tags: model.tags || keywords,
+        classes: model.classes || [],
+        frameworks: ["Roboflow"],
+        platforms: ["web", "mobile"],
+        supportsInference: true,
+        inferenceEndpoint: model.api_endpoint || model.model_url,
         apiKey: typeof process !== 'undefined' && process.env ? process.env.ROBOFLOW_API_KEY : undefined,
-          isKnownWorking: true,
-          mAP: model.mAP,
-          precision: model.precision,
-          recall: model.recall,
-      trainingImages: model.training_images,
+        isKnownWorking: true,
+        mAP: model.mAP,
+        precision: model.precision,
+        recall: model.recall,
+        trainingImages: model.training_images,
       };
     });
   } catch (e) {
     console.error("❌ Failed to parse Python JSON:", e);
     console.log("Raw JSON string preview:", jsonString.slice(0, 500));
-    
+
     // Try to repair incomplete JSON by extracting complete objects 
     try {
-      
+
       // Find all complete JSON objects in the string
       const objectMatches = jsonString.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
       if (objectMatches && objectMatches.length > 0) {
         const validModels = [];
-        
+
         for (const objectStr of objectMatches) {
           try {
             const model = JSON.parse(objectStr);
@@ -750,9 +750,9 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
             console.log("⚠️ Skipping invalid object:", objError);
           }
         }
-        
+
         if (validModels.length > 0) {
-          
+
           return validModels.map((model: any, index: number) => ({
             id: `roboflow-${model.model_identifier || model.url || model.model_url || 'unknown'}-${Date.now()}-${index}`,
             name: model.model_name || model.project_title || "Roboflow Model",
@@ -778,13 +778,13 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
           }));
         }
       }
-      
+
       console.log("❌ Could not repair JSON - no valid objects found");
       return [];
 
     } catch (repairError) {
       console.error("❌ JSON repair also failed:", repairError);
-    return [];
+      return [];
     }
   }
 }
@@ -796,27 +796,27 @@ async function filterOutKnownFailedModels(models: any[]): Promise<any[]> {
   try {
     const { getDatabase } = await import('@/lib/mongodb/connection')
     const db = await getDatabase()
-    
+
     // Get list of models that have failed recently (last 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-    
+
     const failedModels = await db.collection('validated_models')
-      .find({ 
-        validated: false, 
+      .find({
+        validated: false,
         works: false,
         checked_at: { $gte: thirtyDaysAgo }
       })
       .project({ model_id: 1 })
       .toArray()
-    
+
     const failedModelIds = new Set(failedModels.map(m => m.model_id))
-    
+
     const filteredModels = models.filter(model => !failedModelIds.has(model.id))
-    
+
     if (failedModelIds.size > 0) {
       console.log(`🚫 Filtered out ${failedModelIds.size} known failed models`)
     }
-    
+
     return filteredModels
   } catch (error) {
     console.error('Error filtering failed models:', error)
@@ -831,20 +831,20 @@ async function addTrustedModels(models: any[], keywords: string[]): Promise<any[
   try {
     // Check if search is detection-related
     const searchText = keywords.join(' ').toLowerCase()
-    const isDetectionSearch = searchText.includes('detection') || 
-                             searchText.includes('detect') ||
-                             searchText.includes('object') ||
-                             searchText.includes('classification') ||
-                             searchText.includes('recognition') ||
-                             searchText.includes('bounding') ||
-                             searchText.includes('localization') ||
-                             searchText.includes('vehicles') ||
-                             searchText.includes('traffic') ||
-                             searchText.includes('basketball') ||
-                             searchText.includes('sports')
-    
+    const isDetectionSearch = searchText.includes('detection') ||
+      searchText.includes('detect') ||
+      searchText.includes('object') ||
+      searchText.includes('classification') ||
+      searchText.includes('recognition') ||
+      searchText.includes('bounding') ||
+      searchText.includes('localization') ||
+      searchText.includes('vehicles') ||
+      searchText.includes('traffic') ||
+      searchText.includes('basketball') ||
+      searchText.includes('sports')
+
     // Always include trusted models for any search
-    
+
     // Trusted organization models - prioritize detection models for detection searches
     const trustedModels = isDetectionSearch ? [
       // Detection models first for detection searches
@@ -906,16 +906,16 @@ async function addTrustedModels(models: any[], keywords: string[]): Promise<any[
         tags: ['facebook', 'detr', 'object-detection', 'detection']
       }
     ]
-    
+
     // Add trusted models that aren't already in the list
     const existingIds = new Set(models.map(m => m.id))
     const newTrustedModels = trustedModels.filter(m => !existingIds.has(m.id))
-    
+
     if (newTrustedModels.length > 0) {
       console.log(`✅ Added ${newTrustedModels.length} trusted organization models`)
       return [...models, ...newTrustedModels]
     }
-    
+
     return models
   } catch (error) {
     console.error('Error adding trusted models:', error)
@@ -927,16 +927,16 @@ async function prioritizeKnownWorkingModels(models: any[]): Promise<any[]> {
   try {
     const { getDatabase } = await import('@/lib/mongodb/connection')
     const db = await getDatabase()
-    
+
     // Get list of models that are confirmed working (last 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-    
+
     // ✅ STRICT FILTERING: Only Facebook, Microsoft, NVIDIA + Live/Hosted models
     const strictTrustedOrgs = ['facebook/', 'microsoft/', 'nvidia/']
-    
+
     const workingModels = await db.collection('validated_models')
-      .find({ 
-        validated: true, 
+      .find({
+        validated: true,
         works: true,
         workingDate: { $gte: thirtyDaysAgo },
         // Only include HF models from trusted orgs that are live/hosted
@@ -957,23 +957,23 @@ async function prioritizeKnownWorkingModels(models: any[]): Promise<any[]> {
       })
       .project({ model_id: 1, workingDate: 1, inferenceStatus: 1, hosted: 1, warm: 1, supportsInference: 1 })
       .toArray()
-    
+
     const workingModelIds = new Set(workingModels.map(m => m.model_id))
-    
+
     // Sort: Working models first, then by original order
     const sortedModels = models.sort((a, b) => {
       const aIsWorking = workingModelIds.has(a.id)
       const bIsWorking = workingModelIds.has(b.id)
-      
+
       if (aIsWorking && !bIsWorking) return -1
       if (!aIsWorking && bIsWorking) return 1
       return 0 // Keep original order for same type
     })
-    
+
     if (workingModelIds.size > 0) {
       console.log(`✅ Prioritized ${workingModelIds.size} known working models`)
     }
-    
+
     return sortedModels
   } catch (error) {
     console.error('Error prioritizing working models:', error)
@@ -1012,15 +1012,15 @@ function applyDomainSpecificSelection(models: any[], keywords: string[], taskTyp
     automotive: ['car', 'vehicle', 'traffic', 'road', 'street', 'driving'],
     general: ['general', 'generic', 'universal', 'multi', 'any']
   }
-  
+
   // Determine the domain from keywords
   const keywordText = keywords.join(' ').toLowerCase()
   let detectedDomain = 'general'
-  
+
   // Check for medical domain indicators
   const medicalIndicators = domainSpecificModels.medical.some(term => keywordText.includes(term))
   const automotiveIndicators = domainSpecificModels.automotive.some(term => keywordText.includes(term))
-  
+
   if (medicalIndicators && !automotiveIndicators) {
     detectedDomain = 'medical'
   } else if (automotiveIndicators && !medicalIndicators) {
@@ -1028,43 +1028,43 @@ function applyDomainSpecificSelection(models: any[], keywords: string[], taskTyp
   } else {
     detectedDomain = 'general'
   }
-  
+
   // Filter out domain-specific models that don't match the detected domain
   return models.filter(model => {
     const modelId = model.id.toLowerCase()
     const modelDescription = (model.description || '').toLowerCase()
     const modelText = `${modelId} ${modelDescription}`
-    
+
     // If we detected a specific domain, prioritize general models over domain-specific ones
     if (detectedDomain === 'automotive' && domainSpecificModels.medical.some(term => modelText.includes(term))) {
       return false // Exclude medical models for automotive queries
     }
-    
+
     if (detectedDomain === 'medical' && domainSpecificModels.automotive.some(term => modelText.includes(term))) {
       return false // Exclude automotive models for medical queries
     }
-    
+
     // For general queries, prefer general-purpose models over domain-specific ones
     if (detectedDomain === 'general') {
       const isMedicalSpecific = domainSpecificModels.medical.some(term => modelText.includes(term))
       const isAutomotiveSpecific = domainSpecificModels.automotive.some(term => modelText.includes(term))
-      
+
       // Exclude highly specific medical models for general queries
       if (isMedicalSpecific && (modelText.includes('optic') || modelText.includes('disc') || modelText.includes('cup'))) {
         return false
       }
-      
+
       // Exclude highly specific automotive models for general queries  
       if (isAutomotiveSpecific && (modelText.includes('traffic') || modelText.includes('vehicle'))) {
         return false
       }
     }
-    
+
     return true
   })
 }
 async function searchHFModels(
-  keywords: string[], 
+  keywords: string[],
   taskType?: string,
   filterForInference: boolean = true
 ): Promise<NormalizedModel[]> {
@@ -1072,28 +1072,28 @@ async function searchHFModels(
     // Prioritize domain-specific keywords over generic ones
     // Generic terms that should be deprioritized
     const genericTerms = new Set(['segmentation', 'segformer', 'image-segmentation', 'detection', 'classification', 'object-detection'])
-    
+
     // Separate domain-specific and generic keywords
     const domainKeywords = keywords.filter(k => !genericTerms.has(k.toLowerCase()))
     const genericKeywords = keywords.filter(k => genericTerms.has(k.toLowerCase()))
-    
+
     // Prioritize domain-specific keywords (e.g., "soccer", "ball") over generic ones
     // Use up to 3 keywords: first domain-specific, then generic if needed
     const prioritizedKeywords = [
       ...domainKeywords.slice(0, 2), // Up to 2 domain-specific keywords
       ...genericKeywords.slice(0, 1)  // Up to 1 generic keyword
     ].slice(0, 3) // Total max 3 keywords
-    
+
     // Fallback: if no domain keywords, use first 3 generic keywords
-    const searchKeywords = prioritizedKeywords.length > 0 
-      ? prioritizedKeywords 
+    const searchKeywords = prioritizedKeywords.length > 0
+      ? prioritizedKeywords
       : keywords.slice(0, 3)
-    
+
     const searchQuery = searchKeywords.join('+')
-    
+
     // Use filter parameter for better API-level filtering
     let url = `https://huggingface.co/api/models?search=${encodeURIComponent(searchQuery)}&sort=downloads&limit=500`
-    
+
     // Add pipeline_tag filter if we have a specific task type
     const cvPipelineTags = [
       'image-classification',
@@ -1108,7 +1108,7 @@ async function searchHFModels(
       'keypoint-detection',
       'video-classification'
     ]
-    
+
     // Enhanced logging for debugging URL generation
     console.log(`🔍 HF Search Keywords:`, {
       original: keywords,
@@ -1121,25 +1121,25 @@ async function searchHFModels(
     })
     console.log(`🔗 HF Expected URL: ${url}`)
     console.log(`🔍 URL encoding check: '+' replaced with '%2B' ✓`)
-    
+
     const headers: HeadersInit = {
       'Content-Type': 'application/json'
     }
-    
+
     const apiKey = process.env.HUGGINGFACE_API_KEY
     if (apiKey) {
       headers['Authorization'] = `Bearer ${apiKey}`
     }
 
     const response = await fetch(url, { headers })
-    
+
     if (!response.ok) {
       console.error('❌ HF API error:', response.status, response.statusText)
       return []
     }
 
     const data = await response.json()
-    
+
     if (!Array.isArray(data)) {
       console.error('Unexpected HF API response format')
       return []
@@ -1169,7 +1169,7 @@ async function searchHFModels(
     // Critical models that should NEVER be filtered out
     const criticalModels = [
       'microsoft/resnet-50',
-      'microsoft/resnet-18', 
+      'microsoft/resnet-18',
       'microsoft/resnet-152',
       'google/vit-base-patch16-224',
       'google/vit-large-patch16-224',
@@ -1190,18 +1190,18 @@ async function searchHFModels(
       const modelDescription = (model.description || '').toLowerCase()
       const pipelineTag = model.pipeline_tag
       const tagsArray = model.tags || []
-      
+
       // ✅ STRICT HF FILTERING: Only Facebook, Microsoft, NVIDIA + Live/Hosted models
       // This prevents API key errors from trying to use non-hosted models
       const strictTrustedOrgs = ['facebook/', 'microsoft/', 'nvidia/']
       const isFromTrustedOrg = strictTrustedOrgs.some(org => modelId.startsWith(org))
-      
+
       // Check if model is live/hosted (inference: true means it's hosted and ready)
-      const isLive = model.inference === true || 
-                     model.inference === 'live' || 
-                     model.inferenceStatus === 'live' ||
-                     (model.model_index && model.model_index.inference === true)
-      
+      const isLive = model.inference === true ||
+        model.inference === 'live' ||
+        model.inferenceStatus === 'live' ||
+        (model.model_index && model.model_index.inference === true)
+
       // For HF models, ONLY include if:
       // 1. From trusted org (Facebook, Microsoft, NVIDIA) AND
       // 2. Is live/hosted (inference: true)
@@ -1209,59 +1209,59 @@ async function searchHFModels(
       if (!isFromTrustedOrg) {
         return false
       }
-      
+
       if (!isLive) {
         return false
       }
-      
+
       // ✅ KEYWORD RELEVANCE FILTERING - Prioritize models matching search query
       // Separate domain-specific keywords from generic ones
       const genericTerms = new Set(['segmentation', 'segformer', 'image-segmentation', 'detection', 'classification', 'object-detection', 'instance-segmentation', 'model', 'models'])
       const domainKeywords = keywords.filter(k => !genericTerms.has(k.toLowerCase()))
       const genericKeywords = keywords.filter(k => genericTerms.has(k.toLowerCase()))
-      
+
       const searchKeywords = keywords.map(k => k.toLowerCase())
-      
+
       // Check for domain keyword matches (most important)
       const hasDomainKeywordMatch = domainKeywords.length > 0 && domainKeywords.some(keyword => {
         const lowerKeyword = keyword.toLowerCase()
-        return modelId.includes(lowerKeyword) || 
-               modelName.includes(lowerKeyword) ||
-               modelDescription.includes(lowerKeyword) ||
-               tagsArray.some((tag: string) => tag.toLowerCase().includes(lowerKeyword))
+        return modelId.includes(lowerKeyword) ||
+          modelName.includes(lowerKeyword) ||
+          modelDescription.includes(lowerKeyword) ||
+          tagsArray.some((tag: string) => tag.toLowerCase().includes(lowerKeyword))
       })
-      
+
       // Check for any keyword match (including generic)
-      const hasRelevantKeywords = searchKeywords.some(keyword => 
-        modelId.includes(keyword) || 
+      const hasRelevantKeywords = searchKeywords.some(keyword =>
+        modelId.includes(keyword) ||
         modelName.includes(keyword) ||
         modelDescription.includes(keyword) ||
         tagsArray.some((tag: string) => tag.toLowerCase().includes(keyword))
       )
-      
+
       // If model doesn't match search keywords and is not critical/trusted, lower priority
       const trustedOrgs = ['microsoft/', 'facebook/', 'meta/', 'google/', 'openai/', 'nvidia/', 'huggingface/']
-      const isRelevantToSearch = hasRelevantKeywords || 
-                                 criticalModels.includes(model.id) ||
-                                 trustedOrgs.some(org => model.id.toLowerCase().startsWith(org))
-      
+      const isRelevantToSearch = hasRelevantKeywords ||
+        criticalModels.includes(model.id) ||
+        trustedOrgs.some(org => model.id.toLowerCase().startsWith(org))
+
       // ✅ ALWAYS INCLUDE CRITICAL MODELS - NO MATTER WHAT
       if (criticalModels.includes(model.id)) {
         console.log(`✓ Keeping critical model: ${model.id}`)
         return true
       }
-      
-        // ✅ EXCLUDE KNOWN FAILED MODELS
-        if (knownFailedModels.includes(model.id)) {
-          return false
-        }
-        
+
+      // ✅ EXCLUDE KNOWN FAILED MODELS
+      if (knownFailedModels.includes(model.id)) {
+        return false
+      }
+
       // ✅ EXCLUDE INAPPROPRIATE CONTENT
       const inappropriateTerms = ['nsfw', 'porn', 'adult', 'explicit', 'sexual', 'nude']
       if (inappropriateTerms.some(term => modelId.includes(term))) {
-          return false
-        }
-        
+        return false
+      }
+
       // ✅ TEXT AND SPEECH MODEL EXCLUSIONS - Only if explicitly text/speech
       const textSpeechPipelineTags = [
         'text-classification',
@@ -1279,43 +1279,43 @@ async function searchHFModels(
         'audio-to-audio',
         'voice-activity-detection'
       ]
-      
+
       // Only exclude if pipeline tag is explicitly text/speech
       if (textSpeechPipelineTags.includes(pipelineTag)) {
-          return false
-        }
-        
+        return false
+      }
+
       // Text/speech patterns - but ONLY if NO vision indicators present
       const textSpeechPatterns = [
         'bert', 'gpt-2', 'gpt2', 't5-', 'roberta', 'distilbert', 'xlm-roberta',
         'deberta', 'bart-', 'pegasus', 'marian', 'mbart', 'blenderbot',
         'whisper', 'wav2vec', 'hubert', 'opt-', 'bloom-', 'llama'
       ]
-      
+
       // Vision indicators that override text model exclusion
       const visionIndicators = [
         'vision', 'visual', 'image', 'vit', 'clip', 'resnet', 'detr',
         'swin', 'deit', 'beit', 'convnext', 'yolo', 'detection', 'segmentation'
       ]
-      
-      const hasVisionIndicator = visionIndicators.some(indicator => 
-        modelId.includes(indicator) || 
+
+      const hasVisionIndicator = visionIndicators.some(indicator =>
+        modelId.includes(indicator) ||
         modelName.includes(indicator) ||
         modelDescription.includes(indicator) ||
         tagsArray.some((tag: string) => tag.toLowerCase().includes(indicator))
       )
-      
+
       // Only exclude text/speech models if they DON'T have vision indicators
       if (!hasVisionIndicator) {
-        const isTextSpeechByName = textSpeechPatterns.some(pattern => 
+        const isTextSpeechByName = textSpeechPatterns.some(pattern =>
           modelId.includes(pattern)
         )
-        
+
         if (isTextSpeechByName) {
           return false
         }
       }
-      
+
       // ✅ COMPUTER VISION MODEL IDENTIFICATION - VERY RELAXED
       const cvPipelineTags = [
         'image-classification',
@@ -1333,9 +1333,9 @@ async function searchHFModels(
         'image-to-image',
         'unknown' // Include unknown pipeline tags - might be CV models
       ]
-      
+
       const hasCVPipelineTag = cvPipelineTags.includes(pipelineTag)
-      
+
       // CV architecture keywords - expanded list
       const cvArchitectures = [
         'resnet', 'vit', 'detr', 'yolo', 'efficientnet', 'mobilenet',
@@ -1345,7 +1345,7 @@ async function searchHFModels(
         'vgg', 'googlenet', 'shufflenet', 'nasnet', 'resnext',
         'efficientnetv2', 'regnet', 'tresnet', 'poolformer'
       ]
-      
+
       // CV task keywords - expanded
       const cvTaskKeywords = [
         'detection', 'detect', 'classify', 'classification', 'segment', 'segmentation',
@@ -1353,46 +1353,46 @@ async function searchHFModels(
         'pose', 'keypoint', 'face', 'object', 'scene', 'recognition',
         'recognition', 'localization', 'tracking', 'counting', 'estimation'
       ]
-      
+
       // Check tags for CV indicators
       const hasCVTag = tagsArray.some((tag: string) => {
         const tagLower = tag.toLowerCase()
         return cvArchitectures.some(arch => tagLower.includes(arch)) ||
-               cvTaskKeywords.some(keyword => tagLower.includes(keyword)) ||
-               tagLower.includes('image') ||
-               tagLower.includes('vision') ||
-               tagLower.includes('detection') ||
-               tagLower.includes('classification')
+          cvTaskKeywords.some(keyword => tagLower.includes(keyword)) ||
+          tagLower.includes('image') ||
+          tagLower.includes('vision') ||
+          tagLower.includes('detection') ||
+          tagLower.includes('classification')
       })
-      
+
       const hasCVArchitecture = cvArchitectures.some(arch => modelId.includes(arch))
-      const hasCVTaskKeyword = cvTaskKeywords.some(keyword => 
-        modelId.includes(keyword) || 
+      const hasCVTaskKeyword = cvTaskKeywords.some(keyword =>
+        modelId.includes(keyword) ||
         modelDescription.includes(keyword) ||
         modelName.includes(keyword)
       )
-      
+
       // Check if model is computer vision related - VERY PERMISSIVE
-      const isComputerVisionModel = hasCVPipelineTag || 
-                                    hasCVArchitecture || 
-                                    hasCVTaskKeyword ||
-                                    hasCVTag ||
-                                    hasVisionIndicator
-      
+      const isComputerVisionModel = hasCVPipelineTag ||
+        hasCVArchitecture ||
+        hasCVTaskKeyword ||
+        hasCVTag ||
+        hasVisionIndicator
+
       // If not CV and not from a trusted org, exclude
       const isTrustedOrg = trustedOrgs.some(org => model.id.toLowerCase().startsWith(org))
-      
+
       if (!isComputerVisionModel && !isTrustedOrg) {
-          return false
-        }
-        
+        return false
+      }
+
       // ✅ STRICT DOMAIN KEYWORD FILTERING - If domain keywords exist (e.g., "soccer", "ball")
       // models MUST match at least one domain keyword to be included (unless trusted/critical)
       if (domainKeywords.length > 0 && !hasDomainKeywordMatch && !isTrustedOrg && !criticalModels.includes(model.id)) {
         // Filter out models that don't match domain keywords
         return false
       }
-      
+
       // ✅ PRIORITIZE RELEVANT MODELS - If model doesn't match search keywords and is not critical/trusted, 
       // give it lower priority by filtering it out unless it's very high quality
       if (!isRelevantToSearch && !isTrustedOrg && !criticalModels.includes(model.id)) {
@@ -1400,161 +1400,161 @@ async function searchHFModels(
         const highDownloads = (model.downloads || 0) > 10000 // Increased threshold
         const highLikes = (model.likes || 0) > 10 // Increased threshold
         const hasInference = Boolean(model.inference || (model.pipeline_tag && model.pipeline_tag !== 'unknown'))
-        
+
         if (!highDownloads && !highLikes && !hasInference) {
           return false
         }
       }
-        
+
       // ✅ NO LIBRARY VALIDATION - Accept all libraries for CV models
       // This allows models with 'unknown' library_name to pass through
-      
+
       // ✅ NO QUALITY FILTERS - Accept all models that made it this far
       // Let popularity/downloads determine ranking, not filtering
-      
+
       return true
-      })
-    
-    
+    })
+
+
     // Enhanced keyword-based relevance scoring with domain keyword prioritization
     const calculateRelevanceScore = (model: any, searchKeywords: string[]) => {
       let score = 0
       const modelText = `${model.id} ${model.name || ''} ${model.description || ''} ${(model.tags || []).join(' ')}`.toLowerCase()
-      
+
       // Separate domain keywords from generic ones
       const genericTerms = new Set(['segmentation', 'segformer', 'image-segmentation', 'detection', 'classification', 'object-detection', 'instance-segmentation', 'model', 'models'])
       const domainKeywords = keywords.filter(k => !genericTerms.has(k.toLowerCase()))
       const genericKeywords = keywords.filter(k => genericTerms.has(k.toLowerCase()))
-      
+
       // Domain keywords get MUCH higher weight (e.g., "soccer", "ball")
       domainKeywords.forEach(keyword => {
         const lowerKeyword = keyword.toLowerCase()
         const keywordWeight = 2000 // Much higher weight for domain keywords
-        
+
         // Model ID contains domain keyword (highest priority)
         if (model.id.toLowerCase().includes(lowerKeyword)) {
           score += keywordWeight * 2
         }
-        
+
         // Model name contains domain keyword
         if ((model.name || '').toLowerCase().includes(lowerKeyword)) {
           score += keywordWeight * 1.5
         }
-        
+
         // Description contains domain keyword
         if ((model.description || '').toLowerCase().includes(lowerKeyword)) {
           score += keywordWeight
         }
-        
+
         // Tags contain domain keyword
         if ((model.tags || []).some((tag: string) => tag.toLowerCase().includes(lowerKeyword))) {
           score += keywordWeight * 1.2
         }
       })
-      
+
       // Generic keywords get lower weight (e.g., "detection", "model")
       genericKeywords.forEach(keyword => {
         const lowerKeyword = keyword.toLowerCase()
-        
+
         // Model ID contains keyword
         if (model.id.toLowerCase().includes(lowerKeyword)) {
           score += 500
         }
-        
+
         // Model name contains keyword
         if ((model.name || '').toLowerCase().includes(lowerKeyword)) {
           score += 400
         }
-        
+
         // Description contains keyword
         if ((model.description || '').toLowerCase().includes(lowerKeyword)) {
           score += 300
         }
-        
+
         // Tags contain keyword
         if ((model.tags || []).some((tag: string) => tag.toLowerCase().includes(lowerKeyword))) {
           score += 350
         }
-        
+
         // Pipeline tag relevance
         if (model.pipeline_tag && model.pipeline_tag.toLowerCase().includes(lowerKeyword)) {
           score += 250
         }
-        
+
         // Word boundary matches (partial but meaningful)
         const regex = new RegExp(`\\b${lowerKeyword}`, 'i')
         if (regex.test(modelText)) {
           score += 100
         }
       })
-      
+
       // Bonus for multiple domain keyword matches (much higher bonus)
-      const domainKeywordMatchCount = domainKeywords.filter(keyword => 
+      const domainKeywordMatchCount = domainKeywords.filter(keyword =>
         modelText.includes(keyword.toLowerCase())
       ).length
       score += domainKeywordMatchCount * 500 // High bonus for multiple domain keyword matches
-      
+
       // Bonus for multiple generic keyword matches (lower bonus)
-      const genericKeywordMatchCount = genericKeywords.filter(keyword => 
+      const genericKeywordMatchCount = genericKeywords.filter(keyword =>
         modelText.includes(keyword.toLowerCase())
       ).length
       score += genericKeywordMatchCount * 50
-      
+
       // Penalty for irrelevant terms
       const irrelevantTerms = ['nsfw', 'adult', 'explicit', 'inappropriate', 'offensive', 'hate', 'violence']
-      const hasIrrelevant = irrelevantTerms.some(term => 
+      const hasIrrelevant = irrelevantTerms.some(term =>
         modelText.includes(term) && !searchKeywords.some(k => k.toLowerCase().includes(term))
       )
       if (hasIrrelevant) {
         score -= 1000 // Heavy penalty for irrelevant content
       }
-      
+
       return score
     }
-    
+
     // Sort by enhanced relevance scoring
     const sortedData = filteredData.sort((a: any, b: any) => {
       const searchKeywords = keywords.map(k => k.toLowerCase())
       const trustedOrgs = ['microsoft/', 'facebook/', 'meta/', 'google/', 'huggingface/', 'openai/', 'nvidia/']
-      
+
       // Priority 0: Critical models always come first
       const aIsCritical = criticalModels.includes(a.id)
       const bIsCritical = criticalModels.includes(b.id)
-      
+
       if (aIsCritical && !bIsCritical) return -1
       if (!aIsCritical && bIsCritical) return 1
-      
+
       // Priority 1: Enhanced relevance scoring
       const aRelevanceScore = calculateRelevanceScore(a, searchKeywords)
       const bRelevanceScore = calculateRelevanceScore(b, searchKeywords)
-      
+
       if (aRelevanceScore !== bRelevanceScore) {
         return bRelevanceScore - aRelevanceScore
       }
-      
+
       // Priority 2: Trusted organizations
       const aIsTrusted = trustedOrgs.some(org => a.id.toLowerCase().startsWith(org))
       const bIsTrusted = trustedOrgs.some(org => b.id.toLowerCase().startsWith(org))
-      
+
       if (aIsTrusted && !bIsTrusted) return -1
       if (!aIsTrusted && bIsTrusted) return 1
-      
+
       // Priority 3: Downloads (main sorting)
       const downloadDiff = (b.downloads || 0) - (a.downloads || 0)
       if (downloadDiff !== 0) return downloadDiff
-      
+
       // Priority 4: Has inference endpoint or known pipeline tag
       const aHasInference = Boolean(a.inference || (a.pipeline_tag && a.pipeline_tag !== 'unknown'))
       const bHasInference = Boolean(b.inference || (b.pipeline_tag && b.pipeline_tag !== 'unknown'))
-      
+
       if (aHasInference && !bHasInference) return -1
       if (!aHasInference && bHasInference) return 1
-      
+
       // Priority 5: Likes
       return (b.likes || 0) - (a.likes || 0)
     })
-    
-    
+
+
     // Log top models
     const topModels = sortedData.slice(0, 10).map(m => ({
       id: m.id,
@@ -1563,51 +1563,51 @@ async function searchHFModels(
       library: m.library_name
     }))
     console.log(`🏆 Top 10 models:`, topModels)
-    
+
     return sortedData.map((model: any) => {
-        const modelName = model.id.split('/').pop() || model.id
-        const author = model.id.split('/')[0] || 'Unknown'
+      const modelName = model.id.split('/').pop() || model.id
+      const author = model.id.split('/')[0] || 'Unknown'
       const pipelineTag = model.pipeline_tag || 'image-classification'
-        
+
       let cleanDescription = model.description || modelName
-        cleanDescription = cleanDescription.replace(/\s+/g, ' ').trim()
-        
+      cleanDescription = cleanDescription.replace(/\s+/g, ' ').trim()
+
       // Check inference support - be more lenient
       const hasTransformersLib = model.library_name === 'transformers'
       const hasEndpointsCompatible = (model.tags || []).includes('endpoints_compatible')
-      const hasKnownCVPipeline = ['image-classification', 'object-detection', 'image-segmentation', 
-        'image-to-text', 'zero-shot-image-classification', 
+      const hasKnownCVPipeline = ['image-classification', 'object-detection', 'image-segmentation',
+        'image-to-text', 'zero-shot-image-classification',
         'zero-shot-object-detection'].includes(pipelineTag)
-      
+
       // Support inference if it has transformers + known CV pipeline, OR if it's a critical model
       const supportsInference = criticalModels.includes(model.id) ||
         (hasTransformersLib && hasKnownCVPipeline) ||
         (hasTransformersLib && hasEndpointsCompatible) ||
         Boolean(model.inference)
-        
-        return {
-          id: model.id,
-          name: modelName,
-          source: 'huggingface' as const,
+
+      return {
+        id: model.id,
+        name: modelName,
+        source: 'huggingface' as const,
         description: cleanDescription,
-          url: `https://huggingface.co/${model.id}`,
-          modelUrl: `https://huggingface.co/${model.id}`,
-          thumbnail: `https://huggingface.co/${model.id}/resolve/main/thumbnail.jpg`,
-          task: mapHFTaskToStandard(pipelineTag),
-          author: author,
-          downloads: model.downloads || 0,
-          likes: model.likes || 0,
-          tags: model.tags || [],
+        url: `https://huggingface.co/${model.id}`,
+        modelUrl: `https://huggingface.co/${model.id}`,
+        thumbnail: `https://huggingface.co/${model.id}/resolve/main/thumbnail.jpg`,
+        task: mapHFTaskToStandard(pipelineTag),
+        author: author,
+        downloads: model.downloads || 0,
+        likes: model.likes || 0,
+        tags: model.tags || [],
         frameworks: [model.library_name].filter(Boolean),
-          platforms: [],
-          supportsInference,
-        inferenceEndpoint: supportsInference 
+        platforms: [],
+        supportsInference,
+        inferenceEndpoint: supportsInference
           ? `https://api-inference.huggingface.co/models/${model.id}`
           : undefined,
         pipelineTag: pipelineTag,
         libraryName: model.library_name
-        }
-      })
+      }
+    })
 
   } catch (error) {
     console.error('Hugging Face search error:', error)
@@ -1631,13 +1631,13 @@ async function fetchModelDetails(modelId: string): Promise<{ inferenceStatus: st
     }
 
     const response = await fetch(`https://huggingface.co/api/models/${modelId}`, { headers })
-    
+
     if (!response.ok) {
       return { inferenceStatus: null }
     }
 
     const data = await response.json()
-    
+
     return {
       inferenceStatus: data.inference || null
     }
@@ -1669,7 +1669,7 @@ function detectFrameworks(tags: string[]): string[] {
     'onnx': 'ONNX',
     'jax': 'JAX'
   }
-  
+
   tags.forEach(tag => {
     const tagLower = tag.toLowerCase()
     Object.entries(frameworkMap).forEach(([key, value]) => {
@@ -1678,7 +1678,7 @@ function detectFrameworks(tags: string[]): string[] {
       }
     })
   })
-  
+
   return Array.from(frameworks)
 }
 
@@ -1690,19 +1690,19 @@ async function checkSearchCache(cacheKey: string): Promise<any | null> {
   try {
     const { getDatabase } = await import('@/lib/mongodb/connection')
     const db = await getDatabase()
-    
+
     // Check if cache exists and is less than 1 hour old
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-    
+
     const cached = await db.collection('search_cache').findOne({
       cache_key: cacheKey,
       created_at: { $gte: oneHourAgo }
     })
-    
+
     if (cached) {
       return cached.results
     }
-    
+
     return null
   } catch (error) {
     console.error('Cache check error:', error)
@@ -1717,7 +1717,7 @@ async function saveSearchCache(cacheKey: string, results: any): Promise<void> {
   try {
     const { getDatabase } = await import('@/lib/mongodb/connection')
     const db = await getDatabase()
-    
+
     await db.collection('search_cache').updateOne(
       { cache_key: cacheKey },
       {
@@ -1730,7 +1730,7 @@ async function saveSearchCache(cacheKey: string, results: any): Promise<void> {
       },
       { upsert: true }
     )
-    
+
     console.log('✅ Search results cached in MongoDB:', cacheKey)
   } catch (error) {
     console.error('Cache save error:', error)
@@ -1746,7 +1746,7 @@ async function saveSearchAnalytics(queryId: string, analyticsData: any): Promise
   try {
     const { getDatabase } = await import('@/lib/mongodb/connection')
     const db = await getDatabase()
-    
+
     await db.collection('search_analytics').insertOne({
       query_id: queryId,
       total_models: analyticsData.total_found,
@@ -1758,7 +1758,7 @@ async function saveSearchAnalytics(queryId: string, analyticsData: any): Promise
       task_type: analyticsData.task_type || null, // Include task type
       created_at: analyticsData.timestamp
     })
-    
+
     console.log(`📊 Saved ${analyticsData.total_found} models to analytics (${analyticsData.inference_ready} inference-ready, ${analyticsData.non_inference} non-inference)`)
   } catch (error) {
     console.error('Analytics save error:', error)
@@ -1770,28 +1770,28 @@ async function saveSearchAnalytics(queryId: string, analyticsData: any): Promise
  */
 async function validateModelsInBackground(models: any[]): Promise<void> {
   console.log(`🧪 Background validation starting for ${models.length} models...`)
-  
+
   const { markModelAsValidated } = await import('@/lib/mongodb/validatedModels')
-  
+
   // Validate models in parallel (like the optimized Python script)
   const validationPromises = models.map(async (model) => {
     try {
       const modelId = model.id
       const taskType = model.task || model.pipeline_tag || 'unknown'
-      
+
       // Quick warmup precheck
       const headResponse = await fetch(`https://router.huggingface.co/hf-inference/models/${modelId}`, {
         method: 'HEAD',
         headers: { 'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}` },
         signal: AbortSignal.timeout(5000) // 5 second timeout
       })
-      
+
       if (!headResponse.ok) {
         // Endpoint not available
         await markModelAsValidated(modelId, false, `Endpoint not available (${headResponse.status})`)
         return
       }
-      
+
       // Try actual inference
       const testInputs = getTestInputForTask(taskType)
       const response = await fetch(`https://router.huggingface.co/hf-inference/models/${modelId}`, {
@@ -1803,7 +1803,7 @@ async function validateModelsInBackground(models: any[]): Promise<void> {
         body: JSON.stringify(testInputs),
         signal: AbortSignal.timeout(15000) // 15 second timeout
       })
-      
+
       if (response.ok) {
         const result = await response.json()
         await markModelAsValidated(modelId, true, result, {
@@ -1821,13 +1821,13 @@ async function validateModelsInBackground(models: any[]): Promise<void> {
         await markModelAsValidated(modelId, false, errorText)
         console.log(`❌ Background failed: ${modelId} (${response.status})`)
       }
-      
+
     } catch (error) {
       console.error(`❌ Background validation error for ${model.id}:`, error)
       await markModelAsValidated(model.id, false, (error as Error).message)
     }
   })
-  
+
   // Wait for all validations to complete
   await Promise.allSettled(validationPromises)
   console.log(`🧪 Background validation completed for ${models.length} models`)
@@ -1863,7 +1863,7 @@ function getTestInputForTask(taskType: string): any {
       parameters: { max_length: 50 }
     }
   }
-  
+
   return testInputs[taskType as keyof typeof testInputs] || testInputs['image-classification']
 }
 
@@ -1874,7 +1874,7 @@ function isComputerVisionModel(model: any): boolean {
   const pipelineTag = model.pipeline_tag?.toLowerCase() || ''
   const tags = (model.tags || []).map((t: string) => t.toLowerCase())
   const description = (model.description || '').toLowerCase()
-  
+
   // Computer Vision pipeline tags
   const cvPipelineTags = [
     'image-classification', 'object-detection', 'image-segmentation',
@@ -1884,24 +1884,24 @@ function isComputerVisionModel(model: any): boolean {
     'video-classification', 'text-to-video', 'image-to-3d', 'text-to-3d',
     'image-text-to-text' // Include multimodal vision-language models
   ]
-  
+
   // Computer Vision related tags and keywords
   const cvKeywords = [
     'vision', 'image', 'video', 'object', 'detection', 'classification',
     'segmentation', 'yolo', 'detr', 'resnet', 'mobilenet', 'efficientnet',
     'swin', 'vit', 'clip', 'dalle', 'stable-diffusion', 'controlnet'
   ]
-  
+
   // Check pipeline tag
   if (cvPipelineTags.includes(pipelineTag)) {
     return true
   }
-  
+
   // Check tags and description for CV keywords
-  const hasCVKeywords = cvKeywords.some(keyword => 
+  const hasCVKeywords = cvKeywords.some(keyword =>
     tags.includes(keyword) || description.includes(keyword)
   )
-  
+
   return hasCVKeywords
 }
 
@@ -1913,14 +1913,14 @@ function matchesSearchKeywords(model: any, keywords: string[]): boolean {
   const modelName = (model.model_name || '').toLowerCase()
   const description = (model.description || '').toLowerCase()
   const tags = (model.tags || []).map((t: string) => t.toLowerCase())
-  
+
   // Check if any keyword appears in model metadata
   return keywords.some(keyword => {
     const lowerKeyword = keyword.toLowerCase()
-    return modelId.includes(lowerKeyword) || 
-           modelName.includes(lowerKeyword) || 
-           description.includes(lowerKeyword) || 
-           tags.some((tag: string) => tag.includes(lowerKeyword))
+    return modelId.includes(lowerKeyword) ||
+      modelName.includes(lowerKeyword) ||
+      description.includes(lowerKeyword) ||
+      tags.some((tag: string) => tag.includes(lowerKeyword))
   })
 }
 
@@ -1931,7 +1931,7 @@ async function saveModelRecommendations(queryId: string, models: NormalizedModel
   try {
     const { getDatabase } = await import('@/lib/mongodb/connection')
     const db = await getDatabase()
-    
+
     // Deduplicate models by id before saving
     const uniqueModels = new Map<string, NormalizedModel>()
     models.forEach(model => {
@@ -1940,7 +1940,7 @@ async function saveModelRecommendations(queryId: string, models: NormalizedModel
       }
     })
     const deduplicatedModels = Array.from(uniqueModels.values())
-    
+
     // Map models to match the existing structure expected by save-model-selection
     const modelsWithClasses = deduplicatedModels.map(model => ({
       name: model.name,
@@ -1957,21 +1957,21 @@ async function saveModelRecommendations(queryId: string, models: NormalizedModel
       inferenceStatus: model.inferenceStatus,
       isKnownWorking: model.isKnownWorking
     }))
-    
+
     // Check if recommendation already exists for this query_id
     const existingRecommendation = await db.collection('model_recommendations').findOne({
       query_id: queryId
     })
-    
+
     if (existingRecommendation) {
       // Update existing recommendation, merging unique models
       const existingModelNames = new Set(existingRecommendation.models?.map((m: any) => m.name) || [])
       const newModels = modelsWithClasses.filter(m => !existingModelNames.has(m.name))
-      
+
       if (newModels.length > 0) {
         await db.collection('model_recommendations').updateOne(
           { query_id: queryId },
-          { 
+          {
             $set: {
               models: [...(existingRecommendation.models || []), ...newModels],
               updated_at: new Date().toISOString()
@@ -1993,11 +1993,11 @@ async function saveModelRecommendations(queryId: string, models: NormalizedModel
         models: modelsWithClasses,
         created_at: new Date().toISOString()
       }
-      
+
       await db.collection('model_recommendations').insertOne(recommendationRecord)
       console.log(`✅ Saved ${modelsWithClasses.length} model recommendations to MongoDB`)
     }
-    
+
   } catch (error) {
     console.error('❌ Failed to save model recommendations:', error)
   }
@@ -2010,7 +2010,7 @@ async function saveModelRecommendations(queryId: string, models: NormalizedModel
 async function getCuratedModels(keywords: string[], limit: number = 20, taskType?: string): Promise<any[]> {
   try {
     console.log(`📚 Fetching curated models for: ${keywords.join(' ')}`)
-    
+
     // Priority working models that should always be included
     const priorityModelIds = [
       'facebook/detr-resnet-50',
@@ -2022,16 +2022,16 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
       'nvidia/segformer-b0-finetuned-ade-512-512', // High-quality image segmentation model (391k+ downloads)
       'facebook/mask2former-swin-large-cityscapes-semantic' // State-of-the-art semantic segmentation for cityscapes/traffic scenes
     ]
-    
+
     // Get validated models with relevance scoring
     const validatedModels = await searchValidatedModels(keywords, taskType, limit)
-    
+
     // Convert to the expected format
     const curatedModels = validatedModels.map(model => {
       // Detect if this is a Roboflow model (check multiple formats)
       const modelIdLower = (model.model_id || '').toLowerCase()
-      const isRoboflowModel = 
-        modelIdLower.startsWith('roboflow/') || 
+      const isRoboflowModel =
+        modelIdLower.startsWith('roboflow/') ||
         modelIdLower.startsWith('roboflow-') ||
         model.library_name === 'roboflow' ||
         (model.inferenceEndpoint && (
@@ -2041,15 +2041,15 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
         )) ||
         // Check if model_id contains roboflow indicators even if not normalized
         (modelIdLower.includes('roboflow') && (
-          modelIdLower.includes('soccer') || 
+          modelIdLower.includes('soccer') ||
           modelIdLower.includes('ball') ||
           modelIdLower.includes('basketball') ||
           model.inferenceEndpoint?.includes('roboflow.com')
         ));
-      
+
       // Determine source
       const source = isRoboflowModel ? 'roboflow' : 'huggingface';
-      
+
       // Handle inference endpoint based on source
       let inferenceEndpoint: string | undefined;
       if (isRoboflowModel) {
@@ -2057,12 +2057,12 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
         inferenceEndpoint = model.inferenceEndpoint || model.inference_endpoint;
       } else {
         // For Hugging Face models, use endpoint from database or generate default
-        inferenceEndpoint = model.inferenceEndpoint || model.inference_endpoint || 
-          (model.supportsInference || model.inferenceStatus === 'hosted' || model.inferenceStatus === 'warm' 
-            ? `https://api-inference.huggingface.co/models/${model.model_id}` 
+        inferenceEndpoint = model.inferenceEndpoint || model.inference_endpoint ||
+          (model.supportsInference || model.inferenceStatus === 'hosted' || model.inferenceStatus === 'warm'
+            ? `https://api-inference.huggingface.co/models/${model.model_id}`
             : undefined);
       }
-      
+
       return {
         id: model.model_id,
         name: model.name || model.model_id.split('/').pop() || 'Unknown Model',
@@ -2089,29 +2089,29 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
         isPriority: priorityModelIds.includes(model.model_id) // Mark priority models
       };
     })
-    
+
     // Sort: Roboflow models FIRST (highest priority), then priority models, then by relevance score
     curatedModels.sort((a, b) => {
       const aIsRoboflow = a.source === 'roboflow'
       const bIsRoboflow = b.source === 'roboflow'
       const aIsPriority = priorityModelIds.includes(a.id)
       const bIsPriority = priorityModelIds.includes(b.id)
-      
+
       // PRIORITY 1: Roboflow models always come first (even above priority HF models)
       if (aIsRoboflow && !bIsRoboflow) return -1
       if (!aIsRoboflow && bIsRoboflow) return 1
-      
+
       // PRIORITY 2: Priority models come after Roboflow
       if (aIsPriority && !bIsPriority) return -1
       if (!aIsPriority && bIsPriority) return 1
-      
+
       // PRIORITY 3: Sort by relevance score
       return b.relevanceScore - a.relevanceScore
     })
-    
-    
+
+
     return curatedModels
-    
+
   } catch (error) {
     console.error('❌ Error fetching curated models:', error)
     return []
@@ -2125,7 +2125,7 @@ async function saveAllModelsToAnalytics(queryId: string, models: any[], keywords
   try {
     const { getDatabase } = await import('@/lib/mongodb/connection')
     const db = await getDatabase()
-    
+
     // Deduplicate models by id before processing
     const uniqueModelsMap = new Map<string, any>()
     models.forEach(model => {
@@ -2134,12 +2134,12 @@ async function saveAllModelsToAnalytics(queryId: string, models: any[], keywords
       }
     })
     const deduplicatedModels = Array.from(uniqueModelsMap.values())
-    
+
     // Get existing models for this query to avoid duplicates
     const existingAnalytics = await db.collection('search_analytics').findOne({
       query_id: queryId
     })
-    
+
     const existingModelIds = new Set()
     if (existingAnalytics && existingAnalytics.all_models) {
       existingAnalytics.all_models.forEach((model: any) => {
@@ -2148,15 +2148,15 @@ async function saveAllModelsToAnalytics(queryId: string, models: any[], keywords
         }
       })
     }
-    
+
     // Filter out duplicate models (those already in database)
     const newModels = deduplicatedModels.filter(model => model.id && !existingModelIds.has(model.id))
-    
+
     // Merge with existing models if any
     const allModelsToSave = existingAnalytics && existingAnalytics.all_models
       ? [...existingAnalytics.all_models, ...newModels]
       : deduplicatedModels
-    
+
     // Deduplicate the merged list as well
     const finalUniqueModelsMap = new Map<string, any>()
     allModelsToSave.forEach(model => {
@@ -2165,7 +2165,7 @@ async function saveAllModelsToAnalytics(queryId: string, models: any[], keywords
       }
     })
     const finalUniqueModels = Array.from(finalUniqueModelsMap.values())
-    
+
     // Always save/update the analytics record, even if no new models
     const analyticsData = {
       query_id: queryId,
@@ -2182,11 +2182,11 @@ async function saveAllModelsToAnalytics(queryId: string, models: any[], keywords
         total: finalUniqueModels.length
       }
     }
-    
+
     // Update or insert analytics record
     await db.collection('search_analytics').updateOne(
       { query_id: queryId },
-      { 
+      {
         $set: {
           ...analyticsData,
           updated_at: new Date().toISOString()
@@ -2195,11 +2195,11 @@ async function saveAllModelsToAnalytics(queryId: string, models: any[], keywords
       },
       { upsert: true }
     )
-    
+
     if (newModels.length > 0) {
       console.log(`✅ Saved ${newModels.length} new models to analytics (total unique: ${finalUniqueModels.length})`)
     }
-    
+
   } catch (error) {
     console.error('❌ Failed to save models to analytics:', error)
   }
@@ -2213,62 +2213,62 @@ async function startBackgroundSearch(keywords: string[], queryId: string, taskTy
   try {
     console.log(`🔄 Starting background search for query: ${queryId}`)
     const startTime = Date.now()
-    
+
     // Add timeout to prevent infinite running (5 minutes to allow Roboflow script to complete)
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error('Background search timeout')), 5 * 60 * 1000)
     })
-    
+
     // Search Hugging Face models
     const hfPromise = searchHFModels(keywords, taskType, false)
-    
+
     // Search Roboflow models with timeout
     const rfPromise = searchRoboflowModelsPython(keywords, taskType || 'object-detection').catch(error => {
       console.error('❌ Roboflow search failed:', error)
       return [] // Return empty array on failure
     })
-    
+
     // Run both searches in parallel
     const [huggingFaceModels, roboflowModels] = await Promise.race([
       Promise.allSettled([hfPromise, rfPromise]),
       timeoutPromise
     ])
-    
+
     const hfModels = huggingFaceModels.status === 'fulfilled' ? huggingFaceModels.value : []
     const rfModels = roboflowModels.status === 'fulfilled' ? roboflowModels.value : []
-    
+
     const duration = Date.now() - startTime
     console.log(`✅ Background search completed in ${duration}ms: ${hfModels.length} HF + ${rfModels.length} RF models`)
-    
+
     // Store results in cache for future requests
     if (!globalThis.searchCache) {
       globalThis.searchCache = new Map()
     }
-    
+
     const backgroundCacheKey = `background-${keywords.join('-')}-${taskType}`
     const allBackgroundModels = [...rfModels, ...hfModels].map(model => ({
       ...model,
       // Keep original source from the models (roboflow or huggingface)
       isCurated: false
     }))
-    
+
     globalThis.searchCache.set(backgroundCacheKey, allBackgroundModels)
     console.log(`💾 Cached ${allBackgroundModels.length} background models for: ${backgroundCacheKey}`)
-    
+
     // Mark background search as completed
     const completionKey = `completed-${backgroundCacheKey}`
     globalThis.searchCache.set(completionKey, [true]) // Store as array to match expected type
     console.log(`✅ Marked background search as completed: ${completionKey}`)
-    
+
     // Save all background models to search_analytics without duplicates
     await saveAllModelsToAnalytics(queryId, allBackgroundModels, keywords, taskType)
-    
+
     // TODO: In Phase 2, we'll add WebSocket notifications here
     // to notify the frontend when new models are available
-    
+
   } catch (error) {
     console.error('❌ Background search failed:', error)
-    
+
     // Mark background search as completed even if it failed
     const backgroundCacheKey = `background-${keywords.join('-')}-${taskType}`
     const completionKey = `completed-${backgroundCacheKey}`
@@ -2284,65 +2284,65 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { keywords, task_type, limit = 20, page = 1 } = body as ModelSearchRequest
-    
+
     if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
       return NextResponse.json(
         { error: 'Keywords array is required' },
         { status: 400 }
       )
     }
-    
+
     console.log(`🔍 Model search request:`, { keywords, task_type, limit, page })
-    
+
     // Generate unique query ID for tracking
     const queryId = `uuid-query-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
-    
+
     // Create a cache key based on search parameters (no time window for simplicity)
     const cacheKey = `search-${keywords.join('-')}-${task_type}`
-    
+
     console.log(`🔑 Cache key: ${cacheKey}`)
-    
+
     let allModels: any[] = []
-    
+
     // Check if we should search or use cached results
     const shouldSearch = page === 1 // Only search on first page
     const searchKeywords = keywords.join(' ')
-    
+
     if (shouldSearch) {
       console.log(`🔍 First page - performing hybrid search for: ${searchKeywords}`)
-    
+
       // STEP 1: Get curated models from database (if any)
       console.log(`⚡ Step 1: Loading curated models from database...`)
       const curatedModels = await getCuratedModels(keywords, 20, task_type)
       console.log(`📊 Found ${curatedModels.length} curated models`)
-      
+
       // Always start with curated models (even if empty)
       allModels = curatedModels
-      
+
       // Save curated models to analytics immediately (if any)
       if (curatedModels.length > 0) {
         await saveAllModelsToAnalytics(queryId, curatedModels, keywords, task_type)
       }
-      
+
       // STEP 2: Always start background search for HF + Roboflow (non-blocking)
       console.log(`🔄 Step 2: Starting background search for HF + Roboflow models...`)
       startBackgroundSearch(keywords, queryId, task_type).catch(error => {
         console.error('❌ Background search failed:', error)
       })
-      
+
       if (curatedModels.length > 0) {
         console.log(`⚡ Returning ${allModels.length} curated models immediately + background search running`)
-    } else {
+      } else {
         console.log(`⚠️ No curated models found - background search will provide results when ready`)
-    }
-      
+      }
+
       // Store in cache for subsequent pages (in a real implementation, use Redis or similar)
       // For now, we'll store in memory - in production, use proper caching
       if (!globalThis.searchCache) {
         globalThis.searchCache = new Map()
       }
       globalThis.searchCache.set(cacheKey, allModels)
-      
+
       // Clean up old cache entries (keep only last 10 searches)
       if (globalThis.searchCache && globalThis.searchCache.size > 10) {
         const keysToDelete: string[] = []
@@ -2355,33 +2355,33 @@ export async function POST(request: NextRequest) {
         })
         keysToDelete.forEach(key => globalThis.searchCache!.delete(key))
       }
-      
+
       console.log(`💾 Cached ${allModels.length} models for future pagination`)
-      
+
     } else {
       console.log(`📄 Page ${page} - using cached results for: ${searchKeywords}`)
-      
+
       // Use cached results for pagination
       if (!globalThis.searchCache) {
         globalThis.searchCache = new Map()
       }
-      
-      
+
+
       // Clear old cache entries with old format (temporary fix)
       const oldKeys = Array.from(globalThis.searchCache.keys()).filter(key => key.includes('-') && /\d+$/.test(key))
       if (oldKeys.length > 0) {
         console.log(`🧹 Clearing ${oldKeys.length} old cache entries:`, oldKeys)
         oldKeys.forEach(key => globalThis.searchCache!.delete(key))
       }
-      
+
       // Also clear all cache if we have old format keys (nuclear option)
       if (Array.from(globalThis.searchCache.keys()).some(key => /\d+$/.test(key))) {
         console.log(`🧹 Nuclear option: clearing all cache due to old format keys`)
         globalThis.searchCache.clear()
       }
-      
+
       allModels = globalThis.searchCache.get(cacheKey) || []
-      
+
       if (allModels.length === 0) {
         console.log(`⚠️ No cached results found, falling back to search`)
         // Fallback to search if cache miss
@@ -2390,25 +2390,25 @@ export async function POST(request: NextRequest) {
           // Search Roboflow models using Python script
           searchRoboflowModelsPython(keywords, task_type || 'object-detection')
         ])
-        
+
         const hfModels = huggingFaceModels.status === 'fulfilled' ? huggingFaceModels.value : []
         const rfModels = roboflowModels.status === 'fulfilled' ? roboflowModels.value : []
         allModels = [...rfModels, ...hfModels]
       }
-      
+
     }
-    
+
     // Check if background search has completed and include those models
     const backgroundCacheKey = `background-${keywords.join('-')}-${task_type}`
     const backgroundModels = globalThis.searchCache?.get(backgroundCacheKey) || []
-    
+
     if (backgroundModels.length > 0) {
       console.log(`🔄 Including ${backgroundModels.length} background models in response`)
       // Merge background models with curated models, avoiding duplicates
       const existingIds = new Set(allModels.map(m => m.id))
       const newBackgroundModels = backgroundModels.filter(m => m.id && !existingIds.has(m.id))
       allModels = [...allModels, ...newBackgroundModels]
-      
+
       // Deduplicate final allModels array
       const uniqueModelsMap = new Map<string, any>()
       allModels.forEach(model => {
@@ -2417,13 +2417,13 @@ export async function POST(request: NextRequest) {
         }
       })
       allModels = Array.from(uniqueModelsMap.values())
-      
+
       // Update analytics with merged models (background task)
-      saveAllModelsToAnalytics(queryId, allModels, keywords, task_type).catch(err => 
+      saveAllModelsToAnalytics(queryId, allModels, keywords, task_type).catch(err =>
         console.error('Background analytics update error:', err)
       )
     }
-    
+
     // Final deduplication pass before pagination
     const finalUniqueModelsMap = new Map<string, any>()
     allModels.forEach(model => {
@@ -2432,25 +2432,25 @@ export async function POST(request: NextRequest) {
       }
     })
     allModels = Array.from(finalUniqueModelsMap.values())
-    
+
     // Apply pagination
     const startIndex = (page - 1) * limit
     const endIndex = startIndex + limit
     const paginatedModels = allModels.slice(startIndex, endIndex)
     console.log(`📄 Paginated models: ${paginatedModels.length} (start: ${startIndex}, end: ${endIndex})`)
-    
+
     // Save model recommendations to MongoDB (background task)
     if (paginatedModels.length > 0) {
-      saveModelRecommendations(queryId, paginatedModels, keywords, task_type).catch(err => 
+      saveModelRecommendations(queryId, paginatedModels, keywords, task_type).catch(err =>
         console.error('Background recommendation save error:', err)
       )
     }
-    
+
     // Save search analytics
     try {
       const { getDatabase } = await import('@/lib/mongodb/connection')
       const db = await getDatabase()
-      
+
       const searchRecord = {
         query_id: queryId,
         user_id: 'anonymous', // TODO: Get from auth when available 
@@ -2463,14 +2463,14 @@ export async function POST(request: NextRequest) {
         limit: limit,
         created_at: new Date().toISOString()
       }
-      
+
       await db.collection('search_cache').insertOne(searchRecord)
       console.log(`✅ Saved search analytics to MongoDB`)
-      
+
     } catch (error) {
       console.error('Search analytics save error:', error)
     }
-    
+
     return NextResponse.json({
       success: true,
       models: paginatedModels,
@@ -2500,7 +2500,7 @@ export async function POST(request: NextRequest) {
         'Expires': '0'
       }
     })
-    
+
   } catch (error) {
     console.error('❌ Model search error:', error)
     return NextResponse.json(
