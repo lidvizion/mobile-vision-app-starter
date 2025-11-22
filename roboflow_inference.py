@@ -131,8 +131,80 @@ def run_inference(model_url, api_key, image_base64, parameters=None):
         
         # Convert to our expected format
         predictions = []
-        if 'predictions' in result:
+        
+        # Handle classification models (different response format)
+        # Classification can return:
+        # 1. {"top": "class_name", "confidence": 0.95} - simple format
+        # 2. {"predictions": {"Class1": {"confidence": 0.5, "class_id": 0}, ...}} - dict format
+        # 3. {"predictions": [{"class": "...", "confidence": ...}, ...]} - array format
+        # 4. List format: [{"class": "...", "confidence": ...}, ...]
+        
+        if 'top' in result:
+            # Simple classification format: {"top": "class_name", "confidence": 0.95}
+            predictions.append({
+                'class': result.get('top', 'unknown'),
+                'confidence': result.get('confidence', 0.0),
+                'score': result.get('confidence', 0.0)
+            })
+        elif 'predictions' in result:
+            # Check if predictions is a dictionary (classification format)
+            if isinstance(result['predictions'], dict):
+                # Classification format: {"predictions": {"Class1": {"confidence": 0.5, "class_id": 0}, ...}}
+                # Convert dictionary to array, sorted by confidence (descending)
+                pred_dict = result['predictions']
+                pred_list = [
+                    {
+                        'class': class_name,
+                        'confidence': pred_data.get('confidence', 0.0),
+                        'score': pred_data.get('confidence', 0.0),
+                        'class_id': pred_data.get('class_id')
+                    }
+                    for class_name, pred_data in pred_dict.items()
+                    if isinstance(pred_data, dict)
+                ]
+                # Sort by confidence descending
+                pred_list.sort(key=lambda x: x['confidence'], reverse=True)
+                predictions.extend(pred_list)
+            elif isinstance(result['predictions'], list):
+                # Check if it's classification format (no spatial data) or detection format
+                if len(result['predictions']) > 0:
+                    first_pred = result['predictions'][0]
+                    # Classification: has 'top' or no spatial data (no 'x', 'bbox', etc.)
+                    if isinstance(first_pred, dict) and ('top' in first_pred or ('class' in first_pred and 'x' not in first_pred and 'bbox' not in first_pred)):
+                        for pred in result['predictions']:
+                            if isinstance(pred, dict):
+                                predictions.append({
+                                    'class': pred.get('top', pred.get('class', 'unknown')),
+                                    'confidence': pred.get('confidence', 0.0),
+                                    'score': pred.get('confidence', 0.0)
+                                })
+                    else:
+                        # Detection/segmentation format - handled below
+                        pass
+        elif isinstance(result, list):
+            # List format: [{"class": "...", "confidence": ...}, ...]
+            for pred in result:
+                if isinstance(pred, dict):
+                    predictions.append({
+                        'class': pred.get('class', pred.get('top', 'unknown')),
+                        'confidence': pred.get('confidence', pred.get('score', 0.0)),
+                        'score': pred.get('confidence', pred.get('score', 0.0))
+                    })
+        elif 'class' in result:
+            # Fallback for other classification-like data
+            predictions.append({
+                'class': result.get('class', 'unknown'),
+                'confidence': result.get('confidence', 0.0),
+                'score': result.get('confidence', 0.0)
+            })
+        
+        # Handle detection/segmentation models (standard format with predictions array)
+        if 'predictions' in result and isinstance(result['predictions'], list) and len(predictions) == 0:
             for pred in result['predictions']:
+                # Ensure pred is a dictionary, not a string
+                if not isinstance(pred, dict):
+                    continue
+                    
                 # Roboflow returns center coordinates, convert to top-left
                 center_x = pred.get('x', 0)
                 center_y = pred.get('y', 0)
@@ -174,6 +246,9 @@ def run_inference(model_url, api_key, image_base64, parameters=None):
                     pred_data['y'] = center_y
                     pred_data['width'] = width
                     pred_data['height'] = height
+                    # NOTE: Roboflow does NOT provide skeleton connection data in the API response
+                    # Skeleton connections are manually defined in project settings but are only used
+                    # for visualization in Roboflow's UI, not returned via API
                 
                 predictions.append(pred_data)
         
@@ -192,29 +267,50 @@ def run_inference(model_url, api_key, image_base64, parameters=None):
         }
 
 def main():
-    if len(sys.argv) < 3:
-        print(json.dumps({
+    try:
+        if len(sys.argv) < 3:
+            print(json.dumps({
+                'success': False,
+                'error': 'Usage: python roboflow_inference.py <model_url> <api_key> [parameters_json] < image_base64 (via stdin)'
+            }), flush=True)
+            sys.exit(1)
+        
+        model_url = sys.argv[1]
+        api_key = sys.argv[2]
+        
+        # Parse parameters if provided, handle JSON errors gracefully
+        parameters = None
+        if len(sys.argv) > 3:
+            try:
+                parameters = json.loads(sys.argv[3]) if sys.argv[3].strip() else None
+            except (json.JSONDecodeError, ValueError) as e:
+                # If JSON parsing fails, use None (empty parameters)
+                parameters = None
+        
+        # Read image data from stdin to avoid command line argument size limits
+        image_base64 = sys.stdin.read()
+        
+        if not image_base64 or not image_base64.strip():
+            print(json.dumps({
+                'success': False,
+                'error': 'No image data provided via stdin'
+            }), flush=True)
+            sys.exit(1)
+        
+        result = run_inference(model_url, api_key, image_base64, parameters)
+        print(json.dumps(result), flush=True)
+        sys.stdout.flush()
+        
+    except Exception as e:
+        import traceback
+        error_result = {
             'success': False,
-            'error': 'Usage: python roboflow_inference.py <model_url> <api_key> [parameters_json] < image_base64 (via stdin)'
-        }))
+            'error': str(e),
+            'error_trace': traceback.format_exc()
+        }
+        print(json.dumps(error_result), flush=True)
+        sys.stdout.flush()
         sys.exit(1)
-    
-    model_url = sys.argv[1]
-    api_key = sys.argv[2]
-    parameters = json.loads(sys.argv[3]) if len(sys.argv) > 3 else None
-    
-    # Read image data from stdin to avoid command line argument size limits
-    image_base64 = sys.stdin.read()
-    
-    if not image_base64:
-        print(json.dumps({
-            'success': False,
-            'error': 'No image data provided via stdin'
-        }))
-        sys.exit(1)
-    
-    result = run_inference(model_url, api_key, image_base64, parameters)
-    print(json.dumps(result))
 
 if __name__ == '__main__':
     main()

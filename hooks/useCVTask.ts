@@ -87,7 +87,7 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
                 api_key: selectedModel.apiKey,
                 image: base64,
                 model_id: selectedModel.id, // Pass model ID for tracking
-                task_type: selectedModel.task, // Pass task type for proper categorization
+                task_type: selectedModel.task, // Pass task type for proper categorization 
                 parameters: Object.keys(parameters).length > 0 ? parameters : undefined
               })
             })
@@ -110,7 +110,7 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             const errorDetails = error.details ? ` - ${error.details}` : ''
             const errorStatus = error.status ? ` (Status: ${error.status})` : ''
             
-            // Create enhanced error with Hugging Face redirect info
+            // Create enhanced error with Hugging Face redirect info 
             const enhancedError = new Error(`${errorMessage}${errorDetails}${errorStatus}`)
             if (error.redirectToHF && error.modelUrl) {
               (enhancedError as any).modelUrl = error.modelUrl
@@ -132,24 +132,78 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             logger.warn('Failed to get image dimensions, using defaults', context, dimError as Error)
           }
           
-          // Transform response to CVResponse format based on model source
+          // Transform response to CVResponse format based on model source 
           const cvResponse: CVResponse = selectedModel.source === 'roboflow' 
             ? transformRoboflowToCVResponse(inferenceData, selectedModel, imageDimensions)
             : transformHFToCVResponse(inferenceData, selectedModel, imageDimensions)
           
           logger.info('Inference completed successfully', context, {
-            resultsCount: inferenceData.results?.length,
-            modelSource: selectedModel.source
+            resultsCount: inferenceData.results?.length || inferenceData.predictions?.length,
+            modelSource: selectedModel.source,
+            task: cvResponse.task
           })
           
-          // Save inference result to MongoDB (hf_inference_jobs or roboflow_inference_jobs collection)
+          // Save inference result to MongoDB (inference_jobs collection with host property)
+          let jobId: string | undefined = undefined
           try {
+            // Prepare response data for saving - use the transformed CVResponse format
+            // This ensures classification labels are saved correctly
+            let responseData: any[] = []
+            
+            // Check task types in order of specificity
+            // 1. Classification (no spatial data)
+            if (cvResponse.task === 'classification' && cvResponse.results.labels && cvResponse.results.labels.length > 0) {
+              // Classification: save labels as array with label and score
+              responseData = cvResponse.results.labels.map((label: any) => ({
+                label: label.class,
+                score: label.score || (typeof label.confidence === 'number' ? label.confidence : 0.0)
+              }))
+            } 
+            // 2. Keypoint detection (most specific spatial task)
+            else if (cvResponse.results.keypoint_detections && cvResponse.results.keypoint_detections.length > 0) {
+              // Keypoint detection: save detections with bbox and keypoints
+              responseData = cvResponse.results.keypoint_detections.map((det: any) => ({
+                label: det.class,
+                score: det.confidence,
+                box: det.bbox,
+                keypoints: det.keypoints || [] // Include keypoints array
+              }))
+            }
+            // 3. Segmentation (includes instance segmentation which may have both detections and regions)
+            else if (cvResponse.results.segmentation?.regions && cvResponse.results.segmentation.regions.length > 0) {
+              // Segmentation: save regions with bbox, points, and mask
+              responseData = cvResponse.results.segmentation.regions.map((reg: any) => ({
+                label: reg.class,
+                score: reg.area,
+                box: reg.bbox || null,
+                points: reg.points || null, // Include polygon points for segmentation
+                mask: reg.mask || null // Include mask data if available
+              }))
+            }
+            // 4. Detection (standard object detection)
+            else if (cvResponse.results.detections && cvResponse.results.detections.length > 0) {
+              // Detection: save detections with bbox
+              responseData = cvResponse.results.detections.map((det: any) => ({
+                label: det.class,
+                score: det.confidence,
+                box: det.bbox
+              }))
+            } else {
+              // Fallback: use original inferenceData format
+              // For Roboflow, use predictions; for HF, use results
+              if (selectedModel.source === 'roboflow') {
+                responseData = inferenceData.predictions || inferenceData.results || []
+              } else {
+                responseData = inferenceData.results || []
+              }
+            }
+            
             const savePayload: any = {
               user_id: 'anonymous',
               model_id: selectedModel.id,
               query: modelViewStore.queryText || 'unknown',
               image_url: base64, // Using base64 as image_url for now 
-              response: inferenceData.results
+              response: responseData
             }
             
             // Add inference endpoint for Roboflow models (required for future inference calls)
@@ -157,20 +211,31 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
               savePayload.inference_endpoint = selectedModel.inferenceEndpoint
             }
             
-            await fetch('/api/save-inference-result', {
+            const saveResponse = await fetch('/api/save-inference-result', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(savePayload)
             })
-            logger.info(`Inference job saved to MongoDB (${selectedModel.source === 'roboflow' ? 'roboflow_inference_jobs' : 'hf_inference_jobs'})`, context)
+            
+            if (saveResponse.ok) {
+              const saveResult = await saveResponse.json()
+              jobId = saveResult.result_id
+              logger.info(`Inference job saved to MongoDB (inference_jobs collection, host: ${selectedModel.source}, job_id: ${jobId})`, context)
+            } else {
+              logger.warn('Failed to save inference job - response not ok', context)
+            }
           } catch (saveError) {
             logger.error('Failed to save inference job', context, saveError as Error)
             // Don't fail the inference if save fails
           }
           
-          return cvResponse
+          // Add job_id to response for later use when saving annotations
+          return {
+            ...cvResponse,
+            job_id: jobId
+          }
         } else {
-          // No model selected - require model selection first
+          // No model selected - require model selection first 
           logger.warn('No model selected for inference', context, { 
             selectedModel: selectedModel ? {
               name: selectedModel.name,
@@ -466,6 +531,11 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
     task = 'keypoint-detection'
   }
   
+  // Check if model task type explicitly indicates classification
+  if (model.task && modelTaskLower.includes('classification')) {
+    task = 'classification'
+  }
+  
   // Final check: If model explicitly says "Object Detection", don't override to segmentation
   // unless there's a clear mask indicating segmentation
   if (modelTaskLower.includes('object') && modelTaskLower.includes('detection') && 
@@ -478,7 +548,31 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
   }
   
   // Transform based on task type
-  if (task === 'keypoint-detection' || (task.includes('keypoint') && predictions.some((p: any) => p.keypoints))) {
+  // Check for classification first (no spatial data, just class and confidence/score)
+  if (task === 'classification' || task.includes('classification') || 
+      (predictions.length > 0 && predictions.every((p: any) => p.class && (p.confidence !== undefined || p.score !== undefined) && !p.bbox && !p.x && !p.y && !p.mask && !p.points && !p.keypoints))) {
+    // Image Classification - predictions have class and confidence/score but no spatial data
+    return {
+      task: 'classification',
+      model_version: model.name,
+      processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
+      timestamp: inferenceData.timestamp || new Date().toISOString(),
+      image_metadata: {
+        width: imageDimensions?.width || 640,
+        height: imageDimensions?.height || 480,
+        format: 'jpeg'
+      },
+      results: {
+        labels: predictions.map((cls: any) => ({
+          class: cls.class || cls.top || 'unknown',
+          score: cls.score || cls.confidence || 0.0,
+          confidence: (cls.score || cls.confidence || 0.0) > 0.8 ? 'high' : 
+                      (cls.score || cls.confidence || 0.0) > 0.5 ? 'medium' : 
+                      (cls.score || cls.confidence || 0.0) > 0.3 ? 'low' : 'very_low'
+        }))
+      }
+    }
+  } else if (task === 'keypoint-detection' || (task.includes('keypoint') && predictions.some((p: any) => p.keypoints))) {
     // Keypoint Detection - has bounding box + keypoints (separate schema)
     return {
       task: 'keypoint-detection',
@@ -530,6 +624,10 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
               class_id: kp.class_id,
               class: kp.class
             })),
+            // NOTE: Roboflow does NOT provide skeleton connection data in the API response
+            // Skeleton connections are manually defined in project settings but are only used
+            // for visualization in Roboflow's UI, not returned via API
+            // Our implementation uses heuristic detection for human pose models instead
             class_id: prediction.class_id,
             detection_id: prediction.detection_id
           }

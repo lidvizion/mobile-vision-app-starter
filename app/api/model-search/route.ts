@@ -931,13 +931,31 @@ async function prioritizeKnownWorkingModels(models: any[]): Promise<any[]> {
     // Get list of models that are confirmed working (last 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     
+    // ✅ STRICT FILTERING: Only Facebook, Microsoft, NVIDIA + Live/Hosted models
+    const strictTrustedOrgs = ['facebook/', 'microsoft/', 'nvidia/']
+    
     const workingModels = await db.collection('validated_models')
       .find({ 
         validated: true, 
         works: true,
-        workingDate: { $gte: thirtyDaysAgo }
+        workingDate: { $gte: thirtyDaysAgo },
+        // Only include HF models from trusted orgs that are live/hosted
+        $or: [
+          // Roboflow models (always include if validated)
+          { model_id: { $regex: /^roboflow/i } },
+          // HF models: must be from trusted org AND live/hosted
+          {
+            model_id: { $regex: new RegExp(`^(${strictTrustedOrgs.map(org => org.replace('/', '\\/')).join('|')})`, 'i') },
+            $or: [
+              { inferenceStatus: { $in: ['live', 'hosted', 'warm'] } },
+              { hosted: true },
+              { warm: true },
+              { supportsInference: true }
+            ]
+          }
+        ]
       })
-      .project({ model_id: 1, workingDate: 1 })
+      .project({ model_id: 1, workingDate: 1, inferenceStatus: 1, hosted: 1, warm: 1, supportsInference: 1 })
       .toArray()
     
     const workingModelIds = new Set(workingModels.map(m => m.model_id))
@@ -1172,6 +1190,29 @@ async function searchHFModels(
       const modelDescription = (model.description || '').toLowerCase()
       const pipelineTag = model.pipeline_tag
       const tagsArray = model.tags || []
+      
+      // ✅ STRICT HF FILTERING: Only Facebook, Microsoft, NVIDIA + Live/Hosted models
+      // This prevents API key errors from trying to use non-hosted models
+      const strictTrustedOrgs = ['facebook/', 'microsoft/', 'nvidia/']
+      const isFromTrustedOrg = strictTrustedOrgs.some(org => modelId.startsWith(org))
+      
+      // Check if model is live/hosted (inference: true means it's hosted and ready)
+      const isLive = model.inference === true || 
+                     model.inference === 'live' || 
+                     model.inferenceStatus === 'live' ||
+                     (model.model_index && model.model_index.inference === true)
+      
+      // For HF models, ONLY include if:
+      // 1. From trusted org (Facebook, Microsoft, NVIDIA) AND
+      // 2. Is live/hosted (inference: true)
+      // This prevents trying to use models that aren't hosted, which causes API key errors
+      if (!isFromTrustedOrg) {
+        return false
+      }
+      
+      if (!isLive) {
+        return false
+      }
       
       // ✅ KEYWORD RELEVANCE FILTERING - Prioritize models matching search query
       // Separate domain-specific keywords from generic ones

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-roboflow_search_agent.py - FIXED VERSION
-🔍 Accurate project type, API endpoint, and data extraction
+roboflow_search_agent.py - IMPROVED API ENDPOINT EXTRACTION
+🔍 Extracts API endpoints from Model/API pages with better reliability
 """
 
 import os
@@ -81,71 +81,132 @@ def clean_html_entities(text: str) -> str:
         return text
     return text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
 
-def extract_api_endpoint(page, project_type: str, page_text: str, page_html: str) -> Optional[str]:
-    """Extract API endpoint - prioritizes serverless.roboflow.com (used by all modern models)"""
+def extract_api_endpoint(page, project_type: str, page_text: str, page_html: str, quiet_mode=False) -> Optional[str]:
+    """Extract API endpoint - IMPROVED VERSION with better detection"""
     
-    # Strategy 1: Look for serverless endpoint in HTML (most common now)
-    serverless_match = re.search(r'https://serverless\.roboflow\.com/[^\s\'"<>]+', page_html)
-    if serverless_match:
-        endpoint = clean_html_entities(serverless_match.group(0))
-        return endpoint
+    if not quiet_mode:
+        print(f"   🔍 Searching for API endpoint...")
+        print(f"   📍 Current URL: {page.url[:80]}...")
     
-    # Strategy 2: Look in input fields for any roboflow endpoint
-    for selector in ["input[value*='https://serverless.roboflow.com']",
-                    "input[value*='https://detect.roboflow.com']", 
-                    "input[value*='https://classify.roboflow.com']",
-                    "input[value*='https://segment.roboflow.com']"]:
-        el = page.query_selector(selector)
-        if el:
-            val = el.get_attribute("value")
-            if val and "roboflow.com" in val:
-                return clean_html_entities(val)
+    # Strategy 1: Look in JavaScript code blocks (most reliable source)
+    # The API endpoint appears in code snippets with url: "https://serverless.roboflow.com/..."
+    js_patterns = [
+        r'url:\s*["\']https://serverless\.roboflow\.com/([^"\'?\s]+)["\']',
+        r'"https://serverless\.roboflow\.com/([^"\'?\s]+)"',
+        r'https://serverless\.roboflow\.com/([a-z0-9\-_]+/\d+)',
+    ]
     
-    # Strategy 3: Look in code blocks and text areas
-    code_blocks = page.query_selector_all("code, pre, textarea")
-    for block in code_blocks:
+    for pattern in js_patterns:
+        match = re.search(pattern, page_html)
+        if match:
+            if '/' in match.group(1):  # Has project/version format
+                endpoint = f"https://serverless.roboflow.com/{match.group(1)}"
+                if not quiet_mode:
+                    print(f"   ✅ Found in JS code: {endpoint}")
+                return clean_html_entities(endpoint)
+    
+    # Strategy 2: Look for model_id in code (format: "workspace-project/version")
+    model_id_patterns = [
+        r'model_id["\']?\s*[:=]\s*["\']([a-z0-9\-_]+/\d+)["\']',
+        r'MODEL_ENDPOINT["\']?\s*[:=]\s*["\']([a-z0-9\-_]+/\d+)["\']',
+        r'PROJECT_ID["\']?\s*[:=]\s*["\']([a-z0-9\-_]+)["\']',
+    ]
+    
+    for pattern in model_id_patterns:
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            model_id = match.group(1)
+            endpoint = f"https://serverless.roboflow.com/{model_id}"
+            if not quiet_mode:
+                print(f"   ✅ Found model_id: {endpoint}")
+            return endpoint
+    
+    # Strategy 3: Look in input fields and textareas
+    input_selectors = [
+        "input[value*='serverless.roboflow.com']",
+        "textarea",
+        "code",
+    ]
+    
+    for selector in input_selectors:
         try:
-            text = block.inner_text()
-            if not text:
-                continue
-            
-            # Check for serverless first (most common)
-            match = re.search(r'https://serverless\.roboflow\.com/[^\s\'"<>]+', text)
-            if match:
-                return clean_html_entities(match.group(0))
-            
-            # Then check for legacy endpoints
-            match = re.search(r'https://(detect|classify|segment)\.roboflow\.com/[^\s\'"<>]+', text)
-            if match:
-                return clean_html_entities(match.group(0))
+            elements = page.query_selector_all(selector)
+            for el in elements:
+                text = el.get_attribute("value") or el.inner_text() or ""
+                if text and "serverless.roboflow.com" in text:
+                    match = re.search(r'https://serverless\.roboflow\.com/([a-z0-9\-_]+/\d+)', text)
+                    if match:
+                        endpoint = clean_html_entities(match.group(0))
+                        if not quiet_mode:
+                            print(f"   ✅ Found in {selector}: {endpoint}")
+                        return endpoint
         except:
             continue
     
-    # Strategy 4: Search page text for serverless endpoint
-    serverless_text_match = re.search(r'https://serverless\.roboflow\.com/[^\s\'"<>]+', page_text)
-    if serverless_text_match:
-        return clean_html_entities(serverless_text_match.group(0))
+    # Strategy 4: Check visible page text for endpoint patterns
+    serverless_match = re.search(r'https://serverless\.roboflow\.com/([a-z0-9\-_]+/\d+)', page_text)
+    if serverless_match:
+        endpoint = clean_html_entities(serverless_match.group(0))
+        if not quiet_mode:
+            print(f"   ✅ Found in page text: {endpoint}")
+        return endpoint
     
-    # Strategy 5: Legacy endpoint fallback
-    legacy_match = re.search(r'https://(detect|classify|segment)\.roboflow\.com/[^\s\'"<>]+', page_html)
-    if legacy_match:
-        return clean_html_entities(legacy_match.group(0))
+    # Strategy 5: Legacy endpoint fallback (still used by some older models)
+    legacy_patterns = [
+        r'https://detect\.roboflow\.com/([a-z0-9\-_]+/\d+)',
+        r'https://classify\.roboflow\.com/([a-z0-9\-_]+/\d+)',
+        r'https://outline\.roboflow\.com/([a-z0-9\-_]+/\d+)',
+        r'https://segment\.roboflow\.com/([a-z0-9\-_]+/\d+)',
+    ]
     
-    # Strategy 6: Construct serverless endpoint from URL if we're on a project page
+    for pattern in legacy_patterns:
+        match = re.search(pattern, page_html)
+        if match:
+            endpoint = clean_html_entities(match.group(0))
+            if not quiet_mode:
+                print(f"   ✅ Found legacy endpoint: {endpoint}")
+            return endpoint
+    
+    # Strategy 6: Construct from URL structure if on a model page
     try:
-        url_parts = page.url.split('/')
-        if len(url_parts) >= 2 and '/model/' not in page.url:
-            workspace = url_parts[-2]
-            project = url_parts[-1]
-            
-            # Look for version number
-            version_match = re.search(r'Model\s+(\d+)', page_text)
-            if version_match:
-                version = version_match.group(1)
-                # All modern models use serverless endpoint
-                return f"https://serverless.roboflow.com/{project}/{version}"
+        current_url = page.url
+        
+        # Parse URL: https://universe.roboflow.com/workspace/project/model/3
+        if '/model/' in current_url:
+            parts = current_url.split('/')
+            model_idx = parts.index('model')
+            if model_idx >= 2:
+                workspace = parts[model_idx - 2]
+                project = parts[model_idx - 1]
+                version = parts[model_idx + 1] if len(parts) > model_idx + 1 else None
+                
+                if version and version.isdigit():
+                    # All modern models use serverless endpoint
+                    endpoint = f"https://serverless.roboflow.com/{project}/{version}"
+                    if not quiet_mode:
+                        print(f"   ✅ Constructed from URL: {endpoint}")
+                    return endpoint
+        
+        # Fallback: Try URL without /model/ path
+        elif len(current_url.split('/')) >= 5:
+            parts = [p for p in current_url.split('/') if p]
+            if 'universe.roboflow.com' in current_url and len(parts) >= 2:
+                workspace = parts[-2]
+                project = parts[-1]
+                
+                # Look for version in page text
+                version_match = re.search(r'Version\s+(\d+)|Model\s+(\d+)', page_text)
+                if version_match:
+                    version = version_match.group(1) or version_match.group(2)
+                    endpoint = f"https://serverless.roboflow.com/{project}/{version}"
+                    if not quiet_mode:
+                        print(f"   ✅ Constructed from project: {endpoint}")
+                    return endpoint
     except:
         pass
+    
+    if not quiet_mode:
+        print(f"   ❌ No API endpoint found")
     
     return None
 
@@ -174,19 +235,115 @@ def scroll_page(page, max_scrolls=15):
 
 # ---------- Model extraction ----------
 def extract_model_details(page, quiet_mode=False) -> Dict:
-    """Extract model details with improved project type and API detection"""
+    """Extract model details with IMPROVED API endpoint detection"""
     
-    # Ensure we're on the Overview page, not the Model/API page
+    # CRITICAL: Navigate to Model/API page FIRST to get API endpoint
+    # The API endpoint is shown in code snippets on the Model page
     current_url = page.url
     base_url = current_url.split('/model/')[0] if '/model/' in current_url else current_url
     
-    # Start on Overview page
-    if '/model/' in current_url or not page.query_selector("text=METRICS"):
+    if not quiet_mode:
+        print(f"   📄 Extracting from: {base_url.split('/')[-1]}")
+    
+    # Try to navigate to the model page if not already there
+    if '/model/' not in current_url:
         try:
-            page.goto(base_url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(2000)
+            # Look for Model tab, API Docs link, or construct model URL
+            model_selectors = [
+                "a:has-text('Model')",
+                "button:has-text('Model')",
+                "a:has-text('API Docs')",
+                "[href*='/model/']",
+            ]
+            
+            clicked = False
+            for selector in model_selectors:
+                try:
+                    link = page.query_selector(selector)
+                    if link and link.is_visible():
+                        if not quiet_mode:
+                            print(f"   🔗 Clicking {selector} to find API endpoint...")
+                        link.click()
+                        page.wait_for_timeout(2500)
+                        clicked = True
+                        break
+                except:
+                    continue
+            
+            # If no link found, try to construct model URL manually
+            if not clicked:
+                try:
+                    # Look for version number in page
+                    page_text_temp = page.inner_text("body")
+                    version_match = re.search(r'Version\s+(\d+)|Model\s+(\d+)', page_text_temp)
+                    if version_match:
+                        version = version_match.group(1) or version_match.group(2)
+                        model_url = f"{base_url}/model/{version}"
+                        if not quiet_mode:
+                            print(f"   🔗 Navigating to: {model_url}")
+                        page.goto(model_url, wait_until="domcontentloaded", timeout=15000)
+                        page.wait_for_timeout(2000)
+                except:
+                    pass
         except:
             pass
+    
+    # Wait for code snippets to load
+    page.wait_for_timeout(2000)
+    
+    # Scroll to ensure all code is loaded
+    scroll_page(page, max_scrolls=10)
+    
+    # Get page content for API extraction
+    page_text = page.inner_text("body")
+    page_html = page.content()
+    
+    # Extract API endpoint FIRST (while on Model page)
+    api_endpoint = extract_api_endpoint(page, "", page_text, page_html, quiet_mode)
+    
+    # If not found, try clicking through different code tabs
+    if not api_endpoint:
+        if not quiet_mode:
+            print(f"   🔄 Trying different code tabs...")
+        
+        tab_selectors = [
+            "button:has-text('Javascript')",
+            "button:has-text('JavaScript')",
+            "button:has-text('Python')",
+            "button:has-text('cURL')",
+        ]
+        
+        for selector in tab_selectors:
+            try:
+                tab = page.query_selector(selector)
+                if tab and tab.is_visible():
+                    tab.click()
+                    page.wait_for_timeout(1500)
+                    
+                    # Re-extract content
+                    page_text = page.inner_text("body")
+                    page_html = page.content()
+                    api_endpoint = extract_api_endpoint(page, "", page_text, page_html, quiet_mode)
+                    
+                    if api_endpoint:
+                        break
+            except:
+                continue
+    
+    # Clean up API endpoint (remove query parameters)
+    if api_endpoint and '?' in api_endpoint:
+        api_endpoint = api_endpoint.split('?')[0]
+    
+    # NOW navigate back to Overview for other details
+    if not quiet_mode:
+        print(f"   📊 Getting project details from Overview...")
+    
+    try:
+        if page.url != base_url:
+            page.goto(base_url, wait_until="domcontentloaded", timeout=15000)
+            page.wait_for_timeout(2000)
+    except:
+        pass
     
     # Make sure Overview tab is selected
     try:
@@ -199,7 +356,7 @@ def extract_model_details(page, quiet_mode=False) -> Dict:
     
     scroll_page(page, max_scrolls=MODEL_SCROLLS)
     
-    # Get page content
+    # Get overview page content
     page_text = page.inner_text("body")
     page_html = page.content()
     
@@ -222,7 +379,7 @@ def extract_model_details(page, quiet_mode=False) -> Dict:
         if match:
             author = clean_text(match.group(1))
     
-    # FIXED: Extract project type from TAGS section
+    # Extract project type from TAGS section
     project_type = "N/A"
     
     # Strategy 1: Look for TAGS followed by badges/buttons
@@ -306,7 +463,7 @@ def extract_model_details(page, quiet_mode=False) -> Dict:
                     re.search(r'Version\s+\d+', page_text) or
                     'trained model' in page_text.lower())
     
-    # Extract classes from CLASSES section - FIXED to get actual class names
+    # Extract classes from CLASSES section
     classes = []
     class_count = "0"
     
@@ -319,8 +476,7 @@ def extract_model_details(page, quiet_mode=False) -> Dict:
         start_pos = classes_match.end()
         class_section = page_text[start_pos:start_pos+500]
         
-        # Look for actual class badges (they appear as individual words/tokens)
-        # Split by whitespace and filter
+        # Look for actual class badges
         potential_classes = re.findall(r'\b([a-z][a-z0-9_\-]{0,25})\b', class_section)
         
         # Filter out common UI text and keep actual class names
@@ -351,57 +507,14 @@ def extract_model_details(page, quiet_mode=False) -> Dict:
     if model_types:
         tags.extend([m.lower() for m in model_types[:3]])
     
-    # Now try to get API endpoint by navigating to API Docs
-    api_endpoint = None
-    try:
-        # First try to extract from current page
-        current_page_html = page.content()
-        current_page_text = page.inner_text("body")
-        api_endpoint = extract_api_endpoint(page, project_type, current_page_text, current_page_html)
-        
-        # If not found, try clicking API Docs
-        if not api_endpoint:
-            api_selectors = [
-                "a:has-text('API Docs')",
-                "button:has-text('API Docs')",
-                "text=API Docs",
-            ]
-            
-            for selector in api_selectors:
-                try:
-                    api_link = page.query_selector(selector)
-                    if api_link and api_link.is_visible():
-                        api_link.click()
-                        page.wait_for_timeout(3000)
-                        # Update content after navigation
-                        page_text_api = page.inner_text("body")
-                        page_html_api = page.content()
-                        api_endpoint = extract_api_endpoint(page, project_type, page_text_api, page_html_api)
-                        if api_endpoint:
-                            break
-                except:
-                    continue
-    except:
-        pass
-    
-    # FIXED: Clean up API endpoint (remove query parameters)
-    if api_endpoint and '?' in api_endpoint:
-        api_endpoint = api_endpoint.split('?')[0]
-    
-    # Extract model identifier from URL - FIXED
-    url_parts = page.url.split('/')
+    # Extract model identifier from URL
+    url_parts = base_url.split('/')
     workspace = url_parts[-2] if len(url_parts) >= 2 else "N/A"
     project = url_parts[-1] if len(url_parts) >= 1 else "N/A"
     
-    # Clean up if we're on a model page
-    if '/model/' in project:
-        project = project.split('/model/')[0]
-    if '/model/' in workspace:
-        workspace = workspace.split('/model/')[0]
-    
     model_id = f"{workspace}/{project}" if workspace != "N/A" and project != "N/A" else "N/A"
     
-    # Extract updated time - FIXED
+    # Extract updated time
     updated = "N/A"
     updated_patterns = [
         r'Updated\s+(\d+\s+(?:year|month|week|day|hour)s?\s+ago)',
@@ -416,7 +529,7 @@ def extract_model_details(page, quiet_mode=False) -> Dict:
     
     data = {
         "project_title": title,
-        "url": base_url,  # Use cleaned base URL without /model/ path
+        "url": base_url,
         "author": author,
         "project_type": project_type,
         "has_model": has_model,
@@ -432,7 +545,7 @@ def extract_model_details(page, quiet_mode=False) -> Dict:
         "model_identifier": model_id,
     }
     
-    # Summary for logging (only if not in quiet mode)
+    # Summary for logging
     if not quiet_mode:
         metrics = f"mAP:{mAP or 'N/A'} P:{precision or 'N/A'} R:{recall or 'N/A'}"
         api_status = "✓API" if api_endpoint else "✗API"
@@ -459,6 +572,7 @@ def open_model_with_retry(context, url, quiet_mode=False) -> Optional[Dict]:
                 time.sleep(RETRY_WAIT)
     return None
 
+
 # ---------- Search & scrape ----------
 def search_roboflow_models(keywords: str, max_projects: int = 10, headless=True) -> List[Dict]:
     start_time = time.time()
@@ -471,59 +585,48 @@ def search_roboflow_models(keywords: str, max_projects: int = 10, headless=True)
         print(f"⏱️ Browser connected in {time.time() - start_time:.2f}s")
 
     try:
-        # Prioritize domain-specific keywords over generic ones
-        # Generic terms that should be deprioritized
-        generic_terms = {'segmentation', 'segformer', 'image-segmentation', 'detection', 'classification', 'object-detection', 'instance-segmentation'}
+        # ✅ USE KEYWORDS AS-IS from TypeScript (already prioritized and formatted) 
+        # TypeScript has already done the prioritization: domain keywords + "model" + task type
+        # Example: "basketball model instance segmentation" or "soccer ball model object detection"
+        # We should preserve this order to maintain domain-specific keyword priority
         
-        keywords_list = keywords.split()
-        domain_keywords = [k for k in keywords_list if k.lower() not in generic_terms]
-        generic_keywords = [k for k in keywords_list if k.lower() in generic_terms]
-        
-        # Build search query matching Roboflow URL format: domain_keyword + model + instance + segmentation
-        # Example: "basketball+model+instance+segmentation" or "soccer+ball+model+instance+segmentation"
-        prioritized_keywords = []
-        
-        # Add domain-specific keywords first (most important) - e.g., "soccer", "ball"
-        prioritized_keywords.extend(domain_keywords[:2])  # Up to 2 domain keywords
-        
-        # Add "model" keyword (Roboflow search expects this format)
-        if 'model' not in [k.lower() for k in prioritized_keywords]:
-            prioritized_keywords.append('model')
-        
-        # Add task-specific keywords based on what's in the search
         keywords_lower = keywords.lower()
+        keywords_list = keywords.split()
         
-        # Add "keypoint detection" if keypoint/pose-related (check first as it's more specific)
-        if (('keypoint' in keywords_lower or 'key-point' in keywords_lower or 'pose' in keywords_lower or 'landmark' in keywords_lower) 
-            and 'keypoint detection' not in keywords_lower):
-            prioritized_keywords.append('keypoint detection')
+        # Check if keywords already contain properly formatted task type phrases (from TypeScript)
+        has_task_phrase = (
+            'instance segmentation' in keywords_lower or
+            'keypoint detection' in keywords_lower or
+            'object detection' in keywords_lower or
+            'image classification' in keywords_lower
+        )
         
-        # Add "instance segmentation" if segmentation-related (but not keypoint)
-        elif ('segment' in keywords_lower or 'segmentation' in keywords_lower) and 'instance segmentation' not in keywords_lower:
-            prioritized_keywords.append('instance segmentation')
-        
-        # Add "object detection" if detection-related (but not segmentation or keypoint)
-        elif (('detect' in keywords_lower or 'detection' in keywords_lower) 
-              and 'segment' not in keywords_lower 
-              and 'keypoint' not in keywords_lower 
-              and 'pose' not in keywords_lower):
-            if 'object detection' not in keywords_lower:
-                prioritized_keywords.append('object detection')
-        
-        # Add "image classification" if classification-related (but not detection, segmentation, or keypoint)
-        elif (('classif' in keywords_lower or 'classification' in keywords_lower) 
-              and 'detect' not in keywords_lower 
-              and 'segment' not in keywords_lower 
-              and 'keypoint' not in keywords_lower):
-            # Only add if "image classification" isn't already present as a phrase in keywords
-            # and "classification" isn't already in prioritized keywords
-            has_image_classification_phrase = 'image classification' in keywords_lower
-            has_classification_in_prioritized = 'classification' in [k.lower() for k in prioritized_keywords]
-            if not has_image_classification_phrase and not has_classification_in_prioritized:
-                prioritized_keywords.append('image classification')
-        
-        # Build final search query (limit to 4-5 terms for better Roboflow search results)
-        search_keywords = ' '.join(prioritized_keywords[:5])
+        if has_task_phrase and 'model' in keywords_lower:
+            # Keywords are already properly formatted by TypeScript - use as-is
+            # Just limit to 5 terms to match Roboflow search expectations
+            search_keywords = ' '.join(keywords_list[:5])
+        else:
+            # Fallback: Keywords might not be fully formatted - do minimal processing
+            # This should rarely happen as TypeScript handles this, but keep as safety net
+            prioritized_keywords = []
+            
+            # Keep first 2 words (usually domain keywords from TypeScript)
+            prioritized_keywords.extend(keywords_list[:2])
+            
+            # Add "model" if not present
+            if 'model' not in [k.lower() for k in prioritized_keywords]:
+                prioritized_keywords.append('model')
+            
+            # Only add task type if it's clearly missing
+            if 'instance segmentation' not in keywords_lower and 'keypoint detection' not in keywords_lower:
+                if 'segment' in keywords_lower or 'segmentation' in keywords_lower:
+                    prioritized_keywords.append('instance segmentation')
+                elif 'detect' in keywords_lower or 'detection' in keywords_lower:
+                    prioritized_keywords.append('object detection')
+                elif 'classif' in keywords_lower or 'classification' in keywords_lower:
+                    prioritized_keywords.append('image classification')
+            
+            search_keywords = ' '.join(prioritized_keywords[:5])
         
         # Always print URL for debugging (even in quiet mode)
         search_url = f"{BASE_URL}/search?q={search_keywords.replace(' ', '+')}"

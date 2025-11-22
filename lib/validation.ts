@@ -132,7 +132,8 @@ export const CVResponseSchema = z.object({
   model_version: z.string(),
   results: CVResultsSchema,
   processing_time: z.number().min(0),
-  image_metadata: ImageMetadataSchema
+  image_metadata: ImageMetadataSchema,
+  job_id: z.string().optional() // Optional: job_id from inference_jobs collection
 });
 
 // Validation functions

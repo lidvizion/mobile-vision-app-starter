@@ -39,6 +39,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
   // Automatic processing when both image and model are selected (only once)
   useEffect(() => {
     const autoProcess = async () => {
+      // Only process if we have all required data, not currently processing, and haven't already processed this image
       if (currentImageFile && selectedModel && !isProcessing && selectedImage && !autoProcessTriggered.current) {
         autoProcessTriggered.current = true
         const context = createLogContext(currentTask, 'CameraPreview', 'auto-process')
@@ -54,12 +55,16 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
         } catch (error) {
           logger.error('Auto-processing failed', context, error as Error)
           setError(`Auto-processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          // DON'T reset trigger on error - keep it true to prevent automatic retries
+          // User can manually retry by changing the image or model
         }
       }
     }
 
     autoProcess()
-  }, [currentImageFile, selectedModel, isProcessing, selectedImage, currentTask, onImageProcessed, processImage])
+    // Only depend on image/model changes, not on callbacks that might change on every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentImageFile, selectedModel, selectedImage, currentTask])
 
   // Reset auto-process trigger when image changes
   useEffect(() => {

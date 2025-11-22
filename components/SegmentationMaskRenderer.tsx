@@ -50,40 +50,44 @@ export default function SegmentationMaskRenderer({
     regions.forEach((region, index) => {
       if (!region.mask) {
         // Try to render polygon from points if available
-        if (region.points && region.points.length > 0) {
+        if (region.points && Array.isArray(region.points) && region.points.length > 0) {
           // Render polygon from points
           ctx.beginPath()
           const scaleX = containerWidth / imageWidth
           const scaleY = containerHeight / imageHeight
           
-          // Move to first point
+          // Move to first point (points are in absolute pixel coordinates)
           const firstPoint = region.points[0]
-          ctx.moveTo(firstPoint.x * scaleX, firstPoint.y * scaleY)
-          
-          // Draw lines to all other points
-          for (let i = 1; i < region.points.length; i++) {
-            const point = region.points[i]
-            ctx.lineTo(point.x * scaleX, point.y * scaleY)
+          if (firstPoint && typeof firstPoint.x === 'number' && typeof firstPoint.y === 'number') {
+            ctx.moveTo(firstPoint.x * scaleX, firstPoint.y * scaleY)
+            
+            // Draw lines to all other points
+            for (let i = 1; i < region.points.length; i++) {
+              const point = region.points[i]
+              if (point && typeof point.x === 'number' && typeof point.y === 'number') {
+                ctx.lineTo(point.x * scaleX, point.y * scaleY)
+              }
+            }
+            
+            // Close the polygon
+            ctx.closePath()
+            
+            // Fill with semi-transparent color
+            ctx.globalAlpha = 0.4
+            ctx.fillStyle = region.color
+            ctx.fill()
+            
+            // Draw outline
+            ctx.globalAlpha = 0.8
+            ctx.strokeStyle = region.color
+            ctx.lineWidth = 2
+            ctx.stroke()
+            
+            ctx.globalAlpha = 1
+            
+            console.log(`✅ Rendered polygon for ${region.class} with ${region.points.length} points`)
+            return
           }
-          
-          // Close the polygon
-          ctx.closePath()
-          
-          // Fill with semi-transparent color
-          ctx.globalAlpha = 0.4
-          ctx.fillStyle = region.color
-          ctx.fill()
-          
-          // Draw outline
-          ctx.globalAlpha = 0.8
-          ctx.strokeStyle = region.color
-          ctx.lineWidth = 2
-          ctx.stroke()
-          
-          ctx.globalAlpha = 1
-          
-          console.log(`✅ Rendered polygon for ${region.class} with ${region.points.length} points`)
-          return
         }
         
         // Fallback: render bounding box if no mask or points available
