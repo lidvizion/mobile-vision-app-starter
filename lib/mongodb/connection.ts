@@ -61,16 +61,24 @@ export default clientPromise
 export async function getDatabase(): Promise<Db> {
   // If no URI is set, return mock database (allows build to succeed)
   if (!uri || !clientPromise) {
-    console.warn('⚠️ MongoDB URI not configured. Using mock database.')
+    console.error('🔴 CRITICAL: MongoDB URI not configured!')
+    console.error('🔴 MONGODB_URI env var:', process.env.MONGODB_URI ? 'SET (length: ' + process.env.MONGODB_URI.length + ')' : 'NOT SET')
+    console.error('🔴 Using mock database - all queries will return empty results')
+    console.error('🔴 FIX: Set MONGODB_URI in AWS Amplify environment variables')
     return getMockDatabase()
   }
-  
+
   try {
+    console.log('✅ MongoDB URI is configured, attempting connection...')
     const client = await clientPromise
-    return client.db('vision_sdk')
+    console.log('✅ MongoDB connection successful')
+    const db = client.db('vision_sdk')
+    console.log('✅ Using database: vision_sdk')
+    return db
   } catch (error) {
-    console.error('⚠️ MongoDB connection failed:', error instanceof Error ? error.message : error)
-    console.warn('Using mock database as fallback.')
+    console.error('🔴 MongoDB connection failed:', error instanceof Error ? error.message : error)
+    console.error('🔴 Connection error details:', error)
+    console.error('🔴 Using mock database as fallback - all queries will return empty results')
     return getMockDatabase()
   }
 }

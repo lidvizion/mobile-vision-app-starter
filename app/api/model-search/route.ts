@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 
 // Allow longer execution time for Puppeteer scraping in serverless environments
-export const maxDuration = 60; // 60 seconds for Amplify/Vercel
+export const maxDuration = 120; // 120 seconds for Amplify/Vercel
 
 // Extend globalThis to include our cache
 declare global {
@@ -2009,7 +2009,7 @@ async function saveModelRecommendations(queryId: string, models: NormalizedModel
  */
 async function getCuratedModels(keywords: string[], limit: number = 20, taskType?: string): Promise<any[]> {
   try {
-    console.log(`📚 Fetching curated models for: ${keywords.join(' ')}`)
+    console.log(`📚 [getCuratedModels] Starting - keywords: ${keywords.join(' ')}, taskType: ${taskType}, limit: ${limit}`)
 
     // Priority working models that should always be included
     const priorityModelIds = [
@@ -2023,8 +2023,10 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
       'facebook/mask2former-swin-large-cityscapes-semantic' // State-of-the-art semantic segmentation for cityscapes/traffic scenes
     ]
 
+    console.log(`🔍 [getCuratedModels] Calling searchValidatedModels...`)
     // Get validated models with relevance scoring
     const validatedModels = await searchValidatedModels(keywords, taskType, limit)
+    console.log(`📊 [getCuratedModels] searchValidatedModels returned ${validatedModels.length} models`)
 
     // Convert to the expected format
     const curatedModels = validatedModels.map(model => {
@@ -2110,10 +2112,13 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
     })
 
 
+    console.log(`✅ [getCuratedModels] Returning ${curatedModels.length} curated models`)
     return curatedModels
 
   } catch (error) {
-    console.error('❌ Error fetching curated models:', error)
+    console.error('🔴 [getCuratedModels] Error fetching curated models:', error)
+    console.error('🔴 [getCuratedModels] Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+    console.error('🔴 [getCuratedModels] Returning empty array due to error')
     return []
   }
 }
@@ -2311,10 +2316,29 @@ export async function POST(request: NextRequest) {
     if (shouldSearch) {
       console.log(`🔍 First page - performing hybrid search for: ${searchKeywords}`)
 
-      // STEP 1: Get curated models from database (if any)
-      console.log(`⚡ Step 1: Loading curated models from database...`)
-      const curatedModels = await getCuratedModels(keywords, 20, task_type)
-      console.log(`📊 Found ${curatedModels.length} curated models`)
+      // STEP 1: Get curated models from database (if any) with timeout
+      console.log(`⚡ [STEP 1] Loading curated models from database...`)
+      console.log(`⚡ [STEP 1] Keywords: ${keywords.join(', ')}, Task Type: ${task_type}`)
+      let curatedModels: any[] = []
+      try {
+        // Add timeout to prevent hanging if MongoDB is slow/unavailable
+        console.log(`⏱️ [STEP 1] Starting getCuratedModels with 10s timeout...`)
+        const curatedModelsPromise = getCuratedModels(keywords, 20, task_type)
+        const timeoutPromise = new Promise<any[]>((_, reject) =>
+          setTimeout(() => reject(new Error('MongoDB query timeout')), 10000) // 10 second timeout
+        )
+        curatedModels = await Promise.race([curatedModelsPromise, timeoutPromise])
+        console.log(`✅ [STEP 1] Successfully loaded ${curatedModels.length} curated models`)
+        if (curatedModels.length > 0) {
+          console.log(`📋 [STEP 1] Sample model:`, JSON.stringify(curatedModels[0], null, 2).substring(0, 500))
+        }
+      } catch (error) {
+        console.error(`🔴 [STEP 1] Failed to load curated models:`, error)
+        console.error(`🔴 [STEP 1] Error type:`, error instanceof Error ? error.constructor.name : typeof error)
+        console.error(`🔴 [STEP 1] Error message:`, error instanceof Error ? error.message : String(error))
+        console.error(`🔴 [STEP 1] Will rely on background search for results`)
+        curatedModels = [] // Fallback to empty array
+      }
 
       // Always start with curated models (even if empty)
       allModels = curatedModels
