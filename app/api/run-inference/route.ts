@@ -3,6 +3,9 @@ import crypto from 'crypto'
 import { markModelAsWorking, markModelAsFailed } from '@/lib/mongodb/validatedModels'
 import OpenAI from 'openai'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 /**
  * /api/run-inference
  * Purpose: Run inference on a Hugging Face model

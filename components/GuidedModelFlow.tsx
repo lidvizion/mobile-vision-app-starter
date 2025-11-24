@@ -28,6 +28,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
   const [sessionId] = useState(() => `session_${Date.now()}`)
   const [showBackgroundSearchIndicator, setShowBackgroundSearchIndicator] = useState(false)
   const [hasBackgroundSearchCompleted, setHasBackgroundSearchCompleted] = useState(false)
+  const [currentQueryId, setCurrentQueryId] = useState<string | undefined>(undefined)
 
   // React Query hooks
   const queryRefineMutation = useQueryRefine()
@@ -41,9 +42,8 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
 
   // Background search hook - only enable after initial search is complete
   const { status: backgroundStatus, isPolling } = useBackgroundSearch({
-    keywords: modelViewStore.refinedKeywords.length > 0 ? modelViewStore.refinedKeywords : [modelViewStore.queryText],
-    taskType: modelViewStore.taskType,
-    enabled: !modelViewStore.isSearching && modelViewStore.modelList.length > 0 && !hasBackgroundSearchCompleted, // Only run once per search
+    queryId: currentQueryId,  // Use queryId from API response
+    enabled: !modelViewStore.isSearching && modelViewStore.modelList.length > 0 && !hasBackgroundSearchCompleted && !!currentQueryId, // Only run once per search
     onNewModelsFound: (newModels) => {
       console.log(`🔍 Found ${newModels.length} new models`)
 
@@ -172,6 +172,12 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         limit: 50, // Load 50 models for client-side pagination
         page: 1
       })
+
+      // Extract queryId from the search response for background polling
+      if (searchResult.queryId) {
+        setCurrentQueryId(searchResult.queryId)
+        console.log(`📋 Set queryId for background search: ${searchResult.queryId}`)
+      }
 
       // The useModelSearch hook will automatically update the store
       // No need to manually update the store here
@@ -350,8 +356,8 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                   <label
                     key={task}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${hasModels
-                        ? 'cursor-pointer hover:bg-wells-warm-grey/10'
-                        : 'cursor-not-allowed opacity-60'
+                      ? 'cursor-pointer hover:bg-wells-warm-grey/10'
+                      : 'cursor-not-allowed opacity-60'
                       }`}
                     title={!hasModels ? `No ${task} models found in current search` : `Filter by ${task}`}
                     onClick={(e) => {
@@ -426,9 +432,9 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 {isTopThree && (
                   <div className="flex items-center justify-between mb-2">
                     <div className={`px-3 py-1 rounded-full text-xs font-bold ${topRank === 1 ? 'bg-yellow-100 text-yellow-800' :
-                        topRank === 2 ? 'bg-gray-100 text-gray-700' :
-                          topRank === 3 ? 'bg-orange-100 text-orange-700' :
-                            'bg-blue-100 text-blue-700'
+                      topRank === 2 ? 'bg-gray-100 text-gray-700' :
+                        topRank === 3 ? 'bg-orange-100 text-orange-700' :
+                          'bg-blue-100 text-blue-700'
                       }`}>
                       Top {topRank}
                     </div>
@@ -448,8 +454,8 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                     {/* Source badge - hidden for now */}
                     {false && (
                       <span className={`text-xs px-2 py-1 rounded font-medium ${model.source === 'roboflow'
-                          ? 'bg-blue-50 text-blue-700'
-                          : 'bg-orange-50 text-orange-700'
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'bg-orange-50 text-orange-700'
                         }`}>
                         {model.source}
                       </span>
@@ -457,10 +463,10 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                     {/* Model Type Badge - hidden for now */}
                     {false && model.modelTypeInfo && (
                       <span className={`text-xs px-2 py-1 rounded font-medium ${model.modelTypeInfo?.type === 'custom'
-                          ? 'bg-green-50 text-green-700'
-                          : model.modelTypeInfo?.type === 'generative'
-                            ? 'bg-blue-50 text-blue-700'
-                            : 'bg-gray-50 text-gray-700'
+                        ? 'bg-green-50 text-green-700'
+                        : model.modelTypeInfo?.type === 'generative'
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'bg-gray-50 text-gray-700'
                         }`}>
                         {model.modelTypeInfo?.displayLabel}
                       </span>
@@ -708,8 +714,8 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
               onClick={handleSearch}
               disabled={modelViewStore.queryText.length < 10 || modelViewStore.isSearching}
               className={`px-8 py-3 rounded-xl font-semibold flex items-center gap-2 transition-all ${modelViewStore.queryText.length >= 10 && !modelViewStore.isSearching
-                  ? 'bg-wells-dark-grey text-white hover:bg-wells-warm-grey shadow-lg hover:shadow-xl'
-                  : 'bg-wells-warm-grey/20 text-wells-warm-grey cursor-not-allowed'
+                ? 'bg-wells-dark-grey text-white hover:bg-wells-warm-grey shadow-lg hover:shadow-xl'
+                : 'bg-wells-warm-grey/20 text-wells-warm-grey cursor-not-allowed'
                 }`}
             >
               {modelViewStore.isSearching ? (

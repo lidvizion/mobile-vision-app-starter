@@ -58,23 +58,29 @@ if (uri) {
 // separate module, the client can be shared across functions.
 export default clientPromise
 
+let isConnected = false
+
 export async function getDatabase(): Promise<Db> {
   // If no URI is set, return mock database (allows build to succeed)
   if (!uri || !clientPromise) {
-    console.error('🔴 CRITICAL: MongoDB URI not configured!')
-    console.error('🔴 MONGODB_URI env var:', process.env.MONGODB_URI ? 'SET (length: ' + process.env.MONGODB_URI.length + ')' : 'NOT SET')
-    console.error('🔴 Using mock database - all queries will return empty results')
-    console.error('🔴 FIX: Set MONGODB_URI in AWS Amplify environment variables')
+    if (!isConnected) {
+      console.error('🔴 CRITICAL: MongoDB URI not configured!')
+      console.error('🔴 MONGODB_URI env var:', process.env.MONGODB_URI ? 'SET (length: ' + process.env.MONGODB_URI.length + ')' : 'NOT SET')
+      console.error('🔴 Using mock database - all queries will return empty results')
+      console.error('🔴 FIX: Set MONGODB_URI in AWS Amplify environment variables')
+      isConnected = true // Prevent repeated error logs
+    }
     return getMockDatabase()
   }
 
   try {
-    console.log('✅ MongoDB URI is configured, attempting connection...')
     const client = await clientPromise
-    console.log('✅ MongoDB connection successful')
-    const db = client.db('vision_sdk')
-    console.log('✅ Using database: vision_sdk')
-    return db
+    if (!isConnected) {
+      console.log('✅ MongoDB connection successful')
+      console.log('✅ Using database: vision_sdk')
+      isConnected = true
+    }
+    return client.db('vision_sdk')
   } catch (error) {
     console.error('🔴 MongoDB connection failed:', error instanceof Error ? error.message : error)
     console.error('🔴 Connection error details:', error)

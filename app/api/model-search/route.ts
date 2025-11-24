@@ -3,11 +3,8 @@ import crypto from 'crypto'
 
 // Allow longer execution time for Puppeteer scraping in serverless environments
 export const maxDuration = 120; // 120 seconds for Amplify/Vercel
-
-// Extend globalThis to include our cache
-declare global {
-  var searchCache: Map<string, any[]> | undefined
-}
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 /**
  * Fetch model description from Hugging Face README.md
@@ -137,6 +134,118 @@ async function fetchMultipleModelDescriptions(modelIds: string[]): Promise<Recor
     acc[modelId] = description
     return acc
   }, {} as Record<string, string | null>)
+}
+
+/**
+ * Create a new background search job in MongoDB
+ */
+async function createBackgroundJob(queryId: string, keywords: string[], taskType?: string): Promise<string> {
+  const { getDatabase } = await import('@/lib/mongodb/connection')
+  const db = await getDatabase()
+
+  const jobId = `job-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
+  const ttlExpires = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+
+  await db.collection('background_search_jobs').insertOne({
+    job_id: jobId,
+    query_id: queryId,
+    keywords,
+    task_type: taskType || 'detection',
+    status: 'pending',
+    started_at: new Date().toISOString(),
+    results_count: 0,
+    ttl_expires_at: ttlExpires.toISOString()
+  })
+
+  console.log(`✅ Created background job: ${jobId}`)
+  return jobId
+}
+
+/**
+ * Update background job status
+ */
+async function updateJobStatus(
+  jobId: string,
+  status: 'running' | 'completed' | 'failed',
+  resultsCount?: number,
+  error?: string
+): Promise<void> {
+  const { getDatabase } = await import('@/lib/mongodb/connection')
+  const db = await getDatabase()
+
+  const update: any = {
+    status,
+    ...(status === 'completed' && { completed_at: new Date().toISOString() }),
+    ...(resultsCount !== undefined && { results_count: resultsCount }),
+    ...(error && { error })
+  }
+
+  await db.collection('background_search_jobs').updateOne(
+    { job_id: jobId },
+    { $set: update }
+  )
+
+  console.log(`📝 Updated job ${jobId} status: ${status}`)
+}
+
+/**
+ * Save background search results to MongoDB
+ */
+async function saveBackgroundResults(
+  jobId: string,
+  queryId: string,
+  models: any[],
+  source: 'huggingface' | 'roboflow'
+): Promise<void> {
+  const { getDatabase } = await import('@/lib/mongodb/connection')
+  const db = await getDatabase()
+
+  const ttlExpires = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+
+  await db.collection('background_search_results').insertOne({
+    job_id: jobId,
+    query_id: queryId,
+    models,
+    source,
+    created_at: new Date().toISOString(),
+    ttl_expires_at: ttlExpires.toISOString()
+  })
+
+  console.log(`💾 Saved ${models.length} ${source} models to MongoDB for job ${jobId}`)
+}
+
+/**
+ * Get background search results from MongoDB
+ */
+async function getBackgroundResults(queryId: string): Promise<{
+  status: string,
+  models: any[],
+  jobId?: string
+}> {
+  const { getDatabase } = await import('@/lib/mongodb/connection')
+  const db = await getDatabase()
+
+  // Get job status
+  const job = await db.collection('background_search_jobs').findOne({
+    query_id: queryId
+  })
+
+  if (!job) {
+    return { status: 'not_found', models: [] }
+  }
+
+  // If job is completed, get results
+  if (job.status === 'completed') {
+    const results = await db.collection('background_search_results')
+      .find({ query_id: queryId })
+      .toArray()
+
+    const allModels = results.flatMap(r => r.models || [])
+    console.log(`📦 Retrieved ${allModels.length} background models from MongoDB for query ${queryId}`)
+    return { status: 'completed', models: allModels, jobId: job.job_id }
+  }
+
+  return { status: job.status, models: [], jobId: job.job_id }
 }
 
 /**
@@ -2212,78 +2321,70 @@ async function saveAllModelsToAnalytics(queryId: string, models: any[], keywords
 
 /**
  * PHASE 1: Start background search for additional models
- * Runs in parallel and updates cache when complete
+ * Runs in parallel and saves results to MongoDB when complete
  */
-async function startBackgroundSearch(keywords: string[], queryId: string, taskType?: string): Promise<void> {
+async function startBackgroundSearch(keywords: string[], queryId: string, jobId: string, taskType?: string): Promise<void> {
   try {
-    console.log(`🔄 Starting background search for query: ${queryId}`)
-    const startTime = Date.now()
+    console.log(`🔄 Starting background search for job: ${jobId}`)
 
-    // Add timeout to prevent infinite running (5 minutes to allow Roboflow script to complete)
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Background search timeout')), 5 * 60 * 1000)
-    })
+    // Update job status to running
+    await updateJobStatus(jobId, 'running')
+
+    const startTime = Date.now()
 
     // Search Hugging Face models
     const hfPromise = searchHFModels(keywords, taskType, false)
+      .then(async (models) => {
+        if (models.length > 0) {
+          await saveBackgroundResults(jobId, queryId, models, 'huggingface')
+          console.log(`✅ Saved ${models.length} HF models to MongoDB`)
+        }
+        return models
+      })
+      .catch(error => {
+        console.error('❌ HF search failed:', error)
+        return []
+      })
 
-    // Search Roboflow models with timeout
-    const rfPromise = searchRoboflowModelsPython(keywords, taskType || 'object-detection').catch(error => {
-      console.error('❌ Roboflow search failed:', error)
-      return [] // Return empty array on failure
-    })
+    // Search Roboflow models
+    const rfPromise = searchRoboflowModelsPython(keywords, taskType || 'object-detection')
+      .then(async (models) => {
+        if (models.length > 0) {
+          await saveBackgroundResults(jobId, queryId, models, 'roboflow')
+          console.log(`✅ Saved ${models.length} Roboflow models to MongoDB`)
+        }
+        return models
+      })
+      .catch(error => {
+        console.error('❌ Roboflow search failed:', error)
+        return []
+      })
 
-    // Run both searches in parallel
-    const [huggingFaceModels, roboflowModels] = await Promise.race([
-      Promise.allSettled([hfPromise, rfPromise]),
-      timeoutPromise
-    ])
+    // Wait for both searches to complete
+    const [hfModels, rfModels] = await Promise.all([hfPromise, rfPromise])
 
-    const hfModels = huggingFaceModels.status === 'fulfilled' ? huggingFaceModels.value : []
-    const rfModels = roboflowModels.status === 'fulfilled' ? roboflowModels.value : []
-
+    const totalModels = hfModels.length + rfModels.length
     const duration = Date.now() - startTime
+
     console.log(`✅ Background search completed in ${duration}ms: ${hfModels.length} HF + ${rfModels.length} RF models`)
 
-    // Store results in cache for future requests
-    if (!globalThis.searchCache) {
-      globalThis.searchCache = new Map()
-    }
+    // Update job status to completed
+    await updateJobStatus(jobId, 'completed', totalModels)
 
-    const backgroundCacheKey = `background-${keywords.join('-')}-${taskType}`
+    // Save to analytics
     const allBackgroundModels = [...rfModels, ...hfModels].map(model => ({
       ...model,
-      // Keep original source from the models (roboflow or huggingface)
       isCurated: false
     }))
 
-    globalThis.searchCache.set(backgroundCacheKey, allBackgroundModels)
-    console.log(`💾 Cached ${allBackgroundModels.length} background models for: ${backgroundCacheKey}`)
-
-    // Mark background search as completed
-    const completionKey = `completed-${backgroundCacheKey}`
-    globalThis.searchCache.set(completionKey, [true]) // Store as array to match expected type
-    console.log(`✅ Marked background search as completed: ${completionKey}`)
-
-    // Save all background models to search_analytics without duplicates
     await saveAllModelsToAnalytics(queryId, allBackgroundModels, keywords, taskType)
-
-    // TODO: In Phase 2, we'll add WebSocket notifications here
-    // to notify the frontend when new models are available
 
   } catch (error) {
     console.error('❌ Background search failed:', error)
-
-    // Mark background search as completed even if it failed
-    const backgroundCacheKey = `background-${keywords.join('-')}-${taskType}`
-    const completionKey = `completed-${backgroundCacheKey}`
-    if (!globalThis.searchCache) {
-      globalThis.searchCache = new Map()
-    }
-    globalThis.searchCache.set(completionKey, [true]) // Store as array to match expected type
-    console.log(`✅ Marked background search as completed (failed): ${completionKey}`)
+    await updateJobStatus(jobId, 'failed', 0, error instanceof Error ? error.message : 'Unknown error')
   }
 }
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -2316,18 +2417,13 @@ export async function POST(request: NextRequest) {
     if (shouldSearch) {
       console.log(`🔍 First page - performing hybrid search for: ${searchKeywords}`)
 
-      // STEP 1: Get curated models from database (if any) with timeout
+      // STEP 1: Get curated models from database (if any)
       console.log(`⚡ [STEP 1] Loading curated models from database...`)
       console.log(`⚡ [STEP 1] Keywords: ${keywords.join(', ')}, Task Type: ${task_type}`)
       let curatedModels: any[] = []
       try {
-        // Add timeout to prevent hanging if MongoDB is slow/unavailable
-        console.log(`⏱️ [STEP 1] Starting getCuratedModels with 10s timeout...`)
-        const curatedModelsPromise = getCuratedModels(keywords, 20, task_type)
-        const timeoutPromise = new Promise<any[]>((_, reject) =>
-          setTimeout(() => reject(new Error('MongoDB query timeout')), 10000) // 10 second timeout
-        )
-        curatedModels = await Promise.race([curatedModelsPromise, timeoutPromise])
+        console.log(`🔍 [STEP 1] Calling getCuratedModels...`)
+        curatedModels = await getCuratedModels(keywords, 20, task_type)
         console.log(`✅ [STEP 1] Successfully loaded ${curatedModels.length} curated models`)
         if (curatedModels.length > 0) {
           console.log(`📋 [STEP 1] Sample model:`, JSON.stringify(curatedModels[0], null, 2).substring(0, 500))
@@ -2348,9 +2444,13 @@ export async function POST(request: NextRequest) {
         await saveAllModelsToAnalytics(queryId, curatedModels, keywords, task_type)
       }
 
-      // STEP 2: Always start background search for HF + Roboflow (non-blocking)
-      console.log(`🔄 Step 2: Starting background search for HF + Roboflow models...`)
-      startBackgroundSearch(keywords, queryId, task_type).catch(error => {
+      // STEP 2: Create background job and start search
+      console.log(`🔄 Step 2: Creating background search job...`)
+      const jobId = await createBackgroundJob(queryId, keywords, task_type)
+      console.log(`✅ Created background job: ${jobId}`)
+
+      // Start background search (non-blocking)
+      startBackgroundSearch(keywords, queryId, jobId, task_type).catch(error => {
         console.error('❌ Background search failed:', error)
       })
 
@@ -2360,71 +2460,25 @@ export async function POST(request: NextRequest) {
         console.log(`⚠️ No curated models found - background search will provide results when ready`)
       }
 
-      // Store in cache for subsequent pages (in a real implementation, use Redis or similar)
-      // For now, we'll store in memory - in production, use proper caching
-      if (!globalThis.searchCache) {
-        globalThis.searchCache = new Map()
-      }
-      globalThis.searchCache.set(cacheKey, allModels)
-
-      // Clean up old cache entries (keep only last 10 searches)
-      if (globalThis.searchCache && globalThis.searchCache.size > 10) {
-        const keysToDelete: string[] = []
-        let count = 0
-        globalThis.searchCache.forEach((value, key) => {
-          if (count < globalThis.searchCache!.size - 10) {
-            keysToDelete.push(key)
-          }
-          count++
-        })
-        keysToDelete.forEach(key => globalThis.searchCache!.delete(key))
-      }
-
-      console.log(`💾 Cached ${allModels.length} models for future pagination`)
+      console.log(`✅ Returning ${allModels.length} curated models immediately`)
 
     } else {
-      console.log(`📄 Page ${page} - using cached results for: ${searchKeywords}`)
+      console.log(`📄 Page ${page} - checking for additional results`)
 
-      // Use cached results for pagination
-      if (!globalThis.searchCache) {
-        globalThis.searchCache = new Map()
+      // For pagination, check if we have background results available
+      const backgroundResults = await getBackgroundResults(queryId)
+      if (backgroundResults.models.length > 0) {
+        // Merge with curated models if any
+        const existingIds = new Set(allModels.map(m => m.id))
+        const newBackgroundModels = backgroundResults.models.filter(m => m.id && !existingIds.has(m.id))
+        allModels = [...allModels, ...newBackgroundModels]
+        console.log(`📦 Added ${newBackgroundModels.length} background models (total: ${allModels.length})`)
       }
-
-
-      // Clear old cache entries with old format (temporary fix)
-      const oldKeys = Array.from(globalThis.searchCache.keys()).filter(key => key.includes('-') && /\d+$/.test(key))
-      if (oldKeys.length > 0) {
-        console.log(`🧹 Clearing ${oldKeys.length} old cache entries:`, oldKeys)
-        oldKeys.forEach(key => globalThis.searchCache!.delete(key))
-      }
-
-      // Also clear all cache if we have old format keys (nuclear option)
-      if (Array.from(globalThis.searchCache.keys()).some(key => /\d+$/.test(key))) {
-        console.log(`🧹 Nuclear option: clearing all cache due to old format keys`)
-        globalThis.searchCache.clear()
-      }
-
-      allModels = globalThis.searchCache.get(cacheKey) || []
-
-      if (allModels.length === 0) {
-        console.log(`⚠️ No cached results found, falling back to search`)
-        // Fallback to search if cache miss
-        const [huggingFaceModels, roboflowModels] = await Promise.allSettled([
-          searchHFModels(keywords, task_type, true),
-          // Search Roboflow models using Python script
-          searchRoboflowModelsPython(keywords, task_type || 'object-detection')
-        ])
-
-        const hfModels = huggingFaceModels.status === 'fulfilled' ? huggingFaceModels.value : []
-        const rfModels = roboflowModels.status === 'fulfilled' ? roboflowModels.value : []
-        allModels = [...rfModels, ...hfModels]
-      }
-
     }
 
     // Check if background search has completed and include those models
-    const backgroundCacheKey = `background-${keywords.join('-')}-${task_type}`
-    const backgroundModels = globalThis.searchCache?.get(backgroundCacheKey) || []
+    const backgroundResults = await getBackgroundResults(queryId)
+    const backgroundModels = backgroundResults.models || []
 
     if (backgroundModels.length > 0) {
       console.log(`🔄 Including ${backgroundModels.length} background models in response`)
@@ -2432,15 +2486,6 @@ export async function POST(request: NextRequest) {
       const existingIds = new Set(allModels.map(m => m.id))
       const newBackgroundModels = backgroundModels.filter(m => m.id && !existingIds.has(m.id))
       allModels = [...allModels, ...newBackgroundModels]
-
-      // Deduplicate final allModels array
-      const uniqueModelsMap = new Map<string, any>()
-      allModels.forEach(model => {
-        if (model.id && !uniqueModelsMap.has(model.id)) {
-          uniqueModelsMap.set(model.id, model)
-        }
-      })
-      allModels = Array.from(uniqueModelsMap.values())
 
       // Update analytics with merged models (background task)
       saveAllModelsToAnalytics(queryId, allModels, keywords, task_type).catch(err =>
@@ -2514,8 +2559,11 @@ export async function POST(request: NextRequest) {
         total: allModels.length
       },
       backgroundSearch: {
-        status: 'running',
-        message: 'Searching for additional models in the background...'
+        status: backgroundResults?.status || 'running',
+        message: backgroundResults?.status === 'completed'
+          ? `Found ${backgroundModels.length} additional models`
+          : 'Searching for additional models in the background...',
+        jobId: backgroundResults?.jobId
       }
     }, {
       headers: {

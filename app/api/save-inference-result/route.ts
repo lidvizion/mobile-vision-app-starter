@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 /**
  * /api/save-inference-result
  * Purpose: Store inference results in MongoDB for caching (both HF and Roboflow)
