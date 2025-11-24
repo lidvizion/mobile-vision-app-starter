@@ -1,68 +1,98 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+export const maxDuration = 60
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 /**
- * Check status of background search and return additional models if available
- * This endpoint is called by the frontend to check for new models
+ * GET /api/background-search-status?queryId=xxx
+ * 
+ * Poll this endpoint to check the status of a background search job
+ * and retrieve results when complete.
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const keywords = searchParams.get('keywords')
-    const taskType = searchParams.get('task_type')
-    
-    if (!keywords) {
+    const queryId = searchParams.get('queryId')
+
+    if (!queryId) {
       return NextResponse.json(
-        { error: 'Keywords parameter is required' },
+        { error: 'queryId is required' },
         { status: 400 }
       )
     }
-    
-    const cacheKey = `background-${keywords.split(',').join('-')}-${taskType}`
-    const completionKey = `completed-${cacheKey}`
-    
-    // Check if background search has completed
-    if (!globalThis.searchCache) {
-      globalThis.searchCache = new Map()
+
+    const { getDatabase } = await import('@/lib/mongodb/connection')
+    const db = await getDatabase()
+
+    // Get job status
+    const job = await db.collection('background_search_jobs').findOne({
+      query_id: queryId
+    })
+
+    if (!job) {
+      return NextResponse.json({
+        success: false,
+        status: 'not_found',
+        message: 'Background search job not found',
+        models: [],
+        count: 0
+      })
     }
-    
-    const backgroundModels = globalThis.searchCache.get(cacheKey)
-    const isCompleted = globalThis.searchCache.get(completionKey)
-    
-    if (isCompleted) {
-      // Background search has completed (regardless of whether models were found)
+
+    // If completed, get results
+    if (job.status === 'completed') {
+      const results = await db.collection('background_search_results')
+        .find({ query_id: queryId })
+        .toArray()
+
+      const allModels = results.flatMap(r => r.models || [])
+
       return NextResponse.json({
         success: true,
         status: 'completed',
-        models: backgroundModels || [],
-        count: backgroundModels ? backgroundModels.length : 0,
-        message: backgroundModels && backgroundModels.length > 0 
-          ? `Found ${backgroundModels.length} additional models!`
-          : 'Background search completed - no additional models found'
+        message: `Found ${allModels.length} additional models!`,
+        models: allModels,
+        count: allModels.length,
+        jobId: job.job_id,
+        completedAt: job.completed_at
       })
-    } else if (backgroundModels && backgroundModels.length > 0) {
-      // Models found but completion not marked (shouldn't happen, but handle gracefully)
+    }
+
+    // If failed
+    if (job.status === 'failed') {
       return NextResponse.json({
-        success: true,
-        status: 'completed',
-        models: backgroundModels,
-        count: backgroundModels.length,
-        message: `Found ${backgroundModels.length} additional models!`
-      })
-    } else {
-      // Background search is still running
-      return NextResponse.json({
-        success: true,
-        status: 'running',
+        success: false,
+        status: 'failed',
+        message: `Search failed: ${job.error || 'Unknown error'}`,
         models: [],
         count: 0,
-        message: 'Background search is still running...'
+        jobId: job.job_id,
+        error: job.error
       })
     }
-    
+
+    // Return current status (pending or running)
+    return NextResponse.json({
+      success: true,
+      status: job.status,
+      message: job.status === 'running'
+        ? 'Background search is in progress...'
+        : 'Search is pending...',
+      models: [],
+      count: 0,
+      jobId: job.job_id,
+      startedAt: job.started_at
+    })
+
   } catch (error) {
     console.error('❌ Background search status error:', error)
     return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        success: false,
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }

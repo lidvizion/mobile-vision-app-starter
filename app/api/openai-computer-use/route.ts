@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 /**
  * /api/openai-computer-use
  * Purpose: Use OpenAI Computer Use to browse Roboflow Universe and extract model information

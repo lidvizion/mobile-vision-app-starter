@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 /**
  * /api/save-edited-annotations
  * Purpose: Save edited annotations to inference_jobs collection as versioned fields

@@ -2,24 +2,23 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface BackgroundSearchStatus {
   success: boolean
-  status: 'running' | 'completed' | 'error'
+  status: 'running' | 'completed' | 'failed' | 'not_found'
   models: any[]
   count: number
   message: string
+  jobId?: string
 }
 
 interface UseBackgroundSearchProps {
-  keywords: string[]
-  taskType?: string
+  queryId?: string  // Changed from keywords to queryId
   enabled: boolean
   onNewModelsFound?: (models: any[]) => void
 }
 
-export function useBackgroundSearch({ 
-  keywords, 
-  taskType, 
-  enabled, 
-  onNewModelsFound 
+export function useBackgroundSearch({
+  queryId,
+  enabled,
+  onNewModelsFound
 }: UseBackgroundSearchProps) {
   const [status, setStatus] = useState<BackgroundSearchStatus>({
     success: false,
@@ -28,42 +27,37 @@ export function useBackgroundSearch({
     count: 0,
     message: 'Searching for additional models...'
   })
-  
+
   const [isPolling, setIsPolling] = useState(false)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const hasNotifiedRef = useRef(false)
   const hasStartedPollingRef = useRef(false)
 
   const checkBackgroundSearch = useCallback(async () => {
-    if (!enabled || !keywords.length) {
+    if (!enabled || !queryId) {
       return
     }
 
     try {
-      const params = new URLSearchParams({
-        keywords: keywords.join(','),
-        ...(taskType && { task_type: taskType })
-      })
-
-      const response = await fetch(`/api/background-search-status?${params}`)
+      const response = await fetch(`/api/background-search-status?queryId=${encodeURIComponent(queryId)}`)
       const data = await response.json()
 
-      if (data.success) {
+      if (data.success || data.status === 'not_found') {
         // Reduced logging to prevent spam
-        if (data.status === 'completed' || data.status === 'error') {
+        if (data.status === 'completed' || data.status === 'failed') {
           console.log(`🔍 Background search ${data.status}: ${data.count} models found`)
         }
         setStatus(data)
-        
+
         // If search completed and we have new models, notify parent (only once)
         if (data.status === 'completed' && data.models.length > 0 && !hasNotifiedRef.current) {
           console.log(`🔍 DEBUG: Triggering onNewModelsFound with ${data.models.length} models`)
           hasNotifiedRef.current = true
           onNewModelsFound?.(data.models)
         }
-        
-        // Stop polling if completed or error
-        if (data.status === 'completed' || data.status === 'error') {
+
+        // Stop polling if completed, failed, or not found
+        if (data.status === 'completed' || data.status === 'failed' || data.status === 'not_found') {
           if (intervalRef.current) {
             clearInterval(intervalRef.current)
             intervalRef.current = null
@@ -76,7 +70,7 @@ export function useBackgroundSearch({
       console.error('Error checking background search status:', error)
       setStatus(prev => ({
         ...prev,
-        status: 'error',
+        status: 'failed',
         message: 'Failed to check search status'
       }))
       if (intervalRef.current) {
@@ -86,20 +80,20 @@ export function useBackgroundSearch({
       setIsPolling(false)
       hasStartedPollingRef.current = false
     }
-  }, [enabled, keywords.join(','), taskType, onNewModelsFound])
+  }, [enabled, queryId, onNewModelsFound])
 
   // Start polling when enabled - silent operation
   useEffect(() => {
-    if (enabled && !isPolling && !hasStartedPollingRef.current) {
+    if (enabled && queryId && !isPolling && !hasStartedPollingRef.current) {
       hasStartedPollingRef.current = true
       setIsPolling(true)
       // Check immediately
       checkBackgroundSearch()
-      
-      // Then poll every 10 seconds (much less frequent to reduce lag)
-      intervalRef.current = setInterval(checkBackgroundSearch, 10000)
+
+      // Then poll every 5 seconds (faster for better UX)
+      intervalRef.current = setInterval(checkBackgroundSearch, 5000)
     }
-    
+
     // Cleanup function
     return () => {
       if (intervalRef.current) {
@@ -109,9 +103,9 @@ export function useBackgroundSearch({
       setIsPolling(false)
       hasStartedPollingRef.current = false
     }
-  }, [enabled, keywords.join(','), taskType])
+  }, [enabled, queryId, checkBackgroundSearch])
 
-  // Reset when keywords change
+  // Reset when queryId changes
   useEffect(() => {
     setStatus({
       success: false,
@@ -123,7 +117,7 @@ export function useBackgroundSearch({
     setIsPolling(false)
     hasNotifiedRef.current = false
     hasStartedPollingRef.current = false
-  }, [keywords.join(','), taskType])
+  }, [queryId])
 
   return {
     status,

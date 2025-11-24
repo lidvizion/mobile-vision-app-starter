@@ -4,6 +4,8 @@ import { markModelAsWorking, markModelAsFailed } from '@/lib/mongodb/validatedMo
 
 // Allow longer execution time for inference in serverless environments
 export const maxDuration = 30; // 30 seconds for Amplify/Vercel
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 /**
  * /api/roboflow-inference
