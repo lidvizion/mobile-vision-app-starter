@@ -399,6 +399,7 @@ export async function searchRoboflowModelsNode(keywords: string, maxProjects: nu
 
         // Dynamic imports to avoid Next.js build issues
         const puppeteer = (await import('puppeteer-core')).default;
+        // @ts-ignore - @sparticuz/chromium is externalized in next.config.js and types may not be available at build time
         const chromium = (await import('@sparticuz/chromium')).default;
 
         // Configure browser launch options for Lambda vs Local
