@@ -2137,8 +2137,35 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
     const validatedModels = await searchValidatedModels(keywords, taskType, limit)
     console.log(`📊 [getCuratedModels] searchValidatedModels returned ${validatedModels.length} models`)
 
+    // 🆕 INJECT GEMINI 3 PRO AS FIRST MODEL
+    const geminiModel = {
+      model_id: 'gemini-3-pro-preview',
+      relevanceScore: 999999, // Highest score to appear first
+      name: 'Gemini 3 Pro',
+      author: 'Google',
+      task_type: taskType || 'object-detection',
+      pipeline_tag: 'image-analysis',
+      validated: true,
+      classes: keywords, // Use search keywords as capabilities
+      class_count: keywords.length,
+      downloads: 1000000,
+      likes: 10000,
+      tags: ['vision', 'multimodal', 'google', 'gemini', 'detection', 'classification', 'segmentation'],
+      library_name: 'google-ai',
+      inferenceEndpoint: '/api/gemini-inference',
+      inference_endpoint: '/api/gemini-inference',
+      supportsInference: true,
+      works: true,
+      hosted: true,
+      inferenceStatus: 'hosted',
+      workingDate: new Date()
+    }
+    
+    // Prepend Gemini to the validated models list
+    const allModels = [geminiModel, ...validatedModels]
+
     // Convert to the expected format
-    const curatedModels = validatedModels.map(model => {
+    const curatedModels = allModels.map(model => {
       // Detect if this is a Roboflow model (check multiple formats)
       const modelIdLower = (model.model_id || '').toLowerCase()
       const isRoboflowModel =
@@ -2415,83 +2442,48 @@ export async function POST(request: NextRequest) {
     const searchKeywords = keywords.join(' ')
 
     if (shouldSearch) {
-      console.log(`🔍 First page - performing hybrid search for: ${searchKeywords}`)
-
       // STEP 1: Get curated models from database (if any)
-      console.log(`⚡ [STEP 1] Loading curated models from database...`)
-      console.log(`⚡ [STEP 1] Keywords: ${keywords.join(', ')}, Task Type: ${task_type}`)
       let curatedModels: any[] = []
       try {
-        console.log(`🔍 [STEP 1] Calling getCuratedModels...`)
         curatedModels = await getCuratedModels(keywords, 20, task_type)
-        console.log(`✅ [STEP 1] Successfully loaded ${curatedModels.length} curated models`)
-        if (curatedModels.length > 0) {
-          console.log(`📋 [STEP 1] Sample model:`, JSON.stringify(curatedModels[0], null, 2).substring(0, 500))
-        }
       } catch (error) {
-        console.error(`🔴 [STEP 1] Failed to load curated models:`, error)
-        console.error(`🔴 [STEP 1] Error type:`, error instanceof Error ? error.constructor.name : typeof error)
-        console.error(`🔴 [STEP 1] Error message:`, error instanceof Error ? error.message : String(error))
-        console.error(`🔴 [STEP 1] Will rely on background search for results`)
-        curatedModels = [] // Fallback to empty array
+        console.error('Failed to load curated models:', error)
+        curatedModels = []
       }
 
-      // Always start with curated models (even if empty)
+      // Start with curated models
       allModels = curatedModels
 
-      // Save curated models to analytics immediately (if any)
-      if (curatedModels.length > 0) {
-        await saveAllModelsToAnalytics(queryId, curatedModels, keywords, task_type)
-      }
-
-      // STEP 2: Create background job and start search
-      console.log(`🔄 Step 2: Creating background search job...`)
-      const jobId = await createBackgroundJob(queryId, keywords, task_type)
-      console.log(`✅ Created background job: ${jobId}`)
-
-      // Start background search (non-blocking)
-      startBackgroundSearch(keywords, queryId, jobId, task_type).catch(error => {
-        console.error('❌ Background search failed:', error)
-      })
-
-      if (curatedModels.length > 0) {
-        console.log(`⚡ Returning ${allModels.length} curated models immediately + background search running`)
-      } else {
-        console.log(`⚠️ No curated models found - background search will provide results when ready`)
-      }
-
-      console.log(`✅ Returning ${allModels.length} curated models immediately`)
-
-    } else {
-      console.log(`📄 Page ${page} - checking for additional results`)
-
-      // For pagination, check if we have background results available
-      const backgroundResults = await getBackgroundResults(queryId)
-      if (backgroundResults.models.length > 0) {
-        // Merge with curated models if any
+      // STEP 2: Search HuggingFace immediately
+      try {
+        const hfModels = await searchHFModels(keywords, task_type, false)
+        
+        // Merge with curated models, avoiding duplicates
         const existingIds = new Set(allModels.map(m => m.id))
-        const newBackgroundModels = backgroundResults.models.filter(m => m.id && !existingIds.has(m.id))
-        allModels = [...allModels, ...newBackgroundModels]
-        console.log(`📦 Added ${newBackgroundModels.length} background models (total: ${allModels.length})`)
+        const newHfModels = hfModels.filter(m => m.id && !existingIds.has(m.id))
+        allModels = [...allModels, ...newHfModels]
+      } catch (error) {
+        console.error('HuggingFace search failed:', error)
+      }
+
+      // STEP 3: Search Roboflow immediately
+      try {
+        const rfModels = await searchRoboflowModelsPython(keywords, task_type || 'object-detection')
+        
+        // Merge with existing models, avoiding duplicates
+        const existingIds = new Set(allModels.map(m => m.id))
+        const newRfModels = rfModels.filter(m => m.id && !existingIds.has(m.id))
+        allModels = [...allModels, ...newRfModels]
+      } catch (error) {
+        console.error('Roboflow search failed:', error)
+      }
+
+      // Save all models to analytics
+      if (allModels.length > 0) {
+        await saveAllModelsToAnalytics(queryId, allModels, keywords, task_type)
       }
     }
 
-    // Check if background search has completed and include those models
-    const backgroundResults = await getBackgroundResults(queryId)
-    const backgroundModels = backgroundResults.models || []
-
-    if (backgroundModels.length > 0) {
-      console.log(`🔄 Including ${backgroundModels.length} background models in response`)
-      // Merge background models with curated models, avoiding duplicates
-      const existingIds = new Set(allModels.map(m => m.id))
-      const newBackgroundModels = backgroundModels.filter(m => m.id && !existingIds.has(m.id))
-      allModels = [...allModels, ...newBackgroundModels]
-
-      // Update analytics with merged models (background task)
-      saveAllModelsToAnalytics(queryId, allModels, keywords, task_type).catch(err =>
-        console.error('Background analytics update error:', err)
-      )
-    }
 
     // Final deduplication pass before pagination
     const finalUniqueModelsMap = new Map<string, any>()
@@ -2555,15 +2547,9 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
       sources: {
         curated: allModels.filter(m => m.isCurated).length,
-        background: allModels.filter(m => !m.isCurated).length, // Count non-curated models
+        huggingface: allModels.filter(m => m.source === 'huggingface').length,
+        roboflow: allModels.filter(m => m.source === 'roboflow').length,
         total: allModels.length
-      },
-      backgroundSearch: {
-        status: backgroundResults?.status || 'running',
-        message: backgroundResults?.status === 'completed'
-          ? `Found ${backgroundModels.length} additional models`
-          : 'Searching for additional models in the background...',
-        jobId: backgroundResults?.jobId
       }
     }, {
       headers: {

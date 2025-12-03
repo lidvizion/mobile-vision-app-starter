@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { observer } from 'mobx-react-lite'
+import Image from 'next/image'
 import {
   ArrowRight, ArrowRightLeft, Box, Lightbulb, Download, ExternalLink,
-  Smartphone, ChevronDown, ChevronUp, Filter, Grid, Grid3X3, Image, Layers,
+  Smartphone, ChevronDown, ChevronUp, Filter, Grid, Grid3X3, Image as ImageIcon, Layers,
   Layers3, MapPin, Square, Tag, Target, Type, Video, VideoIcon, AlertCircle,
   CheckCircle, FileText, FileVideo, Zap, Eye, Scan, Focus, Camera,
   ScanLine, ScanFace, ScanBarcode, ScanEye, ScanSearch, ScanText, Globe,
@@ -29,11 +30,97 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
   const [showBackgroundSearchIndicator, setShowBackgroundSearchIndicator] = useState(false)
   const [hasBackgroundSearchCompleted, setHasBackgroundSearchCompleted] = useState(false)
   const [currentQueryId, setCurrentQueryId] = useState<string | undefined>(undefined)
+  // Initialize hasAutoRedirected from sessionStorage to persist across navigation
+  const [hasAutoRedirected, setHasAutoRedirected] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('gemini-auto-redirect-done') === 'true'
+    }
+    return false
+  })
+  const [showGeminiReady, setShowGeminiReady] = useState(false)
+  const geminiButtonRef = useRef<HTMLButtonElement | null>(null)
 
   // React Query hooks
   const queryRefineMutation = useQueryRefine()
   const searchModels = useModelSearch()  // Renamed for clarity
   const saveSelectionMutation = useSaveModelSelection()
+
+  // Auto-redirect to Gemini when it's the first model
+  // Only runs on first search, not when returning via "Change Model"
+  useEffect(() => {
+    const modelList = modelViewStore.modelList
+    
+    // Check if this is a return visit (models already loaded from previous search)
+    const isReturnVisit = typeof window !== 'undefined' && 
+      sessionStorage.getItem('gemini-auto-redirect-done') === 'true'
+    
+    console.log('🔍 Auto-redirect useEffect running:', {
+      modelListLength: modelList.length,
+      firstModelId: modelList.length > 0 ? modelList[0].id : 'none',
+      hasAutoRedirected,
+      isReturnVisit,
+      showGeminiReady
+    })
+
+    // Skip auto-redirect if:
+    // 1. Already redirected in this session
+    // 2. This is a return visit (user clicked "Change Model")
+    // 3. Models aren't loaded yet
+    // 4. First model isn't Gemini
+    if (
+      modelList.length > 0 && 
+      modelList[0].id === 'gemini-3-pro-preview' && 
+      !hasAutoRedirected && 
+      !isReturnVisit
+    ) {
+      console.log('✅ Gemini detected as first model, setting up auto-redirect')
+      setShowGeminiReady(true)
+      
+      const timer = setTimeout(() => {
+        console.log('⏰ Auto-redirect timer fired, attempting to click button')
+        
+        // Use requestAnimationFrame to ensure DOM is ready
+        requestAnimationFrame(() => {
+          // Try ref first (more reliable)
+          if (geminiButtonRef.current) {
+            console.log('✅ Found button via ref, clicking...')
+            geminiButtonRef.current.click()
+            setHasAutoRedirected(true)
+            // Persist flag to sessionStorage
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('gemini-auto-redirect-done', 'true')
+            }
+            return
+          }
+          
+          // Fallback to querySelector with corrected selector
+          // The data-model-id is ON the button, not on a parent element
+          const button = document.querySelector('button[data-model-id="gemini-3-pro-preview"]') as HTMLButtonElement
+          if (button) {
+            console.log('✅ Found button via querySelector, clicking...')
+            button.click()
+            setHasAutoRedirected(true)
+            // Persist flag to sessionStorage
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('gemini-auto-redirect-done', 'true')
+            }
+          } else {
+            console.error('❌ Button not found! Selector: button[data-model-id="gemini-3-pro-preview"]')
+            console.log('Available buttons with data-model-id:', Array.from(document.querySelectorAll('button[data-model-id]')).map(btn => ({
+              id: btn.getAttribute('data-model-id'),
+              text: btn.textContent?.trim()
+            })))
+            console.log('All buttons in model cards:', document.querySelectorAll('.card-floating button'))
+          }
+        })
+      }, 1500)
+      
+      return () => {
+        console.log('🧹 Cleaning up auto-redirect timer')
+        clearTimeout(timer)
+      }
+    }
+  }, [modelViewStore.modelList.length, hasAutoRedirected])
 
   // Reset background search indicator when component mounts or query changes significantly
   useEffect(() => {
@@ -150,6 +237,13 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
     // Reset notification state for new search
     // Reset background search indicator when query changes
     setHasBackgroundSearchCompleted(false)
+    
+    // Clear auto-redirect flag for new search (allow auto-redirect on fresh searches)
+    // This ensures auto-redirect works for new searches but not when returning via "Change Model"
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('gemini-auto-redirect-done')
+      setHasAutoRedirected(false)
+    }
 
     try {
       // Step 1: Refine query
@@ -413,6 +507,15 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           </div>
         )}
 
+        {/* Gemini 3 Pro Ready Message */}
+        {showGeminiReady && (
+          <div className="text-center mb-4 animate-fade-in">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-full text-sm font-medium text-wells-dark-grey">
+              <Zap className="w-4 h-4 text-blue-600" />
+              <span>Gemini 3 Pro Ready!</span>
+            </div>
+          </div>
+        )}
 
         {/* Model Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -444,7 +547,11 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 {/* Model Type Icon */}
                 <div className="flex items-center justify-center mb-2">
                   <div className="w-12 h-12 bg-gradient-to-br from-wells-dark-grey/5 to-wells-dark-grey/10 rounded-xl flex items-center justify-center border border-wells-warm-grey/20">
-                    <TaskIcon className="w-6 h-6 text-wells-dark-grey" />
+                    {model.id === 'gemini-3-pro-preview' ? (
+                      <Image src="/icons/gemini-icon.svg" alt="Gemini" width={40} height={40} />
+                    ) : (
+                      <TaskIcon className="w-6 h-6 text-wells-dark-grey" />
+                    )}
                   </div>
                 </div>
 
@@ -534,7 +641,12 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 {/* Action Buttons */}
                 <div className="flex gap-2 mt-auto flex-shrink-0">
                   <button
-                    onClick={() => handleSelectModel(model)}
+                    ref={model.id === 'gemini-3-pro-preview' ? geminiButtonRef : null}
+                    data-model-id={model.id}
+                    onClick={() => {
+                      console.log('🔘 Use Model button clicked for:', model.id, model.name)
+                      handleSelectModel(model)
+                    }}
                     className="flex-1 px-4 py-3 bg-wells-dark-grey text-white rounded-lg hover:bg-wells-warm-grey transition-colors font-semibold text-sm flex items-center justify-center gap-2 group-hover:scale-[1.02] transition-transform"
                   >
                     Use Model
