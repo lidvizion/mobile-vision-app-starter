@@ -6,7 +6,7 @@ export const ImageFileSchema = z.object({
     (type) => ['image/jpeg', 'image/png', 'image/webp'].includes(type),
     { message: 'Only JPEG, PNG, and WebP files are supported' }
   ),
-  size: z.number().max(10 * 1024 * 1024, 'File size must be less than 10MB'),
+  size: z.number().max(20 * 1024 * 1024, 'File size must be less than 20MB'),
   name: z.string().min(1, 'File name is required')
 });
 
@@ -132,7 +132,8 @@ export const CVResponseSchema = z.object({
   model_version: z.string(),
   results: CVResultsSchema,
   processing_time: z.number().min(0),
-  image_metadata: ImageMetadataSchema
+  image_metadata: ImageMetadataSchema,
+  job_id: z.string().optional() // Optional: job_id from inference_jobs collection
 });
 
 // Validation functions

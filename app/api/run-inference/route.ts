@@ -3,6 +3,9 @@ import crypto from 'crypto'
 import { markModelAsWorking, markModelAsFailed } from '@/lib/mongodb/validatedModels'
 import OpenAI from 'openai'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 /**
  * /api/run-inference
  * Purpose: Run inference on a Hugging Face model
@@ -326,6 +329,49 @@ export async function POST(request: NextRequest) {
     const { model_id: modelId, inputs, parameters } = body
     model_id = modelId
 
+    // PRIORITY 1: Check for Gemini models FIRST (before any other logic)
+    if (model_id === 'gemini-3-pro-preview' || model_id.toLowerCase().includes('gemini')) {
+      // Validate inputs for Gemini
+      if (!inputs) {
+        return NextResponse.json(
+          { 
+            error: 'inputs are required',
+            requestId,
+            timestamp: new Date().toISOString()
+          },
+          { status: 400 }
+        )
+      }
+
+      const geminiResponse = await fetch(`${request.nextUrl.origin}/api/gemini-inference`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_id,
+          inputs,
+          parameters
+        })
+      })
+
+      if (!geminiResponse.ok) {
+        const errorText = await geminiResponse.text()
+        throw new Error(`Gemini API error: ${geminiResponse.status} - ${errorText}`)
+      }
+
+      const geminiResult = await geminiResponse.json()
+      const duration = Date.now() - startTime
+
+      return NextResponse.json({
+        success: true,
+        results: geminiResult.results || geminiResult,
+        model_id,
+        timestamp: new Date().toISOString(),
+        duration,
+        requestId
+      })
+    }
+
+    // Validation for non-Gemini models
     if (!model_id || !inputs) {
       return NextResponse.json(
         { 

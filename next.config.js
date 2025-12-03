@@ -22,6 +22,12 @@ const nextConfig = {
     minimumCacheTTL: 60,
   },
   webpack: (config, { dev, isServer }) => {
+    // Exclude puppeteer-core and chromium from webpack bundle (server-side only)
+    if (isServer) {
+      config.externals = config.externals || [];
+      config.externals.push('puppeteer-core', '@sparticuz/chromium');
+    }
+
     if (!dev && !isServer) {
       config.optimization.splitChunks.cacheGroups = {
         ...config.optimization.splitChunks.cacheGroups,

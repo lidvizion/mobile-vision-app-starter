@@ -39,6 +39,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
   // Automatic processing when both image and model are selected (only once)
   useEffect(() => {
     const autoProcess = async () => {
+      // Only process if we have all required data, not currently processing, and haven't already processed this image
       if (currentImageFile && selectedModel && !isProcessing && selectedImage && !autoProcessTriggered.current) {
         autoProcessTriggered.current = true
         const context = createLogContext(currentTask, 'CameraPreview', 'auto-process')
@@ -54,12 +55,16 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
         } catch (error) {
           logger.error('Auto-processing failed', context, error as Error)
           setError(`Auto-processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          // DON'T reset trigger on error - keep it true to prevent automatic retries
+          // User can manually retry by changing the image or model
         }
       }
     }
 
     autoProcess()
-  }, [currentImageFile, selectedModel, isProcessing, selectedImage, currentTask, onImageProcessed, processImage])
+    // Only depend on image/model changes, not on callbacks that might change on every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentImageFile, selectedModel, selectedImage, currentTask])
 
   // Reset auto-process trigger when image changes
   useEffect(() => {
@@ -309,9 +314,18 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
             
             <button
               onClick={() => {
-                // Use the selected model ID directly instead of trying to parse it from error message
                 if (selectedModel) {
-                  window.open(`https://huggingface.co/${selectedModel.id}`, '_blank')
+                  // Use modelUrl if available, otherwise construct URL based on source
+                  if (selectedModel.modelUrl) {
+                    window.open(selectedModel.modelUrl, '_blank')
+                  } else if (selectedModel.source === 'roboflow') {
+                    // For Roboflow models, construct URL from model ID
+                    // Model ID format is typically "workspace/project/version" or similar
+                    window.open(`https://universe.roboflow.com/${selectedModel.id}`, '_blank')
+                  } else {
+                    // Default to Hugging Face
+                    window.open(`https://huggingface.co/${selectedModel.id}`, '_blank')
+                  }
                 }
               }}
               className="flex items-center gap-2 px-3 py-2 bg-gray-600 text-white rounded-xl hover:bg-gray-700 transition-colors text-sm font-medium"

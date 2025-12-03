@@ -1,6 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { useCVTask } from '@/hooks/useCVTask'
 import { useResultHistory } from '@/hooks/useResultHistory'
 import GuidedModelFlow from '@/components/GuidedModelFlow'
@@ -14,6 +16,7 @@ import { Github, ExternalLink, Sparkles, ArrowRight } from 'lucide-react'
 import LidVizionIcon from '@/components/LidVizionIcon'
 
 export default function Home() {
+  const router = useRouter()
   const [selectedModel, setSelectedModel] = useState<ModelMetadata | null>(null)
   const { currentTask, processImage, isProcessing, lastResponse } = useCVTask(selectedModel)
   
@@ -21,7 +24,8 @@ export default function Home() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [viewingHistoryItem, setViewingHistoryItem] = useState<ResultHistoryItem | null>(null)
 
-  const handleImageProcessed = (response: any) => {
+  // Memoize handleImageProcessed to prevent unnecessary re-renders
+  const handleImageProcessed = useCallback((response: any) => {
     if (selectedImage) {
       addResult({
         image_url: selectedImage,
@@ -29,7 +33,7 @@ export default function Home() {
         response
       })
     }
-  }
+  }, [selectedImage, currentTask, addResult])
 
   const handleViewHistoryItem = (item: ResultHistoryItem) => {
     setViewingHistoryItem(item)
@@ -119,11 +123,27 @@ export default function Home() {
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-xs text-wells-warm-grey mb-1">Selected Model</div>
-                      <div className="font-semibold text-wells-dark-grey">{selectedModel.name}</div>
-                      <div className="text-sm text-wells-warm-grey">{selectedModel.source} • {selectedModel.task}</div>
+                      <div className="flex items-center gap-2">
+                        {selectedModel.id === 'gemini-3-pro-preview' && (
+                          <Image 
+                            src="/icons/gemini-icon.svg" 
+                            alt="Gemini" 
+                            width={32} 
+                            height={32}
+                            className="flex-shrink-0"
+                          />
+                        )}
+                        <div className="font-semibold text-wells-dark-grey">{selectedModel.name}</div>
+                      </div>
+                      <div className="text-sm text-wells-warm-grey">
+                        {selectedModel.id === 'gemini-3-pro-preview' ? 'Google' : selectedModel.source} • {selectedModel.task}
+                      </div>
                     </div>
                     <button
-                      onClick={() => setSelectedModel(null)}
+                      onClick={() => {
+                        setSelectedModel(null)
+                        router.push('/')
+                      }}
                       className="px-4 py-2 text-sm border border-wells-warm-grey/30 rounded-lg hover:bg-wells-warm-grey/5"
                     >
                       Change Model

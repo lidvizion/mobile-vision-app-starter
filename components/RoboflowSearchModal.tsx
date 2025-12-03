@@ -25,12 +25,12 @@ interface ModelResult extends ModelMetadata {
   api_endpoint?: string
 }
 
-export default function RoboflowSearchModal({ 
-  isOpen, 
-  onClose, 
-  onResults, 
+export default function RoboflowSearchModal({
+  isOpen,
+  onClose,
+  onResults,
   searchKeywords,
-  maxModels = 8 
+  maxModels = 8
 }: RoboflowSearchModalProps) {
   const [isSearching, setIsSearching] = useState(false)
   const [searchResults, setSearchResults] = useState<ModelResult[]>([])
@@ -41,15 +41,16 @@ export default function RoboflowSearchModal({
     setSearchProgress('Starting AI-powered search...')
 
     try {
-      // Call the Python script for Roboflow search
-      const response = await fetch('/api/roboflow-python-search', {
+      // Call the Node.js scraper (serverless-compatible)
+      const response = await fetch('/api/model-search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          keywords: searchKeywords,
-          max_models: maxModels
+          query: searchKeywords.join(' '),
+          // task_type will be inferred by backend from query (ChatGPT analysis)
+          max_results: maxModels
         })
       })
 
@@ -58,12 +59,12 @@ export default function RoboflowSearchModal({
       }
 
       const data = await response.json()
-      
-      if (data.success && data.models) {
+
+      if (data.models && data.models.length > 0) {
         setSearchResults(data.models)
         setSearchProgress(`Found ${data.models.length} models`)
       } else {
-        throw new Error(data.error || 'No models found')
+        throw new Error('No models found')
       }
 
     } catch (error) {
@@ -81,7 +82,7 @@ export default function RoboflowSearchModal({
   }
 
   const exportResults = () => {
-    const resultsText = searchResults.map((model, index) => 
+    const resultsText = searchResults.map((model, index) =>
       `${index + 1}. ${model.name}
    Author: ${model.author}
    mAP: ${model.metrics?.mAP?.toFixed(1) || 'N/A'}%
@@ -159,7 +160,7 @@ export default function RoboflowSearchModal({
               <div className="mb-4">
                 <h3 className="font-semibold mb-2">Search Progress</h3>
                 <div className="text-sm text-gray-600 mb-4">{searchProgress}</div>
-                
+
                 {searchResults.length > 0 && (
                   <button
                     onClick={exportResults}

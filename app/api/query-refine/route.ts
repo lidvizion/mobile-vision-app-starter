@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 /**
  * /api/query-refine
  * Purpose: Refine user text into optimized search keywords
@@ -35,10 +38,10 @@ export async function POST(request: NextRequest) {
     // Extract keywords using ChatGPT API
     const extracted = await extractKeywordsWithChatGPT(query)
     let allKeywords = extracted.keywords
-    
+
     // Determine task type from ChatGPT response
     const taskType = extracted.task_type || 'detection'
-    
+
     // Enhance keywords for specific task types
     if (taskType === 'segmentation') {
       // For segmentation, prioritize segmentation-specific keywords over domain-specific ones
@@ -96,7 +99,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Query refine error:', error)
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to refine query',
         details: error instanceof Error ? error.message : 'Unknown error'
       },
@@ -162,14 +165,14 @@ Example output: {"keywords": ["basketball", "sports", "detection", "players", "p
     return JSON.parse(content)
   } catch (error) {
     console.error('ChatGPT API error:', error)
-    
+
     // Fallback to simple keyword extraction 
     const words = query.toLowerCase()
       .replace(/[^\w\s]/g, ' ')
       .split(/\s+/)
       .filter(word => word.length > 2)
       .filter(word => !['identify', 'detect', 'find', 'locate', 'show', 'get'].includes(word))
-    
+
     return {
       keywords: words.slice(0, 5),
       task_type: 'object-detection',
