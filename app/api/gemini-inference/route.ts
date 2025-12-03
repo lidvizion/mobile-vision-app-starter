@@ -168,6 +168,15 @@ Return the results as a JSON array with detected objects and their properties.`
       }]
     }
 
+    // Filter results by confidence threshold
+    // Note: Gemini API returns results with its own confidence scores (0-1 range)
+    // We filter to only include detections with confidence >= 0.3 to show more bounding boxes in the UI
+    const CONFIDENCE_THRESHOLD = 0.3
+    results = results.filter((result: any) => {
+      const score = result.score || result.confidence || 0
+      return score >= CONFIDENCE_THRESHOLD
+    })
+
     const duration = Date.now() - startTime
 
     return NextResponse.json({
