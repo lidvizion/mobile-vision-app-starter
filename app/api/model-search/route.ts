@@ -2466,17 +2466,18 @@ export async function POST(request: NextRequest) {
         console.error('HuggingFace search failed:', error)
       }
 
-      // STEP 3: Search Roboflow immediately
-      try {
-        const rfModels = await searchRoboflowModelsPython(keywords, task_type || 'object-detection')
-        
-        // Merge with existing models, avoiding duplicates
-        const existingIds = new Set(allModels.map(m => m.id))
-        const newRfModels = rfModels.filter(m => m.id && !existingIds.has(m.id))
-        allModels = [...allModels, ...newRfModels]
-      } catch (error) {
-        console.error('Roboflow search failed:', error)
-      }
+      // STEP 3: Roboflow search disabled to prevent 504 timeout
+      // DISABLED:       // STEP 3: Search Roboflow immediately
+      // DISABLED:       try {
+      // DISABLED:         const rfModels = await searchRoboflowModelsPython(keywords, task_type || 'object-detection')
+      // DISABLED:         
+      // DISABLED:         // Merge with existing models, avoiding duplicates
+      // DISABLED:         const existingIds = new Set(allModels.map(m => m.id))
+      // DISABLED:         const newRfModels = rfModels.filter(m => m.id && !existingIds.has(m.id))
+      // DISABLED:         allModels = [...allModels, ...newRfModels]
+      // DISABLED:       } catch (error) {
+      // DISABLED:         console.error('Roboflow search failed:', error)
+      // DISABLED:       }
 
       // Save all models to analytics
       if (allModels.length > 0) {
