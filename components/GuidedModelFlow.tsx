@@ -130,7 +130,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
   // Background search hook - only enable after initial search is complete
   const { status: backgroundStatus, isPolling } = useBackgroundSearch({
     queryId: currentQueryId,  // Use queryId from API response
-    enabled: !modelViewStore.isSearching && modelViewStore.modelList.length > 0 && !hasBackgroundSearchCompleted && !!currentQueryId, // Only run once per search
+    enabled: false, // DISABLED: Roboflow background search is disabled, so no background jobs exist
     onNewModelsFound: (newModels) => {
       console.log(`🔍 Found ${newModels.length} new models`)
 
