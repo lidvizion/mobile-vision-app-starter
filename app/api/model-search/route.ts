@@ -2373,19 +2373,23 @@ async function startBackgroundSearch(keywords: string[], queryId: string, jobId:
         return []
       })
 
-    // Search Roboflow models
-    const rfPromise = searchRoboflowModelsPython(keywords, taskType || 'object-detection')
-      .then(async (models) => {
-        if (models.length > 0) {
-          await saveBackgroundResults(jobId, queryId, models, 'roboflow')
-          console.log(`✅ Saved ${models.length} Roboflow models to MongoDB`)
-        }
-        return models
-      })
-      .catch(error => {
-        console.error('❌ Roboflow search failed:', error)
-        return []
-      })
+    // Search Roboflow models (skip if disabled via env var or if causing issues)
+    const enableRoboflow = process.env.ENABLE_ROBOFLOW_BACKGROUND_SEARCH !== 'false'
+    const rfPromise = enableRoboflow
+      ? searchRoboflowModelsPython(keywords, taskType || 'object-detection')
+          .then(async (models) => {
+            if (models.length > 0) {
+              await saveBackgroundResults(jobId, queryId, models, 'roboflow')
+              console.log(`✅ Saved ${models.length} Roboflow models to MongoDB`)
+            }
+            return models
+          })
+          .catch(error => {
+            console.error('❌ Roboflow search failed:', error)
+            // Don't fail the entire background search if Roboflow fails
+            return []
+          })
+      : Promise.resolve([])
 
     // Wait for both searches to complete
     const [hfModels, rfModels] = await Promise.all([hfPromise, rfPromise])

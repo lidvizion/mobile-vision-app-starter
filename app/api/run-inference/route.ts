@@ -354,11 +354,35 @@ export async function POST(request: NextRequest) {
       })
 
       if (!geminiResponse.ok) {
-        const errorText = await geminiResponse.text()
+        let errorText = ''
+        try {
+          errorText = await geminiResponse.text()
+          // Try to parse as JSON for better error messages
+          try {
+            const errorJson = JSON.parse(errorText)
+            errorText = errorJson.error?.message || errorJson.message || errorText
+          } catch {
+            // Not JSON, use text as-is
+          }
+        } catch (e) {
+          errorText = `Failed to read error response: ${e instanceof Error ? e.message : 'Unknown error'}`
+        }
         throw new Error(`Gemini API error: ${geminiResponse.status} - ${errorText}`)
       }
 
-      const geminiResult = await geminiResponse.json()
+      let geminiResult
+      try {
+        geminiResult = await geminiResponse.json()
+      } catch (parseError) {
+        const responseText = await geminiResponse.text()
+        console.error('Failed to parse Gemini response as JSON:', {
+          status: geminiResponse.status,
+          statusText: geminiResponse.statusText,
+          responsePreview: responseText.substring(0, 200),
+          error: parseError instanceof Error ? parseError.message : 'Unknown error'
+        })
+        throw new Error(`Failed to parse Gemini response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}. Response preview: ${responseText.substring(0, 100)}`)
+      }
       const duration = Date.now() - startTime
 
       return NextResponse.json({

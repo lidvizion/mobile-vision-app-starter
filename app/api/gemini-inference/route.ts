@@ -19,12 +19,18 @@ export async function POST(request: NextRequest) {
   const requestId = `gemini_${Date.now()}_${Math.random().toString(36).substring(7)}`
 
   try {
-    // Log raw request for debugging
-    const rawBody = await request.text()
-    console.log('📥 Raw request body (first 100 chars):', rawBody.substring(0, 100))
-    
-    const body: GeminiInferenceRequest = JSON.parse(rawBody)
+    // Parse request body - use request.json() for production compatibility
+    const body: GeminiInferenceRequest = await request.json()
     const { model_id, inputs, parameters } = body
+    
+    // Log parsed request for debugging
+    console.log('📥 Gemini inference request:', {
+      model_id,
+      hasInputs: !!inputs,
+      inputType: inputs?.startsWith('data:') ? 'base64' : inputs?.startsWith('http') ? 'url' : 'unknown',
+      inputLength: inputs?.length || 0,
+      hasParameters: !!parameters
+    })
 
     // Validate API key
     const apiKey = process.env.GEMINI_API_KEY
