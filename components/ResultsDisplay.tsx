@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { observer } from 'mobx-react-lite'
 import { CVResponse } from '@/types'
 import { formatTimestamp, formatConfidence } from '@/lib/utils'
@@ -26,6 +26,9 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
   const [isEditing, setIsEditing] = useState<boolean>(false)
   const [isSaving, setIsSaving] = useState<boolean>(false)
   const { showNotification } = useNotification()
+  const imageContainerRef = useRef<HTMLDivElement>(null)
+  const resizeHandlerRef = useRef<(() => void) | null>(null)
+  const [containerDimensions, setContainerDimensions] = useState<{ width: number; height: number } | null>(null)
   
   // Get confidence threshold from MobX store (this will trigger re-render when it changes)
   const confidenceThreshold = modelViewStore.confidenceThreshold
@@ -38,7 +41,16 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
   // Filter results client-side based on confidence threshold
   // Use useMemo to prevent dependency issues in useEffect
   const filteredDetections = useMemo(
-    () => response?.results.detections?.filter(d => d.confidence >= confidenceThreshold) || [],
+    () => {
+      const detections = response?.results.detections
+      
+      if (!Array.isArray(detections)) {
+        console.warn('⚠️ [filteredDetections useMemo] detections is not an array:', detections)
+        return []
+      }
+      
+      return detections.filter(d => d.confidence >= confidenceThreshold)
+    },
     [response?.results.detections, confidenceThreshold]
   )
   const [editedDetections, setEditedDetections] = useState(filteredDetections)
@@ -83,6 +95,26 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
       setEditedSegmentationRegions(filteredSegmentationRegions)
     }
   }, [filteredDetections, filteredLabels, filteredKeypointDetections, filteredSegmentationRegions, isEditing])
+
+  // Calculate container dimensions for overlay positioning
+  // This function is called directly from the ref callback when element mounts
+  const updateDimensions = useCallback(() => {
+    if (imageContainerRef.current) {
+      const rect = imageContainerRef.current.getBoundingClientRect()
+      const dimensions = { width: rect.width, height: rect.height }
+      
+      if (rect.width > 0 && rect.height > 0) {
+        setContainerDimensions(dimensions)
+      } else {
+        console.warn('⚠️ [updateDimensions] Invalid dimensions (width or height is 0):', {
+          width: rect.width,
+          height: rect.height
+        })
+      }
+    } else {
+      console.warn('⚠️ [updateDimensions] imageContainerRef.current is null/undefined')
+    }
+  }, [])
   
   // Create filtered response for JSON view
   // When editing, use edited annotations; otherwise use filtered annotations
@@ -269,7 +301,40 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
 
 
       {/* Image on its own row */}
-      <div className="relative rounded-2xl overflow-hidden border border-wells-warm-grey/20 shadow-md mb-6">
+      <div 
+        ref={(el) => {
+          // Clean up previous resize listener if element is being detached
+          if (!el && resizeHandlerRef.current) {
+            window.removeEventListener('resize', resizeHandlerRef.current)
+            resizeHandlerRef.current = null
+          }
+          
+          // Set the ref
+          imageContainerRef.current = el
+          
+          // If element is attached, calculate dimensions immediately and set up resize listener
+          if (el) {
+            // Use requestAnimationFrame to ensure DOM is fully laid out
+            requestAnimationFrame(() => {
+              updateDimensions()
+              // Also try after a small delay in case image hasn't loaded yet
+              setTimeout(() => {
+                updateDimensions()
+              }, 100)
+            })
+            
+            // Set up resize listener if not already set up
+            if (!resizeHandlerRef.current) {
+              resizeHandlerRef.current = updateDimensions
+              window.addEventListener('resize', updateDimensions)
+            }
+          } else {
+            // Element detached - clear dimensions
+            setContainerDimensions(null)
+          }
+        }} 
+        className="relative rounded-2xl overflow-hidden border border-wells-warm-grey/20 shadow-md mb-6"
+      >
         <Image
           src={selectedImage}
           alt="Processed"
@@ -317,7 +382,6 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
                 }
                 
                 const result = await saveResponse.json()
-                console.log('✅ Annotations saved successfully:', result)
                 setIsEditing(false)
                 // Show success message
                 showNotification(`Annotations saved successfully as version ${result.version}!`, 'success')
@@ -338,13 +402,15 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
             }}
           />
         )}
-        {!isEditing && (
+        {!isEditing && containerDimensions && (
           <OverlayRenderer
             detections={filteredDetections}
             segmentation={filteredSegmentationRegions}
             keypointDetections={filteredKeypointDetections}
             imageWidth={response.image_metadata.width}
             imageHeight={response.image_metadata.height}
+            containerWidth={containerDimensions.width}
+            containerHeight={containerDimensions.height}
             task={response.task}
             confidenceThreshold={confidenceThreshold}
             labelDisplayMode={labelDisplayMode}
@@ -381,7 +447,6 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
                 }
                 
                 const result = await saveResponse.json()
-                console.log('✅ Annotations saved successfully:', result)
                 setIsEditing(false)
                 // Show success message
                 showNotification(`Annotations saved successfully as version ${result.version}!`, 'success')

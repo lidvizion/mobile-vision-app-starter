@@ -108,9 +108,9 @@ export default function Home() {
 
       {/* Main Content with Layered Cards */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className={`grid grid-cols-1 ${selectedModel ? 'lg:grid-cols-1 max-w-4xl mx-auto' : 'lg:grid-cols-3'} gap-8`}>
           {/* Left Column - Main Interface */}
-          <div className="lg:col-span-2 space-y-8">
+          <div className={`${selectedModel ? 'lg:col-span-1' : 'lg:col-span-2'} space-y-8`}>
             {/* Guided Model Discovery - Replaces Task Selector */}
             {!selectedModel ? (
               <div className="animate-fade-in">
@@ -178,88 +178,91 @@ export default function Home() {
           </div>
 
           {/* Right Column - History & Info */}
-          <div className="space-y-8">
-            <div className="animate-fade-in" style={{ animationDelay: '0.3s' }}>
-              <ResultHistory
-                history={history}
-                onClearHistory={clearHistory}
-                onViewResult={handleViewHistoryItem}
-              />
-            </div>
-            
-            {/* SDK Info - Floating Card */}
-            <div className="card-floating p-6 animate-fade-in" style={{ animationDelay: '0.4s' }}>
-              <div className="mb-6">
-                <h3 className="text-lg font-serif font-semibold text-wells-dark-grey">SDK Integration</h3>
-                <p className="text-sm text-wells-warm-grey">Cross-platform support</p>
+          {/* Commented out for image upload screen (after model selection) */}
+          {!selectedModel && (
+            <div className="space-y-8">
+              <div className="animate-fade-in" style={{ animationDelay: '0.3s' }}>
+                <ResultHistory
+                  history={history}
+                  onClearHistory={clearHistory}
+                  onViewResult={handleViewHistoryItem}
+                />
               </div>
               
-              <div className="space-y-3">
-                <div className="p-4 bg-wells-light-beige rounded-xl border border-wells-warm-grey/20 hover:bg-wells-white transition-colors duration-200">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-6 h-6 bg-blue-500 rounded-lg text-white text-xs font-bold flex items-center justify-center">RN</div>
-                    <span className="font-medium text-wells-dark-grey">React Native</span>
-                  </div>
-                  <p className="text-sm text-wells-warm-grey">Camera capture + on-device models</p>
+              {/* SDK Info - Floating Card */}
+              <div className="card-floating p-6 animate-fade-in" style={{ animationDelay: '0.4s' }}>
+                <div className="mb-6">
+                  <h3 className="text-lg font-serif font-semibold text-wells-dark-grey">SDK Integration</h3>
+                  <p className="text-sm text-wells-warm-grey">Cross-platform support</p>
                 </div>
                 
-                <div className="p-4 bg-wells-light-beige rounded-xl border border-wells-warm-grey/20 hover:bg-wells-white transition-colors duration-200">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-6 h-6 bg-green-500 rounded-lg text-white text-xs font-bold flex items-center justify-center">FL</div>
-                    <span className="font-medium text-wells-dark-grey">Flutter</span>
+                <div className="space-y-3">
+                  <div className="p-4 bg-wells-light-beige rounded-xl border border-wells-warm-grey/20 hover:bg-wells-white transition-colors duration-200">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-6 h-6 bg-blue-500 rounded-lg text-white text-xs font-bold flex items-center justify-center">RN</div>
+                      <span className="font-medium text-wells-dark-grey">React Native</span>
+                    </div>
+                    <p className="text-sm text-wells-warm-grey">Camera capture + on-device models</p>
                   </div>
-                  <p className="text-sm text-wells-warm-grey">Gallery upload + remote APIs</p>
+                  
+                  <div className="p-4 bg-wells-light-beige rounded-xl border border-wells-warm-grey/20 hover:bg-wells-white transition-colors duration-200">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-6 h-6 bg-green-500 rounded-lg text-white text-xs font-bold flex items-center justify-center">FL</div>
+                      <span className="font-medium text-wells-dark-grey">Flutter</span>
+                    </div>
+                    <p className="text-sm text-wells-warm-grey">Gallery upload + remote APIs</p>
+                  </div>
+                  
+                  <div className="p-4 bg-wells-light-beige rounded-xl border border-wells-warm-grey/20 hover:bg-wells-white transition-colors duration-200">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-6 h-6 bg-purple-500 rounded-lg text-white text-xs font-bold flex items-center justify-center">API</div>
+                      <span className="font-medium text-wells-dark-grey">Backend SDK</span>
+                    </div>
+                    <p className="text-sm text-wells-warm-grey">Thin integration layer</p>
+                  </div>
                 </div>
-                
-                <div className="p-4 bg-wells-light-beige rounded-xl border border-wells-warm-grey/20 hover:bg-wells-white transition-colors duration-200">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-6 h-6 bg-purple-500 rounded-lg text-white text-xs font-bold flex items-center justify-center">API</div>
-                    <span className="font-medium text-wells-dark-grey">Backend SDK</span>
+              </div>
+              
+              {/* Key Features - Elevated Card */}
+              <div className="card-elevated p-6 animate-fade-in" style={{ animationDelay: '0.5s' }}>
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-8 h-8 bg-wells-dark-grey rounded-xl flex items-center justify-center shadow-md">
+                    <Sparkles className="w-4 h-4 text-white" />
                   </div>
-                  <p className="text-sm text-wells-warm-grey">Thin integration layer</p>
+                  <div>
+                    <h3 className="text-lg font-serif font-semibold text-wells-dark-grey">Key Features</h3>
+                    <p className="text-sm text-wells-warm-grey">Everything you need</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 text-sm text-wells-warm-grey">
+                    <div className="w-1.5 h-1.5 bg-wells-dark-grey rounded-full"></div>
+                    <span>Camera capture + gallery upload</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-wells-warm-grey">
+                    <div className="w-1.5 h-1.5 bg-wells-dark-grey rounded-full"></div>
+                    <span>Real-time overlays (boxes, masks, labels)</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-wells-warm-grey">
+                    <div className="w-1.5 h-1.5 bg-wells-dark-grey rounded-full"></div>
+                    <span>Task switching at runtime</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-wells-warm-grey">
+                    <div className="w-1.5 h-1.5 bg-wells-dark-grey rounded-full"></div>
+                    <span>Secure upload + result history</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-wells-warm-grey">
+                    <div className="w-1.5 h-1.5 bg-wells-dark-grey rounded-full"></div>
+                    <span>Auth & theming support</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-wells-warm-grey">
+                    <div className="w-1.5 h-1.5 bg-wells-dark-grey rounded-full"></div>
+                    <span>TFLite & PyTorch Mobile support</span>
+                  </div>
                 </div>
               </div>
             </div>
-            
-            {/* Key Features - Elevated Card */}
-            <div className="card-elevated p-6 animate-fade-in" style={{ animationDelay: '0.5s' }}>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-8 h-8 bg-wells-dark-grey rounded-xl flex items-center justify-center shadow-md">
-                  <Sparkles className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-serif font-semibold text-wells-dark-grey">Key Features</h3>
-                  <p className="text-sm text-wells-warm-grey">Everything you need</p>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 text-sm text-wells-warm-grey">
-                  <div className="w-1.5 h-1.5 bg-wells-dark-grey rounded-full"></div>
-                  <span>Camera capture + gallery upload</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-wells-warm-grey">
-                  <div className="w-1.5 h-1.5 bg-wells-dark-grey rounded-full"></div>
-                  <span>Real-time overlays (boxes, masks, labels)</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-wells-warm-grey">
-                  <div className="w-1.5 h-1.5 bg-wells-dark-grey rounded-full"></div>
-                  <span>Task switching at runtime</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-wells-warm-grey">
-                  <div className="w-1.5 h-1.5 bg-wells-dark-grey rounded-full"></div>
-                  <span>Secure upload + result history</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-wells-warm-grey">
-                  <div className="w-1.5 h-1.5 bg-wells-dark-grey rounded-full"></div>
-                  <span>Auth & theming support</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-wells-warm-grey">
-                  <div className="w-1.5 h-1.5 bg-wells-dark-grey rounded-full"></div>
-                  <span>TFLite & PyTorch Mobile support</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       </main>
 

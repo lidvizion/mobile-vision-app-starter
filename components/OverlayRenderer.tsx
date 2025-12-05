@@ -12,6 +12,8 @@ interface OverlayRendererProps {
   keypointDetections?: KeypointDetection[]
   imageWidth: number
   imageHeight: number
+  containerWidth?: number
+  containerHeight?: number
   task: string
   confidenceThreshold?: number // 0.0 to 1.0, default 0.0
   labelDisplayMode?: LabelDisplayMode // 'boxes' = no label, 'labels' = label only, 'confidence' = label + confidence
@@ -22,11 +24,50 @@ export default function OverlayRenderer({
   segmentation,
   keypointDetections,
   imageWidth, 
-  imageHeight, 
+  imageHeight,
+  containerWidth,
+  containerHeight,
   task,
   confidenceThreshold = 0.0,
   labelDisplayMode = 'confidence'
 }: OverlayRendererProps) {
+
+  // Calculate scale and offset for object-contain positioning
+  const getImageDisplayInfo = () => {
+    if (!containerWidth || !containerHeight) {
+      return { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0, displayWidth: imageWidth, displayHeight: imageHeight }
+    }
+    
+    const imageAspect = imageWidth / imageHeight
+    const containerAspect = containerWidth / containerHeight
+    
+    let displayWidth: number
+    let displayHeight: number
+    let offsetX: number
+    let offsetY: number
+    
+    if (imageAspect > containerAspect) {
+      // Image is wider - fit to width
+      displayWidth = containerWidth
+      displayHeight = containerWidth / imageAspect
+      offsetX = 0
+      offsetY = (containerHeight - displayHeight) / 2
+    } else {
+      // Image is taller - fit to height
+      displayWidth = containerHeight * imageAspect
+      displayHeight = containerHeight
+      offsetX = (containerWidth - displayWidth) / 2
+      offsetY = 0
+    }
+    
+    const scaleX = displayWidth / imageWidth
+    const scaleY = displayHeight / imageHeight
+    
+    return { scaleX, scaleY, offsetX, offsetY, displayWidth, displayHeight }
+  }
+  
+  const { scaleX, scaleY, offsetX, offsetY } = getImageDisplayInfo()
+
   // Keypoint Detection: Render keypoints with skeleton lines (Roboflow style - no bounding boxes)
   if (task === 'keypoint-detection' && keypointDetections && keypointDetections.length > 0) {
     // Filter by confidence threshold
@@ -67,12 +108,12 @@ export default function OverlayRenderer({
                                 style={{
                                   backgroundColor: color,
                                   borderColor: '#FFFFFF',
-                                  left: `${(kp.x / imageWidth) * 100}%`,
-                                  top: `${(kp.y / imageHeight) * 100}%`,
-                            width: '10px',
-                            height: '10px',
+                                  left: `${offsetX + kp.x * scaleX}px`,
+                                  top: `${offsetY + kp.y * scaleY}px`,
+                                  width: '10px',
+                                  height: '10px',
                                   transform: 'translate(-50%, -50%)',
-                            opacity: Math.max(0.7, kp.confidence)
+                                  opacity: Math.max(0.7, kp.confidence)
                                 }}
                                 title={`${kp.class || `Keypoint ${kpIndex}`}: ${(kp.confidence * 100).toFixed(1)}%`}
                               />
@@ -220,7 +261,7 @@ export default function OverlayRenderer({
                         <svg
                           className="absolute inset-0 pointer-events-none"
                           style={{ width: '100%', height: '100%', overflow: 'visible' }}
-                          viewBox={`0 0 ${imageWidth} ${imageHeight}`}
+                          viewBox={`0 0 ${containerWidth || imageWidth} ${containerHeight || imageHeight}`}
                           preserveAspectRatio="none"
                         >
                       {uniquePairs.map(([kp1, kp2], lineIndex) => {
@@ -228,10 +269,10 @@ export default function OverlayRenderer({
                         return (
                             <line
                             key={`line-${lineIndex}-${kp1.class_id || kp1.class || 'kp'}-${kp2.class_id || kp2.class || 'kp'}`}
-                              x1={kp1.x}
-                              y1={kp1.y}
-                              x2={kp2.x}
-                              y2={kp2.y}
+                              x1={offsetX + kp1.x * scaleX}
+                              y1={offsetY + kp1.y * scaleY}
+                              x2={offsetX + kp2.x * scaleX}
+                              y2={offsetY + kp2.y * scaleY}
                             stroke={color}
                             strokeWidth="3"
                             strokeOpacity={Math.max(0.6, avgConfidence)}
@@ -250,8 +291,8 @@ export default function OverlayRenderer({
                               style={{
                                 backgroundColor: color,
                                 borderColor: '#FFFFFF',
-                                left: `${(kp.x / imageWidth) * 100}%`,
-                                top: `${(kp.y / imageHeight) * 100}%`,
+                                left: `${offsetX + kp.x * scaleX}px`,
+                                top: `${offsetY + kp.y * scaleY}px`,
                           width: '10px',
                           height: '10px',
                                 transform: 'translate(-50%, -50%)',
@@ -310,12 +351,85 @@ export default function OverlayRenderer({
     // Filter by confidence threshold
     const filteredDetections = detections.filter(detection => detection.confidence >= confidenceThreshold)
     
+    // ========== STEP 3: VALIDATE BBOX DATA ==========
+    const validDetections = filteredDetections.filter(det => {
+      const isValid = det.bbox && 
+        typeof det.bbox.x === 'number' && 
+        typeof det.bbox.y === 'number' && 
+        typeof det.bbox.width === 'number' && 
+        typeof det.bbox.height === 'number' &&
+        !isNaN(det.bbox.x) &&
+        !isNaN(det.bbox.y) &&
+        !isNaN(det.bbox.width) &&
+        !isNaN(det.bbox.height)
+      
+      if (!isValid) {
+        console.warn('⚠️ [STEP 3] Invalid bbox detected:', {
+          class: det.class,
+          bbox: det.bbox,
+          bboxKeys: det.bbox ? Object.keys(det.bbox) : null
+        })
+      }
+      return isValid
+    })
+    
+    if (validDetections.length === 0) {
+      console.error('❌ [STEP 3] No valid detections with bbox data!', {
+        totalDetections: detections.length,
+        filteredCount: filteredDetections.length,
+        validCount: 0,
+        reason: filteredDetections.length === 0 ? 'All filtered by confidence' : 'All have invalid bbox data'
+      })
+      return null
+    }
+    
+    // Detect if coordinates are normalized (0-1 range) by checking first detection
+    const firstBbox = validDetections[0]?.bbox
+    const isNormalized = firstBbox && (
+      (firstBbox.x < 1 && firstBbox.y < 1 && firstBbox.width < 1 && firstBbox.height < 1) ||
+      (firstBbox.x <= 1 && firstBbox.y <= 1 && firstBbox.width <= 1 && firstBbox.height <= 1)
+    )
+    
+    // Get displayed image dimensions for wrapper
+    const displayWidth = containerWidth ? (imageWidth * scaleX) : imageWidth
+    const displayHeight = containerHeight ? (imageHeight * scaleY) : imageHeight
+    
     return (
       <div className="absolute inset-0 pointer-events-none">
-        {filteredDetections.map((detection, index) => {
-          // Generate a unique color for each detection
-          const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
-          const color = colors[index % colors.length]
+        {/* Wrapper div that matches the displayed image area (accounts for object-contain) */}
+        <div
+          style={{
+            position: 'absolute',
+            left: `${offsetX}px`,
+            top: `${offsetY}px`,
+            width: `${displayWidth}px`,
+            height: `${displayHeight}px`,
+          }}
+        >
+          {validDetections.map((detection, index) => {
+            // Generate a unique color for each detection
+            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
+            const color = colors[index % colors.length]
+            
+            // Calculate final positions - handle normalized vs pixel coordinates
+            let finalLeft: string
+            let finalTop: string
+            let finalWidth: string
+            let finalHeight: string
+            
+            if (isNormalized) {
+              // Normalized coordinates (0-1) - convert to percentages of displayed image
+              finalLeft = `${detection.bbox.x * 100}%`
+              finalTop = `${detection.bbox.y * 100}%`
+              finalWidth = `${detection.bbox.width * 100}%`
+              finalHeight = `${detection.bbox.height * 100}%`
+            } else {
+              // Pixel coordinates - convert to percentages of displayed image
+              finalLeft = `${(detection.bbox.x / imageWidth) * 100}%`
+              finalTop = `${(detection.bbox.y / imageHeight) * 100}%`
+              finalWidth = `${(detection.bbox.width / imageWidth) * 100}%`
+              finalHeight = `${(detection.bbox.height / imageHeight) * 100}%`
+            }
           
           return (
             <div 
@@ -323,10 +437,10 @@ export default function OverlayRenderer({
               className="absolute animate-scale-in" 
               style={{ 
                 animationDelay: `${index * 0.1}s`,
-                left: `${(detection.bbox.x / imageWidth) * 100}%`,
-                top: `${(detection.bbox.y / imageHeight) * 100}%`,
-                width: `${(detection.bbox.width / imageWidth) * 100}%`,
-                height: `${(detection.bbox.height / imageHeight) * 100}%`,
+                left: finalLeft,
+                top: finalTop,
+                width: finalWidth,
+                height: finalHeight,
               }}
             >
               {/* Bounding box with enhanced styling */}
@@ -335,7 +449,10 @@ export default function OverlayRenderer({
                 style={{
                   borderColor: color,
                   backgroundColor: `${color}15`,
+                  zIndex: 10,
                 }}
+                data-debug-detection={detection.class}
+                data-debug-index={index}
               />
               
               {/* Corner indicators for better visibility */}
@@ -389,18 +506,34 @@ export default function OverlayRenderer({
                 const estimatedLabelWidth = labelText.length * 7 + 16 // 7px per char + 16px padding
                 const estimatedLabelHeight = 24 // Approximate height
                 
-                // Calculate box position in pixels (absolute coordinates)
-                const boxLeft = detection.bbox.x
-                const boxTop = detection.bbox.y
-                const boxWidth = detection.bbox.width
-                const boxRight = boxLeft + boxWidth
-                const boxCenterX = boxLeft + boxWidth / 2
+                // Calculate box position - handle normalized vs pixel coordinates
+                let boxLeft: number
+                let boxTop: number
+                let boxWidth: number
+                let boxRight: number
+                let boxCenterX: number
+                
+                if (isNormalized) {
+                  // Normalized coordinates - use percentages directly
+                  boxLeft = detection.bbox.x * displayWidth
+                  boxTop = detection.bbox.y * displayHeight
+                  boxWidth = detection.bbox.width * displayWidth
+                  boxRight = boxLeft + boxWidth
+                  boxCenterX = boxLeft + boxWidth / 2
+                } else {
+                  // Pixel coordinates - convert to display coordinates
+                  boxLeft = (detection.bbox.x / imageWidth) * displayWidth
+                  boxTop = (detection.bbox.y / imageHeight) * displayHeight
+                  boxWidth = (detection.bbox.width / imageWidth) * displayWidth
+                  boxRight = boxLeft + boxWidth
+                  boxCenterX = boxLeft + boxWidth / 2
+                }
                 
                 // Check if label would overflow top edge
                 const hasRoomAbove = boxTop >= estimatedLabelHeight
                 
                 // Check if label would overflow left/right edges when centered
-                const boxWidthPercent = (boxWidth / imageWidth) * 100
+                const boxWidthPercent = (boxWidth / displayWidth) * 100
                 const shouldCenter = boxWidthPercent > 15
                 
                 // Calculate label position (relative to the box container)
@@ -413,16 +546,17 @@ export default function OverlayRenderer({
                   const labelHalfWidth = estimatedLabelWidth / 2
                   
                   // Check if centered label would overflow left edge
-                  if (boxCenterX - labelHalfWidth < 0) {
+                  if (boxCenterX - labelHalfWidth < offsetX) {
                     // Position at left edge of image (shift right)
-                    const shiftRight = (labelHalfWidth - boxCenterX) / boxWidth
+                    const shiftRight = (labelHalfWidth - (boxCenterX - offsetX)) / boxWidth
                     labelLeft = `${shiftRight * 100}%`
                     labelTransform = 'translateY(-100%)'
                   } 
                   // Check if centered label would overflow right edge
-                  else if (boxCenterX + labelHalfWidth > imageWidth) {
+                  else if (boxCenterX + labelHalfWidth > offsetX + (containerWidth || imageWidth) - offsetX) {
                     // Position at right edge of image (shift left)
-                    const overflowRight = (boxCenterX + labelHalfWidth) - imageWidth
+                    const displayWidth = containerWidth || imageWidth
+                    const overflowRight = (boxCenterX + labelHalfWidth) - (offsetX + displayWidth - offsetX)
                     const shiftLeft = overflowRight / boxWidth
                     labelLeft = `${(50 - shiftLeft * 100)}%`
                     labelTransform = 'translate(-100%, -100%)'
@@ -434,16 +568,19 @@ export default function OverlayRenderer({
                 } else {
                   // Left-aligned label
                   // Check if label would overflow left edge
-                  if (boxLeft < estimatedLabelWidth) {
+                  if (boxLeft < offsetX + estimatedLabelWidth) {
                     // Shift label right to stay within bounds
-                    const shiftRight = (estimatedLabelWidth - boxLeft) / boxWidth
+                    const shiftRight = (estimatedLabelWidth - (boxLeft - offsetX)) / boxWidth
                     labelLeft = `${shiftRight * 100}%`
                   }
                   // Check if label would overflow right edge
-                  else if (boxLeft + estimatedLabelWidth > imageWidth) {
-                    // Position at right edge of box
-                    labelLeft = `${((imageWidth - boxLeft) / boxWidth) * 100}%`
-                    labelTransform = 'translate(-100%, -100%)'
+                  else {
+                    const displayWidth = containerWidth || imageWidth
+                    if (boxLeft + estimatedLabelWidth > offsetX + displayWidth - offsetX) {
+                      // Position at right edge of box
+                      labelLeft = `${((displayWidth - offsetX - (boxLeft - offsetX)) / boxWidth) * 100}%`
+                      labelTransform = 'translate(-100%, -100%)'
+                    }
                   }
                 }
                 
@@ -478,6 +615,7 @@ export default function OverlayRenderer({
             </div>
           )
         })}
+        </div>
       </div>
     )
   }
@@ -506,8 +644,8 @@ export default function OverlayRenderer({
             regions={filteredSegmentation}
             imageWidth={imageWidth}
             imageHeight={imageHeight}
-            containerWidth={imageWidth}
-            containerHeight={imageHeight}
+            containerWidth={containerWidth || imageWidth}
+            containerHeight={containerHeight || imageHeight}
           />
         )}
         
@@ -518,8 +656,8 @@ export default function OverlayRenderer({
             <div
               className="absolute bg-white text-gray-800 text-xs px-2 py-1 rounded font-medium border border-gray-200 shadow-sm"
               style={{
-                left: region.bbox ? `${(region.bbox.x / imageWidth) * 100}%` : '10px',
-                top: region.bbox ? `${((region.bbox.y - 25) / imageHeight) * 100}%` : '10px',
+                left: region.bbox ? `${offsetX + region.bbox.x * scaleX}px` : `${offsetX + 10}px`,
+                top: region.bbox ? `${offsetY + (region.bbox.y - 25) * scaleY}px` : `${offsetY + 10}px`,
                 transform: region.bbox ? 'translateX(-50%)' : 'none'
               }}
             >
@@ -544,6 +682,6 @@ export default function OverlayRenderer({
       </div>
     )
   }
-
+  
   return null
 }

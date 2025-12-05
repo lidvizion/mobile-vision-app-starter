@@ -192,7 +192,9 @@ Return the results as a JSON array with detected objects and their properties.`
     return NextResponse.json({
       success: true,
       model_id: 'gemini-3-pro-preview',
-      results,
+      results: {
+        detections: results
+      },
       requestId,
       timestamp: new Date().toISOString(),
       duration

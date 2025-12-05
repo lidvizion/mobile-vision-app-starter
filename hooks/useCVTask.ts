@@ -335,7 +335,32 @@ function getImageDimensions(file: File): Promise<{ width: number; height: number
  * Transform Hugging Face Inference API response to CVResponse format 
  */
 function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, imageDimensions?: { width: number; height: number }): CVResponse {
-  const results = inferenceData.results || []
+  // Debug: Check what Gemini/API is actually returning
+  console.log('🔍 [transformHFToCVResponse] Input inferenceData:', {
+    hasResults: !!inferenceData.results,
+    resultsType: typeof inferenceData.results,
+    resultsIsArray: Array.isArray(inferenceData.results),
+    resultsValue: inferenceData.results,
+    resultsKeys: inferenceData.results && typeof inferenceData.results === 'object' ? Object.keys(inferenceData.results) : null,
+    hasDetections: !!(inferenceData.results as any)?.detections,
+    detectionsValue: (inferenceData.results as any)?.detections,
+    modelName: model.name,
+    modelId: model.id,
+    fullInferenceData: inferenceData
+  })
+  
+  // Handle both formats: array (old HF) or object with detections (new Gemini)
+  const results = Array.isArray(inferenceData.results) 
+    ? inferenceData.results 
+    : (inferenceData.results?.detections || [])
+  
+  console.log('🔍 [transformHFToCVResponse] Extracted results:', {
+    resultsLength: results.length,
+    resultsType: typeof results,
+    resultsIsArray: Array.isArray(results),
+    resultsSample: results.slice(0, 2),
+    willTransform: results.length > 0
+  })
   
   // Determine task type from model and results
   let task = model.task || 'detection'
@@ -363,12 +388,15 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
   }
   
   // Transform based on task type
+  // Calculate processing time from API response (duration is in milliseconds)
+  const processingTime = inferenceData.duration ? (inferenceData.duration / 1000) : 0.5
+  
   if (task === 'detection' || task.includes('detection')) {
     // Object Detection
     return {
       task: 'detection',
       model_version: model.name,
-      processing_time: 0.5,
+      processing_time: processingTime,
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -393,7 +421,7 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
     return {
       task: 'classification',
       model_version: model.name,
-      processing_time: 0.3,
+      processing_time: processingTime,
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -415,7 +443,7 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
     return {
       task: 'segmentation',
       model_version: model.name,
-      processing_time: (inferenceData.duration || 800) / 1000, // Convert ms to seconds
+      processing_time: processingTime,
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -485,7 +513,7 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
   return {
     task: 'multi-type',
     model_version: model.name,
-    processing_time: 0.5,
+    processing_time: processingTime,
     timestamp: inferenceData.timestamp || new Date().toISOString(),
     image_metadata: {
       width: 640,
@@ -504,6 +532,13 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
 function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata, imageDimensions?: { width: number; height: number }): CVResponse {
   // Roboflow API returns predictions, not results
   const predictions = inferenceData.predictions || inferenceData.results || []
+  
+  // Calculate processing time from API response (processing_time or duration in milliseconds)
+  const processingTime = inferenceData.processing_time 
+    ? (inferenceData.processing_time / 1000) 
+    : inferenceData.duration 
+      ? (inferenceData.duration / 1000) 
+      : 0.5 // Fallback to 0.5 seconds
   
   // Determine task type from model and results
   // Prioritize model's explicit task type, but verify with actual data
@@ -581,7 +616,7 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
     return {
       task: 'classification',
       model_version: model.name,
-      processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
+      processing_time: processingTime,
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -603,7 +638,7 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
     return {
       task: 'keypoint-detection',
       model_version: model.name,
-      processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
+      processing_time: processingTime,
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -665,7 +700,7 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
     return {
       task: 'detection',
       model_version: model.name,
-      processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
+      processing_time: processingTime,
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -702,7 +737,7 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
     return {
       task: 'segmentation',
       model_version: model.name,
-      processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
+      processing_time: processingTime,
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -761,7 +796,7 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
   return {
     task: 'multi-type',
     model_version: model.name,
-    processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
+    processing_time: processingTime,
     timestamp: inferenceData.timestamp || new Date().toISOString(),
     image_metadata: {
       width: imageDimensions?.width || 640,
