@@ -404,16 +404,37 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
         format: 'jpeg'
       },
       results: {
-        detections: results.map((det: any) => ({
-          class: det.label,
-          confidence: det.score,
-          bbox: det.box ? {
-            x: det.box.xmin,
-            y: det.box.ymin,
-            width: det.box.xmax - det.box.xmin,
-            height: det.box.ymax - det.box.ymin
-          } : { x: 0, y: 0, width: 0, height: 0 }
-        }))
+        detections: results.map((det: any) => {
+          // Preserve descriptive labels exactly as returned
+          const classLabel = det.label || 'unknown'
+          
+          // Handle bounding box - Gemini returns normalized coordinates (0-1)
+          let bbox = { x: 0, y: 0, width: 0, height: 0 }
+          if (det.box && 
+              typeof det.box.xmin === 'number' && 
+              typeof det.box.ymin === 'number' &&
+              typeof det.box.xmax === 'number' && 
+              typeof det.box.ymax === 'number') {
+            // Gemini returns normalized coordinates (0-1), convert to normalized bbox format
+            bbox = {
+              x: det.box.xmin,  // Already normalized 0-1
+              y: det.box.ymin,  // Already normalized 0-1
+              width: det.box.xmax - det.box.xmin,  // Width as fraction (0-1)
+              height: det.box.ymax - det.box.ymin  // Height as fraction (0-1)
+            }
+            // Ensure valid dimensions
+            if (bbox.width <= 0 || bbox.height <= 0 || bbox.x < 0 || bbox.y < 0 || bbox.x + bbox.width > 1 || bbox.y + bbox.height > 1) {
+              console.warn('⚠️ Invalid bbox detected, using default:', { det, bbox })
+              bbox = { x: 0, y: 0, width: 0, height: 0 }
+            }
+          }
+          
+          return {
+            class: classLabel,
+            confidence: det.score || det.confidence || 0,
+            bbox
+          }
+        })
       }
     }
   } else if (task === 'classification' || task.includes('classification')) {
@@ -709,7 +730,11 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
       },
       results: {
         detections: predictions.map((detection: any) => {
+          // Preserve descriptive class labels exactly as returned
+          const classLabel = detection.class || 'unknown'
+          
           // Convert Roboflow bbox format to our format
+          // Roboflow returns pixel coordinates (center-based or top-left)
           const bbox = detection.bbox || {
             x: detection.x || 0,
             y: detection.y || 0,
@@ -717,15 +742,18 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
             height: detection.height || 0
           }
           
+          // Ensure bbox is in top-left format with valid values
+          const finalBbox = {
+            x: bbox.x || detection.x || 0,
+            y: bbox.y || detection.y || 0,
+            width: Math.max(0, bbox.width || detection.width || 0),
+            height: Math.max(0, bbox.height || detection.height || 0)
+          }
+          
           return {
-          class: detection.class,
-          confidence: detection.confidence,
-            bbox: {
-              x: bbox.x || detection.x || 0,
-              y: bbox.y || detection.y || 0,
-              width: bbox.width || detection.width || 0,
-              height: bbox.height || detection.height || 0
-            }
+            class: classLabel, // Preserve descriptive labels (e.g., "white bottle", "green bottle")
+            confidence: detection.confidence || 0,
+            bbox: finalBbox
           }
         })
       }

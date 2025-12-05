@@ -44,8 +44,8 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
     () => {
       const detections = response?.results.detections
       
-      if (!Array.isArray(detections)) {
-        console.warn('⚠️ [filteredDetections useMemo] detections is not an array:', detections)
+      if (!detections || !Array.isArray(detections)) {
+        console.log('🔍 [filteredDetections] Returning empty array - detections is:', detections)
         return []
       }
       

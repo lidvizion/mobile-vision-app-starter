@@ -79,14 +79,19 @@ export async function POST(request: NextRequest) {
       switch (task) {
         case 'object-detection':
           prompt = `Analyze this image and detect all objects. For each object found, provide:
-1. The object label/class name
+1. A descriptive object label that includes color, size, or distinguishing features (e.g., "white bottle", "green bottle", "large red car", "small blue cup")
 2. A confidence score (0-1)
-3. The bounding box coordinates as [x_min, y_min, x_max, y_max] normalized to 0-1 range
+3. Accurate bounding box coordinates as [x_min, y_min, x_max, y_max] normalized to 0-1 range
+
+IMPORTANT: 
+- Use descriptive labels that distinguish similar objects (include color, size, position, etc.)
+- Ensure bounding boxes accurately enclose each object
+- Return ONLY valid JSON - no markdown, no explanations
 
 Return the results as a JSON array with this exact format:
 [
   {
-    "label": "object_name",
+    "label": "white bottle",
     "score": 0.95,
     "box": {
       "xmin": 0.1,
@@ -95,9 +100,7 @@ Return the results as a JSON array with this exact format:
       "ymax": 0.8
     }
   }
-]
-
-IMPORTANT: Return ONLY the JSON array, no additional text or markdown formatting.`
+]`
           break
         
         case 'classification':
@@ -178,13 +181,44 @@ Return the results as a JSON array with detected objects and their properties.`
       }]
     }
 
-    // Filter results by confidence threshold
+    // Filter results by confidence threshold and validate bounding boxes
     // Note: Gemini API returns results with its own confidence scores (0-1 range)
-    // We filter to only include detections with confidence >= 0.3 to show more bounding boxes in the UI
+    // We filter to only include detections with confidence >= 0.3 and valid bounding boxes
     const CONFIDENCE_THRESHOLD = 0.3
     results = results.filter((result: any) => {
       const score = result.score || result.confidence || 0
-      return score >= CONFIDENCE_THRESHOLD
+      const hasValidBox = result.box && 
+        typeof result.box.xmin === 'number' && 
+        typeof result.box.ymin === 'number' &&
+        typeof result.box.xmax === 'number' && 
+        typeof result.box.ymax === 'number' &&
+        result.box.xmin < result.box.xmax &&
+        result.box.ymin < result.box.ymax &&
+        result.box.xmin >= 0 && result.box.ymin >= 0 &&
+        result.box.xmax <= 1 && result.box.ymax <= 1
+      return score >= CONFIDENCE_THRESHOLD && hasValidBox
+    })
+    
+    // Normalize and fix bounding boxes to ensure they're in correct format
+    results = results.map((result: any) => {
+      if (result.box) {
+        // Ensure coordinates are normalized (0-1)
+        const xmin = Math.max(0, Math.min(1, result.box.xmin))
+        const ymin = Math.max(0, Math.min(1, result.box.ymin))
+        const xmax = Math.max(xmin, Math.min(1, result.box.xmax))
+        const ymax = Math.max(ymin, Math.min(1, result.box.ymax))
+        
+        return {
+          ...result,
+          box: {
+            xmin,
+            ymin,
+            xmax,
+            ymax
+          }
+        }
+      }
+      return result
     })
 
     const duration = Date.now() - startTime

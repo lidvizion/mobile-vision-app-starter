@@ -384,10 +384,11 @@ export default function OverlayRenderer({
     }
     
     // Detect if coordinates are normalized (0-1 range) by checking first detection
+    // Normalized coordinates are always <= 1.0, pixel coordinates are usually > 1
     const firstBbox = validDetections[0]?.bbox
     const isNormalized = firstBbox && (
-      (firstBbox.x < 1 && firstBbox.y < 1 && firstBbox.width < 1 && firstBbox.height < 1) ||
-      (firstBbox.x <= 1 && firstBbox.y <= 1 && firstBbox.width <= 1 && firstBbox.height <= 1)
+      (firstBbox.x <= 1 && firstBbox.y <= 1 && firstBbox.width <= 1 && firstBbox.height <= 1) &&
+      (firstBbox.x >= 0 && firstBbox.y >= 0 && firstBbox.width > 0 && firstBbox.height > 0)
     )
     
     // Get displayed image dimensions for wrapper
