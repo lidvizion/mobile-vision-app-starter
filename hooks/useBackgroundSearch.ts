@@ -82,19 +82,21 @@ export function useBackgroundSearch({
     }
   }, [enabled, queryId, onNewModelsFound])
 
-  // Start polling when enabled - silent operation
+  // Start polling when enabled - DISABLED to prevent ERR_INSUFFICIENT_RESOURCES errors
+  // Background polling has been disabled to prevent resource exhaustion
   useEffect(() => {
-    if (enabled && queryId && !isPolling && !hasStartedPollingRef.current) {
-      hasStartedPollingRef.current = true
-      setIsPolling(true)
-      // Check immediately
-      checkBackgroundSearch()
+    // DISABLED: Background polling disabled to prevent ERR_INSUFFICIENT_RESOURCES
+    // if (enabled && queryId && !isPolling && !hasStartedPollingRef.current) {
+    //   hasStartedPollingRef.current = true
+    //   setIsPolling(true)
+    //   // Check immediately
+    //   checkBackgroundSearch()
 
-      // Then poll every 5 seconds (faster for better UX)
-      intervalRef.current = setInterval(checkBackgroundSearch, 5000)
-    }
+    //   // Then poll every 5 seconds (faster for better UX)
+    //   intervalRef.current = setInterval(checkBackgroundSearch, 5000)
+    // }
 
-    // Cleanup function
+    // Cleanup function - still needed for safety
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
