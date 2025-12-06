@@ -187,13 +187,13 @@ Example output: {"keywords": ["basketball", "sports", "detection", "players", "p
     
     const compoundTerms: string[] = []
     compoundPatterns.forEach(pattern => {
-      const matches = query.matchAll(pattern)
-      for (const match of matches) {
+      const matches = Array.from(query.matchAll(pattern))
+      matches.forEach(match => {
         const compound = match[0].toLowerCase().trim()
         if (compound.length > 3 && !stopWords.includes(compound.split(' ')[0])) {
           compoundTerms.push(compound)
         }
-      }
+      })
     })
     
     // Extract remaining words (excluding those already in compound terms)
