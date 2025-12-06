@@ -310,12 +310,44 @@ export default function OverlayRenderer({
     // Filter by confidence threshold
     const filteredDetections = detections.filter(detection => detection.confidence >= confidenceThreshold)
     
+    // Helper function to convert bbox coordinates (handles both normalized 0-1 and pixel coordinates)
+    const normalizeBbox = (bbox: { x: number; y: number; width: number; height: number } | { x: number; y: number; w: number; h: number }) => {
+      const width = 'width' in bbox ? bbox.width : bbox.w
+      const height = 'height' in bbox ? bbox.height : bbox.h
+      
+      // Detect if coordinates are normalized (0-1) by checking if values are < 1.0
+      // If x, y, width, or height are all < 1.0, assume normalized coordinates
+      const isNormalized = bbox.x < 1.0 && bbox.y < 1.0 && width < 1.0 && height < 1.0
+      
+      if (isNormalized) {
+        // Convert normalized (0-1) to pixels
+        return {
+          x: bbox.x * imageWidth,
+          y: bbox.y * imageHeight,
+          width: width * imageWidth,
+          height: height * imageHeight
+        }
+      } else {
+        // Already in pixels, use as-is
+        return {
+          x: bbox.x,
+          y: bbox.y,
+          width: width,
+          height: height
+        }
+      }
+    }
+    
     return (
       <div className="absolute inset-0 pointer-events-none">
         {filteredDetections.map((detection, index) => {
-          // Generate a unique color for each detection
-          const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
+          // Generate a unique color for each detection (using brighter colors for visibility)
+          const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#FF1493']
           const color = colors[index % colors.length]
+          
+          // Normalize bbox coordinates (convert from 0-1 to pixels if needed)
+          const bbox = detection.bbox || (detection as any).box || (detection as any).boundingBox
+          const pixelBbox = normalizeBbox(bbox)
           
           return (
             <div 
@@ -323,60 +355,19 @@ export default function OverlayRenderer({
               className="absolute animate-scale-in" 
               style={{ 
                 animationDelay: `${index * 0.1}s`,
-                left: `${(detection.bbox.x / imageWidth) * 100}%`,
-                top: `${(detection.bbox.y / imageHeight) * 100}%`,
-                width: `${(detection.bbox.width / imageWidth) * 100}%`,
-                height: `${(detection.bbox.height / imageHeight) * 100}%`,
+                left: `${(pixelBbox.x / imageWidth) * 100}%`,
+                top: `${(pixelBbox.y / imageHeight) * 100}%`,
+                width: `${(pixelBbox.width / imageWidth) * 100}%`,
+                height: `${(pixelBbox.height / imageHeight) * 100}%`,
               }}
             >
-              {/* Bounding box with enhanced styling */}
+              {/* Clean, simple bounding box - parallel edges, no rounded corners */}
               <div
-                className="absolute inset-0 border-2 rounded shadow-lg"
+                className="absolute inset-0"
                 style={{
+                  border: `2px solid ${color}`,
                   borderColor: color,
-                  backgroundColor: `${color}15`,
-                }}
-              />
-              
-              {/* Corner indicators for better visibility */}
-              <div
-                className="absolute w-3 h-3 border-2 rounded-full"
-                style={{
-                  borderColor: color,
-                  backgroundColor: color,
-                  left: '0%',
-                  top: '0%',
-                  transform: 'translate(-50%, -50%)'
-                }}
-              />
-              <div
-                className="absolute w-3 h-3 border-2 rounded-full"
-                style={{
-                  borderColor: color,
-                  backgroundColor: color,
-                  right: '0%',
-                  top: '0%',
-                  transform: 'translate(50%, -50%)'
-                }}
-              />
-              <div
-                className="absolute w-3 h-3 border-2 rounded-full"
-                style={{
-                  borderColor: color,
-                  backgroundColor: color,
-                  left: '0%',
-                  bottom: '0%',
-                  transform: 'translate(-50%, 50%)'
-                }}
-              />
-              <div
-                className="absolute w-3 h-3 border-2 rounded-full"
-                style={{
-                  borderColor: color,
-                  backgroundColor: color,
-                  right: '0%',
-                  bottom: '0%',
-                  transform: 'translate(50%, 50%)'
+                  backgroundColor: `${color}20`, // 20% opacity fill
                 }}
               />
               
@@ -389,10 +380,10 @@ export default function OverlayRenderer({
                 const estimatedLabelWidth = labelText.length * 7 + 16 // 7px per char + 16px padding
                 const estimatedLabelHeight = 24 // Approximate height
                 
-                // Calculate box position in pixels (absolute coordinates)
-                const boxLeft = detection.bbox.x
-                const boxTop = detection.bbox.y
-                const boxWidth = detection.bbox.width
+                // Calculate box position in pixels (absolute coordinates) - use normalized pixelBbox
+                const boxLeft = pixelBbox.x
+                const boxTop = pixelBbox.y
+                const boxWidth = pixelBbox.width
                 const boxRight = boxLeft + boxWidth
                 const boxCenterX = boxLeft + boxWidth / 2
                 
@@ -455,9 +446,10 @@ export default function OverlayRenderer({
                 
                 return (
                   <div
-                    className="absolute text-white text-xs px-2 py-0.5 rounded-t font-medium shadow-md z-10"
+                    className="absolute text-white text-xs px-2 py-1 rounded font-semibold shadow-lg z-10"
                     style={{
-                      backgroundColor: color,
+                      backgroundColor: `${color}E6`, // 90% opacity background
+                      border: `2px solid ${color}`,
                       left: labelLeft,
                       top: labelTop,
                       transform: labelTransform,

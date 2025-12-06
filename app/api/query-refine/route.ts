@@ -131,15 +131,24 @@ async function extractKeywordsWithChatGPT(query: string) {
             role: "system",
             content: `You are a computer vision expert. Extract keywords from user queries for searching Hugging Face models.
 
+IMPORTANT: Preserve compound terms and descriptive phrases as single keywords when they represent specific objects or concepts.
+- Keep color + object combinations together (e.g., "blue bottle", "green bottle", "red car")
+- Keep size + object combinations (e.g., "large dog", "small cat")
+- Keep material + object combinations (e.g., "glass bottle", "plastic container")
+- Split only when the terms are truly independent
+
 Return a JSON object with:
-- keywords: array of 3-5 most relevant keywords for model search
+- keywords: array of 3-6 most relevant keywords for model search (preserve compound terms)
 - task_type: one of "detection", "classification", "segmentation", "object-detection", "image-classification"
 - use_case: brief description
 
 Focus on:
-- Main objects/subjects (e.g., "basketball", "cars", "people")
+- Main objects/subjects with their descriptors (e.g., "blue bottle", "basketball", "red car")
 - Computer vision tasks (e.g., "detection", "classification")
 - Domain-specific terms (e.g., "sports", "medical", "retail")
+
+Example input: "Detect blue bottles and green bottles"
+Example output: {"keywords": ["blue bottle", "green bottle", "bottle", "detection", "color"], "task_type": "object-detection", "use_case": "colored bottle detection"}
 
 Example input: "Identify basketball shots and player positions"
 Example output: {"keywords": ["basketball", "sports", "detection", "players", "positions"], "task_type": "object-detection", "use_case": "basketball player detection"}`
@@ -166,15 +175,43 @@ Example output: {"keywords": ["basketball", "sports", "detection", "players", "p
   } catch (error) {
     console.error('ChatGPT API error:', error)
 
-    // Fallback to simple keyword extraction 
+    // Fallback to simple keyword extraction with compound term preservation
+    const stopWords = ['identify', 'detect', 'find', 'locate', 'show', 'get', 'the', 'a', 'an', 'and', 'or', 'in', 'on', 'at', 'to', 'for', 'of', 'with']
+    
+    // First, try to extract compound terms (adjective + noun patterns)
+    const compoundPatterns = [
+      /(blue|green|red|yellow|orange|purple|pink|black|white|brown|gray|grey)\s+(\w+)/gi,
+      /(large|small|big|tiny|huge|mini)\s+(\w+)/gi,
+      /(glass|plastic|metal|wooden|ceramic)\s+(\w+)/gi
+    ]
+    
+    const compoundTerms: string[] = []
+    compoundPatterns.forEach(pattern => {
+      const matches = query.matchAll(pattern)
+      for (const match of matches) {
+        const compound = match[0].toLowerCase().trim()
+        if (compound.length > 3 && !stopWords.includes(compound.split(' ')[0])) {
+          compoundTerms.push(compound)
+        }
+      }
+    })
+    
+    // Extract remaining words (excluding those already in compound terms)
     const words = query.toLowerCase()
       .replace(/[^\w\s]/g, ' ')
       .split(/\s+/)
       .filter(word => word.length > 2)
-      .filter(word => !['identify', 'detect', 'find', 'locate', 'show', 'get'].includes(word))
-
+      .filter(word => !stopWords.includes(word))
+      .filter(word => {
+        // Exclude words that are part of compound terms
+        return !compoundTerms.some(compound => compound.includes(word))
+      })
+    
+    // Combine compound terms and individual words
+    const allKeywords = [...compoundTerms, ...words].slice(0, 6)
+    
     return {
-      keywords: words.slice(0, 5),
+      keywords: allKeywords,
       task_type: 'object-detection',
       use_case: 'computer vision task'
     }

@@ -466,38 +466,119 @@ export function calculateValidatedModelRelevance(
   const domainKeywords = keywords.filter(k => !genericTerms.has(k.toLowerCase()))
   const genericKeywords = keywords.filter(k => genericTerms.has(k.toLowerCase()))
   
-  // Higher weight for domain-specific keywords (e.g., "soccer", "ball")
-  keywords.forEach(keyword => {
+  // Identify compound keywords (multi-word keywords like "blue bottle", "green bottle")
+  const compoundKeywords = domainKeywords.filter(k => k.includes(' ') && k.split(' ').length >= 2)
+  const simpleKeywords = domainKeywords.filter(k => !k.includes(' '))
+  
+  // PRIORITY 1: Compound keyword matching (highest priority for specificity)
+  compoundKeywords.forEach(compoundKeyword => {
+    const lowerCompound = compoundKeyword.toLowerCase()
+    const compoundParts = lowerCompound.split(' ')
+    const compoundWeight = 5000 // Very high weight for compound matches
+    
+    // Check if model matches the entire compound keyword (exact phrase)
+    const exactMatch = modelText.includes(lowerCompound)
+    if (exactMatch) {
+      // Model ID contains exact compound (highest priority)
+      if (model.model_id.toLowerCase().includes(lowerCompound)) {
+        score += compoundWeight * 3
+      }
+      // Model name contains exact compound
+      else if ((model.name || '').toLowerCase().includes(lowerCompound)) {
+        score += compoundWeight * 2.5
+      }
+      // Task type contains exact compound
+      else if (model.task_type.toLowerCase().includes(lowerCompound)) {
+        score += compoundWeight * 2
+      }
+      // Tags contain exact compound
+      else if ((model.tags || []).some(tag => tag.toLowerCase().includes(lowerCompound))) {
+        score += compoundWeight * 1.8
+      }
+      // Generic text match
+      else {
+        score += compoundWeight
+      }
+    }
+    
+    // Check if model matches all parts of compound keyword together (even if not exact phrase)
+    const allPartsMatch = compoundParts.every(part => 
+      modelText.includes(part) && part.length > 2 // Exclude very short words
+    )
+    if (allPartsMatch && !exactMatch) {
+      // Bonus for matching all parts (but less than exact match)
+      score += compoundWeight * 0.8
+    }
+  })
+  
+  // PRIORITY 2: Simple domain keywords (e.g., "soccer", "ball")
+  simpleKeywords.forEach(keyword => {
     const lowerKeyword = keyword.toLowerCase()
-    const isDomainKeyword = domainKeywords.includes(keyword)
-    const keywordWeight = isDomainKeyword ? 1.5 : 1.0 // 50% boost for domain keywords
+    const keywordWeight = 1500 // Higher weight for domain keywords
     
     // Model ID contains keyword (highest priority)
     if (model.model_id.toLowerCase().includes(lowerKeyword)) {
-      score += Math.round(1000 * keywordWeight)
+      score += Math.round(1000 * 1.5) // 1500
     }
     
     // Model name contains keyword
     if ((model.name || '').toLowerCase().includes(lowerKeyword)) {
-      score += Math.round(800 * keywordWeight)
+      score += Math.round(800 * 1.5) // 1200
     }
     
     // Task type contains keyword
     if (model.task_type.toLowerCase().includes(lowerKeyword)) {
-      score += Math.round(600 * keywordWeight)
+      score += Math.round(600 * 1.5) // 900
     }
     
     // Tags contain keyword
     if ((model.tags || []).some(tag => tag.toLowerCase().includes(lowerKeyword))) {
-      score += Math.round(700 * keywordWeight)
+      score += Math.round(700 * 1.5) // 1050
     }
     
     // Word boundary matches
     const regex = new RegExp(`\\b${lowerKeyword}`, 'i')
     if (regex.test(modelText)) {
-      score += Math.round(200 * keywordWeight)
+      score += Math.round(200 * 1.5) // 300
     }
   })
+  
+  // PRIORITY 3: Generic keywords
+  genericKeywords.forEach(keyword => {
+    const lowerKeyword = keyword.toLowerCase()
+    
+    // Model ID contains keyword
+    if (model.model_id.toLowerCase().includes(lowerKeyword)) {
+      score += 500
+    }
+    
+    // Model name contains keyword
+    if ((model.name || '').toLowerCase().includes(lowerKeyword)) {
+      score += 400
+    }
+    
+    // Task type contains keyword
+    if (model.task_type.toLowerCase().includes(lowerKeyword)) {
+      score += 300
+    }
+    
+    // Tags contain keyword
+    if ((model.tags || []).some(tag => tag.toLowerCase().includes(lowerKeyword))) {
+      score += 350
+    }
+    
+    // Word boundary matches
+    const regex = new RegExp(`\\b${lowerKeyword}`, 'i')
+    if (regex.test(modelText)) {
+      score += 100
+    }
+  })
+  
+  // Bonus for matching multiple compound keywords
+  const compoundMatchCount = compoundKeywords.filter(compound =>
+    modelText.includes(compound.toLowerCase())
+  ).length
+  score += compoundMatchCount * 2000 // Very high bonus for multiple compound matches
   
   // Bonus for multiple keyword matches
   const keywordMatchCount = keywords.filter(keyword => 
@@ -525,11 +606,35 @@ export function calculateValidatedModelRelevance(
       score += 200  // Highly specialized model
     }
     
-    // Exact class matches (very important!) - prioritize domain keywords
-    const domainKeywords = keywords.filter(k => !['segmentation', 'segformer', 'image-segmentation', 'detection', 'classification'].includes(k.toLowerCase()))
+    // Exact class matches (very important!) - prioritize compound keywords and domain keywords
+    const domainKeywordsForClasses = keywords.filter(k => !['segmentation', 'segformer', 'image-segmentation', 'detection', 'classification'].includes(k.toLowerCase()))
+    const compoundKeywordsForClasses = domainKeywordsForClasses.filter(k => k.includes(' ') && k.split(' ').length >= 2)
+    const simpleKeywordsForClasses = domainKeywordsForClasses.filter(k => !k.includes(' '))
     
-    const classMatches = keywords.filter(keyword => {
-      const isDomainKeyword = domainKeywords.includes(keyword)
+    // PRIORITY 1: Compound keyword class matches (highest priority)
+    compoundKeywordsForClasses.forEach(compoundKeyword => {
+      const lowerCompound = compoundKeyword.toLowerCase()
+      const compoundParts = lowerCompound.split(' ')
+      
+      // Check if any class matches the entire compound keyword
+      const exactClassMatch = model.classes?.some(cls => 
+        cls.toLowerCase().includes(lowerCompound)
+      )
+      if (exactClassMatch) {
+        score += 2000 // Very high bonus for compound keyword class match
+      }
+      
+      // Check if all parts of compound match classes
+      const allPartsMatch = compoundParts.every(part => 
+        model.classes?.some(cls => cls.toLowerCase().includes(part)) && part.length > 2
+      )
+      if (allPartsMatch && !exactClassMatch) {
+        score += 1500 // High bonus for matching all parts
+      }
+    })
+    
+    // PRIORITY 2: Simple domain keyword class matches
+    const classMatches = simpleKeywordsForClasses.filter(keyword => {
       return model.classes?.some(cls => 
         cls.toLowerCase().includes(keyword.toLowerCase())
       )
@@ -537,8 +642,7 @@ export function calculateValidatedModelRelevance(
     
     // Higher weight for domain keyword class matches
     classMatches.forEach(keyword => {
-      const isDomainKeyword = domainKeywords.includes(keyword)
-      score += isDomainKeyword ? 300 : 150  // Double bonus for domain keyword class matches
+      score += 300 // Double bonus for domain keyword class matches
     })
   }
   

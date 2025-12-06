@@ -21,6 +21,9 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
 
   const processImageMutation = useMutation({
     mutationFn: async (imageFile: File): Promise<CVResponse> => {
+      // Track start time for accurate processing time measurement
+      const processingStartTime = performance.now()
+      
       const context = createLogContext(currentTask, 'useCVTask', 'process-image')
       logger.info('Starting image processing', context, {
         fileName: imageFile.name,
@@ -158,15 +161,20 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             logger.warn('Failed to get image dimensions, using defaults', context, dimError as Error)
           }
           
+          // Calculate actual processing time (in seconds)
+          const processingEndTime = performance.now()
+          const actualProcessingTime = (processingEndTime - processingStartTime) / 1000 // Convert ms to seconds
+          
           // Transform response to CVResponse format based on model source 
           const cvResponse: CVResponse = selectedModel.source === 'roboflow' 
-            ? transformRoboflowToCVResponse(inferenceData, selectedModel, imageDimensions)
-            : transformHFToCVResponse(inferenceData, selectedModel, imageDimensions)
+            ? await transformRoboflowToCVResponse(inferenceData, selectedModel, imageDimensions, base64, actualProcessingTime)
+            : await transformHFToCVResponse(inferenceData, selectedModel, imageDimensions, base64, actualProcessingTime)
           
           logger.info('Inference completed successfully', context, {
             resultsCount: inferenceData.results?.length || inferenceData.predictions?.length,
             modelSource: selectedModel.source,
-            task: cvResponse.task
+            task: cvResponse.task,
+            processingTime: actualProcessingTime.toFixed(3) + 's'
           })
           
           // Save inference result to MongoDB (inference_jobs collection with host property)
@@ -332,9 +340,187 @@ function getImageDimensions(file: File): Promise<{ width: number; height: number
 }
 
 /**
+ * Detect dominant color from a cropped image region
+ * Returns a color descriptor (e.g., "red", "blue", "clear", "white")
+ */
+async function detectColorFromRegion(
+  imageBase64: string,
+  bbox: { x: number; y: number; width: number; height: number },
+  imageWidth: number,
+  imageHeight: number
+): Promise<string | null> {
+  try {
+    // Check if we're in browser environment
+    if (typeof window === 'undefined' || typeof Image === 'undefined' || typeof document === 'undefined') {
+      return null
+    }
+
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        try {
+          // Create canvas to analyze the region
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            resolve(null)
+            return
+          }
+
+          // Calculate crop region (ensure within image bounds)
+          const cropX = Math.max(0, Math.min(bbox.x, imageWidth))
+          const cropY = Math.max(0, Math.min(bbox.y, imageHeight))
+          const cropWidth = Math.min(bbox.width, imageWidth - cropX)
+          const cropHeight = Math.min(bbox.height, imageHeight - cropY)
+
+          // Set canvas size to crop region
+          canvas.width = cropWidth
+          canvas.height = cropHeight
+
+          // Draw the cropped region
+          ctx.drawImage(
+            img,
+            cropX, cropY, cropWidth, cropHeight,
+            0, 0, cropWidth, cropHeight
+          )
+
+          // Sample pixels from the center region (more reliable than edges)
+          const sampleSize = Math.min(50, Math.floor(cropWidth / 4), Math.floor(cropHeight / 4))
+          const centerX = Math.floor(cropWidth / 2)
+          const centerY = Math.floor(cropHeight / 2)
+          const startX = Math.max(0, centerX - sampleSize / 2)
+          const startY = Math.max(0, centerY - sampleSize / 2)
+          const endX = Math.min(cropWidth, centerX + sampleSize / 2)
+          const endY = Math.min(cropHeight, centerY + sampleSize / 2)
+
+          // Get image data from center region
+          const imageData = ctx.getImageData(startX, startY, endX - startX, endY - startY)
+          const data = imageData.data
+
+          // Calculate average RGB values
+          let r = 0, g = 0, b = 0, alpha = 0
+          let pixelCount = 0
+
+          for (let i = 0; i < data.length; i += 4) {
+            const a = data[i + 3] / 255
+            if (a > 0.5) { // Only count non-transparent pixels
+              r += data[i] * a
+              g += data[i + 1] * a
+              b += data[i + 2] * a
+              alpha += a
+              pixelCount++
+            }
+          }
+
+          if (pixelCount === 0) {
+            resolve(null)
+            return
+          }
+
+          const avgR = r / alpha
+          const avgG = g / alpha
+          const avgB = b / alpha
+
+          // Calculate brightness and saturation
+          const brightness = (avgR + avgG + avgB) / 3
+          const max = Math.max(avgR, avgG, avgB)
+          const min = Math.min(avgR, avgG, avgB)
+          const saturation = max === 0 ? 0 : (max - min) / max
+
+          // Determine color descriptor
+          let colorDescriptor: string | null = null
+
+          // Check for clear/transparent (high brightness, low saturation)
+          if (brightness > 200 && saturation < 0.2) {
+            colorDescriptor = 'clear'
+          }
+          // Check for white (very high brightness, very low saturation)
+          else if (brightness > 240 && saturation < 0.1) {
+            colorDescriptor = 'white'
+          }
+          // Check for black (very low brightness)
+          else if (brightness < 50) {
+            colorDescriptor = 'black'
+          }
+          // Check for gray (low saturation, medium brightness)
+          else if (saturation < 0.2) {
+            if (brightness > 180) colorDescriptor = 'light gray'
+            else if (brightness > 100) colorDescriptor = 'gray'
+            else colorDescriptor = 'dark gray'
+          }
+          // Colored objects
+          else {
+            // Determine dominant hue
+            const diffRG = Math.abs(avgR - avgG)
+            const diffGB = Math.abs(avgG - avgB)
+            const diffRB = Math.abs(avgR - avgB)
+
+            if (avgR > avgG && avgR > avgB && diffRG > 30) {
+              // Red dominant
+              if (avgR > 200) colorDescriptor = 'red'
+              else if (avgR > 150) colorDescriptor = 'dark red'
+              else colorDescriptor = 'maroon'
+            } else if (avgG > avgR && avgG > avgB && diffGB > 30) {
+              // Green dominant
+              if (avgG > 200) colorDescriptor = 'green'
+              else if (avgG > 150) colorDescriptor = 'dark green'
+              else colorDescriptor = 'olive'
+            } else if (avgB > avgR && avgB > avgG && diffRB > 30) {
+              // Blue dominant
+              if (avgB > 200) colorDescriptor = 'blue'
+              else if (avgB > 150) colorDescriptor = 'dark blue'
+              else colorDescriptor = 'navy'
+            } else if (avgR > 200 && avgG > 150 && avgB < 100) {
+              colorDescriptor = 'yellow'
+            } else if (avgR > 200 && avgG > 100 && avgB > 200) {
+              colorDescriptor = 'pink'
+            } else if (avgR > 150 && avgG < 100 && avgB > 200) {
+              colorDescriptor = 'purple'
+            } else if (avgR > 200 && avgG > 100 && avgB < 150) {
+              colorDescriptor = 'orange'
+            } else {
+              // Fallback to brightness-based descriptor
+              if (brightness > 200) colorDescriptor = 'light'
+              else if (brightness > 100) colorDescriptor = 'medium'
+              else colorDescriptor = 'dark'
+            }
+          }
+
+          resolve(colorDescriptor)
+        } catch (error) {
+          resolve(null)
+        }
+      }
+      img.onerror = () => resolve(null)
+      img.src = imageBase64
+    })
+  } catch (error) {
+    return null
+  }
+}
+
+/**
+ * Enhance class name with color/material descriptor
+ */
+function enhanceClassName(className: string, colorDescriptor: string | null): string {
+  if (!colorDescriptor) return className
+
+  const lowerClass = className.toLowerCase()
+  
+  // Don't add color if it's already in the class name
+  const colorWords = ['red', 'blue', 'green', 'yellow', 'pink', 'purple', 'orange', 'white', 'black', 'gray', 'grey', 'clear', 'dark', 'light']
+  if (colorWords.some(word => lowerClass.includes(word))) {
+    return className
+  }
+
+  // Add color descriptor before the class name
+  return `${colorDescriptor} ${className}`
+}
+
+/**
  * Transform Hugging Face Inference API response to CVResponse format 
  */
-function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, imageDimensions?: { width: number; height: number }): CVResponse {
+async function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, imageDimensions?: { width: number; height: number }, imageBase64?: string, actualProcessingTime?: number): Promise<CVResponse> {
   const results = inferenceData.results || []
   
   // Determine task type from model and results
@@ -364,11 +550,51 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
   
   // Transform based on task type
   if (task === 'detection' || task.includes('detection')) {
-    // Object Detection
+    // Object Detection - enhance class names with color detection
+    const detections = await Promise.all(
+      results.map(async (det: any) => {
+        const bbox = det.box ? {
+          x: det.box.xmin,
+          y: det.box.ymin,
+          width: det.box.xmax - det.box.xmin,
+          height: det.box.ymax - det.box.ymin
+        } : { x: 0, y: 0, width: 0, height: 0 }
+
+        // Detect color if image and dimensions are available
+        let colorDescriptor: string | null = null
+        if (imageBase64 && imageDimensions && bbox.width > 0 && bbox.height > 0) {
+          // Check if bbox is normalized (0-1) or in pixels
+          // HF models typically return pixel coordinates, but check to be safe
+          const isNormalized = bbox.x < 1.0 && bbox.y < 1.0 && 
+                               bbox.width < 1.0 && bbox.height < 1.0
+          
+          const pixelBbox = isNormalized ? {
+            x: bbox.x * imageDimensions.width,
+            y: bbox.y * imageDimensions.height,
+            width: bbox.width * imageDimensions.width,
+            height: bbox.height * imageDimensions.height
+          } : bbox
+
+          colorDescriptor = await detectColorFromRegion(
+            imageBase64,
+            pixelBbox,
+            imageDimensions.width,
+            imageDimensions.height
+          )
+        }
+
+        return {
+          class: enhanceClassName(det.label, colorDescriptor),
+          confidence: det.score,
+          bbox
+        }
+      })
+    )
+
     return {
       task: 'detection',
       model_version: model.name,
-      processing_time: 0.5,
+      processing_time: actualProcessingTime ?? (inferenceData.duration ? inferenceData.duration / 1000 : 0.5),
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -376,16 +602,7 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
         format: 'jpeg'
       },
       results: {
-        detections: results.map((det: any) => ({
-          class: det.label,
-          confidence: det.score,
-          bbox: det.box ? {
-            x: det.box.xmin,
-            y: det.box.ymin,
-            width: det.box.xmax - det.box.xmin,
-            height: det.box.ymax - det.box.ymin
-          } : { x: 0, y: 0, width: 0, height: 0 }
-        }))
+        detections
       }
     }
   } else if (task === 'classification' || task.includes('classification')) {
@@ -393,7 +610,7 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
     return {
       task: 'classification',
       model_version: model.name,
-      processing_time: 0.3,
+      processing_time: actualProcessingTime ?? (inferenceData.duration ? inferenceData.duration / 1000 : 0.3),
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -415,7 +632,7 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
     return {
       task: 'segmentation',
       model_version: model.name,
-      processing_time: (inferenceData.duration || 800) / 1000, // Convert ms to seconds
+      processing_time: actualProcessingTime ?? ((inferenceData.duration || 800) / 1000), // Convert ms to seconds
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -485,7 +702,7 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
   return {
     task: 'multi-type',
     model_version: model.name,
-    processing_time: 0.5,
+    processing_time: actualProcessingTime ?? 0.5,
     timestamp: inferenceData.timestamp || new Date().toISOString(),
     image_metadata: {
       width: 640,
@@ -501,7 +718,7 @@ function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, image
 /**
  * Transform Roboflow API response to CVResponse format with pixel strips
  */
-function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata, imageDimensions?: { width: number; height: number }): CVResponse {
+async function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata, imageDimensions?: { width: number; height: number }, imageBase64?: string, actualProcessingTime?: number): Promise<CVResponse> {
   // Roboflow API returns predictions, not results
   const predictions = inferenceData.predictions || inferenceData.results || []
   
@@ -581,7 +798,7 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
     return {
       task: 'classification',
       model_version: model.name,
-      processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
+      processing_time: actualProcessingTime ?? ((inferenceData.processing_time || 500) / 1000), // Convert ms to seconds
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -603,7 +820,7 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
     return {
       task: 'keypoint-detection',
       model_version: model.name,
-      processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
+      processing_time: actualProcessingTime ?? ((inferenceData.processing_time || 500) / 1000), // Convert ms to seconds
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -661,11 +878,58 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
       }
     }
   } else if (task === 'detection' || task.includes('detection')) {
-    // Object Detection
+    // Object Detection - enhance class names with color detection
+    const detections = await Promise.all(
+      predictions.map(async (detection: any) => {
+        // Convert Roboflow bbox format to our format
+        const bbox = detection.bbox || {
+          x: detection.x || 0,
+          y: detection.y || 0,
+          width: detection.width || 0,
+          height: detection.height || 0
+        }
+        
+        const normalizedBbox = {
+          x: bbox.x || detection.x || 0,
+          y: bbox.y || detection.y || 0,
+          width: bbox.width || detection.width || 0,
+          height: bbox.height || detection.height || 0
+        }
+
+        // Detect color if image and dimensions are available
+        let colorDescriptor: string | null = null
+        if (imageBase64 && imageDimensions && normalizedBbox.width > 0 && normalizedBbox.height > 0) {
+          // Check if bbox is normalized (0-1) or in pixels
+          const isNormalized = normalizedBbox.x < 1.0 && normalizedBbox.y < 1.0 && 
+                               normalizedBbox.width < 1.0 && normalizedBbox.height < 1.0
+          
+          const pixelBbox = isNormalized ? {
+            x: normalizedBbox.x * imageDimensions.width,
+            y: normalizedBbox.y * imageDimensions.height,
+            width: normalizedBbox.width * imageDimensions.width,
+            height: normalizedBbox.height * imageDimensions.height
+          } : normalizedBbox
+
+          colorDescriptor = await detectColorFromRegion(
+            imageBase64,
+            pixelBbox,
+            imageDimensions.width,
+            imageDimensions.height
+          )
+        }
+
+        return {
+          class: enhanceClassName(detection.class, colorDescriptor),
+          confidence: detection.confidence,
+          bbox: normalizedBbox
+        }
+      })
+    )
+
     return {
       task: 'detection',
       model_version: model.name,
-      processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
+      processing_time: actualProcessingTime ?? ((inferenceData.processing_time || 500) / 1000), // Convert ms to seconds
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -673,26 +937,7 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
         format: 'jpeg'
       },
       results: {
-        detections: predictions.map((detection: any) => {
-          // Convert Roboflow bbox format to our format
-          const bbox = detection.bbox || {
-            x: detection.x || 0,
-            y: detection.y || 0,
-            width: detection.width || 0,
-            height: detection.height || 0
-          }
-          
-          return {
-          class: detection.class,
-          confidence: detection.confidence,
-            bbox: {
-              x: bbox.x || detection.x || 0,
-              y: bbox.y || detection.y || 0,
-              width: bbox.width || detection.width || 0,
-              height: bbox.height || detection.height || 0
-            }
-          }
-        })
+        detections
       }
     }
   } else if (task === 'segmentation' || task.includes('segmentation')) {
@@ -702,7 +947,7 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
     return {
       task: 'segmentation',
       model_version: model.name,
-      processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
+      processing_time: actualProcessingTime ?? ((inferenceData.processing_time || 500) / 1000), // Convert ms to seconds
       timestamp: inferenceData.timestamp || new Date().toISOString(),
       image_metadata: {
         width: imageDimensions?.width || 640,
@@ -761,7 +1006,7 @@ function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata,
   return {
     task: 'multi-type',
     model_version: model.name,
-    processing_time: (inferenceData.processing_time || 500) / 1000, // Convert ms to seconds
+    processing_time: actualProcessingTime ?? ((inferenceData.processing_time || 500) / 1000), // Convert ms to seconds
     timestamp: inferenceData.timestamp || new Date().toISOString(),
     image_metadata: {
       width: imageDimensions?.width || 640,

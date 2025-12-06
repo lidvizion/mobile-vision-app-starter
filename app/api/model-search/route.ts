@@ -634,13 +634,62 @@ async function searchRoboflowModelsPython(keywords: string[], taskType: string):
 
     // Transform results to NormalizedModel format
     // Re-using the logic from the Python response parsing
+    // Identify compound keywords (multi-word keywords like "blue bottle", "green bottle")
+    const compoundKeywords = domainKeywords.filter(k => k.includes(' ') && k.split(' ').length >= 2)
+    const simpleKeywords = domainKeywords.filter(k => !k.includes(' '))
+    
     const modelsWithScores = rawModels.map((model: RoboflowModel, index: number) => {
       let relevanceScore = 0
       const modelText = `${model.project_title || ''} ${model.url || ''} ${(model.classes || []).join(' ')}`.toLowerCase()
 
-      domainKeywords.forEach(keyword => {
-        if (modelText.includes(keyword.toLowerCase())) relevanceScore += 100
+      // PRIORITY 1: Compound keyword matching (highest priority for specificity)
+      compoundKeywords.forEach(compoundKeyword => {
+        const lowerCompound = compoundKeyword.toLowerCase()
+        const compoundParts = lowerCompound.split(' ')
+        
+        // Check if model matches the entire compound keyword (exact phrase)
+        const exactMatch = modelText.includes(lowerCompound)
+        if (exactMatch) {
+          // Project title match gets highest score
+          if ((model.project_title || '').toLowerCase().includes(lowerCompound)) {
+            relevanceScore += 5000 // Very high score for compound match in title
+          }
+          // URL match gets high score
+          else if ((model.url || '').toLowerCase().includes(lowerCompound)) {
+            relevanceScore += 4000
+          }
+          // Class match gets high score
+          else if ((model.classes || []).some((c: string) => c.toLowerCase().includes(lowerCompound))) {
+            relevanceScore += 4500
+          }
+          // Generic text match
+          else {
+            relevanceScore += 2000
+          }
+        }
+        
+        // Check if model matches all parts of compound keyword together (even if not exact phrase)
+        const allPartsMatch = compoundParts.every(part => 
+          modelText.includes(part) && part.length > 2 // Exclude very short words
+        )
+        if (allPartsMatch && !exactMatch) {
+          // Bonus for matching all parts (but less than exact match)
+          relevanceScore += 1500
+        }
       })
+
+      // PRIORITY 2: Simple domain keyword matches
+      simpleKeywords.forEach(keyword => {
+        if (modelText.includes(keyword.toLowerCase())) {
+          relevanceScore += 100
+        }
+      })
+
+      // Bonus for matching multiple compound keywords
+      const compoundMatchCount = compoundKeywords.filter(compound =>
+        modelText.includes(compound.toLowerCase())
+      ).length
+      relevanceScore += compoundMatchCount * 2000
 
       if (model.has_model) relevanceScore += 50
       if (model.mAP) relevanceScore += 30
@@ -731,6 +780,10 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
     const genericTerms = new Set(['segmentation', 'segformer', 'image-segmentation', 'detection', 'classification', 'object-detection', 'instance-segmentation'])
     const domainKeywords = keywords.filter(k => !genericTerms.has(k.toLowerCase()))
 
+    // Identify compound keywords (multi-word keywords like "blue bottle", "green bottle")
+    const compoundKeywords = domainKeywords.filter(k => k.includes(' ') && k.split(' ').length >= 2)
+    const simpleKeywords = domainKeywords.filter(k => !k.includes(' '))
+
     // Calculate relevance score for each model based on domain keyword matches
     interface ModelWithScore {
       model: any
@@ -742,8 +795,44 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
       let relevanceScore = 0
       const modelText = `${model.project_title || ''} ${model.url || ''} ${(model.classes || []).join(' ')}`.toLowerCase()
 
-      // Higher score for domain keyword matches
-      domainKeywords.forEach(keyword => {
+      // PRIORITY 1: Compound keyword matching (highest priority for specificity)
+      compoundKeywords.forEach(compoundKeyword => {
+        const lowerCompound = compoundKeyword.toLowerCase()
+        const compoundParts = lowerCompound.split(' ')
+        
+        // Check if model matches the entire compound keyword (exact phrase)
+        const exactMatch = modelText.includes(lowerCompound)
+        if (exactMatch) {
+          // Project title match gets highest score
+          if ((model.project_title || '').toLowerCase().includes(lowerCompound)) {
+            relevanceScore += 5000 // Very high score for compound match in title
+          }
+          // URL match gets high score
+          else if ((model.url || '').toLowerCase().includes(lowerCompound)) {
+            relevanceScore += 4000
+          }
+          // Class match gets high score
+          else if ((model.classes || []).some((c: string) => c.toLowerCase().includes(lowerCompound))) {
+            relevanceScore += 4500
+          }
+          // Generic text match
+          else {
+            relevanceScore += 2000
+          }
+        }
+        
+        // Check if model matches all parts of compound keyword together (even if not exact phrase)
+        const allPartsMatch = compoundParts.every(part => 
+          modelText.includes(part) && part.length > 2 // Exclude very short words
+        )
+        if (allPartsMatch && !exactMatch) {
+          // Bonus for matching all parts (but less than exact match)
+          relevanceScore += 1500
+        }
+      })
+
+      // PRIORITY 2: Simple domain keyword matches
+      simpleKeywords.forEach(keyword => {
         const lowerKeyword = keyword.toLowerCase()
         if (modelText.includes(lowerKeyword)) {
           // Project title match gets highest score
@@ -751,19 +840,25 @@ function parsePythonJson(jsonString: string, keywords: string[], searchQuery: st
             relevanceScore += 1000
           }
           // URL match gets high score
-          if ((model.url || '').toLowerCase().includes(lowerKeyword)) {
+          else if ((model.url || '').toLowerCase().includes(lowerKeyword)) {
             relevanceScore += 800
           }
           // Class match gets high score
-          if ((model.classes || []).some((c: string) => c.toLowerCase().includes(lowerKeyword))) {
+          else if ((model.classes || []).some((c: string) => c.toLowerCase().includes(lowerKeyword))) {
             relevanceScore += 900
           }
           // Generic text match
-          if (modelText.includes(lowerKeyword)) {
+          else {
             relevanceScore += 200
           }
         }
       })
+
+      // Bonus for matching multiple compound keywords
+      const compoundMatchCount = compoundKeywords.filter(compound =>
+        modelText.includes(compound.toLowerCase())
+      ).length
+      relevanceScore += compoundMatchCount * 2000
 
       return { model, relevanceScore, index }
     })
@@ -1525,7 +1620,7 @@ async function searchHFModels(
     })
 
 
-    // Enhanced keyword-based relevance scoring with domain keyword prioritization
+    // Enhanced keyword-based relevance scoring with domain keyword prioritization and compound term matching
     const calculateRelevanceScore = (model: any, searchKeywords: string[]) => {
       let score = 0
       const modelText = `${model.id} ${model.name || ''} ${model.description || ''} ${(model.tags || []).join(' ')}`.toLowerCase()
@@ -1535,8 +1630,53 @@ async function searchHFModels(
       const domainKeywords = keywords.filter(k => !genericTerms.has(k.toLowerCase()))
       const genericKeywords = keywords.filter(k => genericTerms.has(k.toLowerCase()))
 
-      // Domain keywords get MUCH higher weight (e.g., "soccer", "ball")
-      domainKeywords.forEach(keyword => {
+      // Identify compound keywords (multi-word keywords like "blue bottle", "green bottle")
+      const compoundKeywords = domainKeywords.filter(k => k.includes(' ') && k.split(' ').length >= 2)
+      const simpleKeywords = domainKeywords.filter(k => !k.includes(' '))
+
+      // PRIORITY 1: Compound keyword matching (highest priority for specificity)
+      compoundKeywords.forEach(compoundKeyword => {
+        const lowerCompound = compoundKeyword.toLowerCase()
+        const compoundParts = lowerCompound.split(' ')
+        const compoundWeight = 5000 // Very high weight for compound matches
+        
+        // Check if model matches the entire compound keyword (exact phrase)
+        const exactMatch = modelText.includes(lowerCompound)
+        if (exactMatch) {
+          // Model ID contains exact compound (highest priority)
+          if (model.id.toLowerCase().includes(lowerCompound)) {
+            score += compoundWeight * 3
+          }
+          // Model name contains exact compound
+          else if ((model.name || '').toLowerCase().includes(lowerCompound)) {
+            score += compoundWeight * 2.5
+          }
+          // Description contains exact compound
+          else if ((model.description || '').toLowerCase().includes(lowerCompound)) {
+            score += compoundWeight * 2
+          }
+          // Tags contain exact compound
+          else if ((model.tags || []).some((tag: string) => tag.toLowerCase().includes(lowerCompound))) {
+            score += compoundWeight * 1.8
+          }
+          // Generic text match
+          else {
+            score += compoundWeight
+          }
+        }
+        
+        // Check if model matches all parts of compound keyword together (even if not exact phrase)
+        const allPartsMatch = compoundParts.every(part => 
+          modelText.includes(part) && part.length > 2 // Exclude very short words
+        )
+        if (allPartsMatch && !exactMatch) {
+          // Bonus for matching all parts (but less than exact match)
+          score += compoundWeight * 0.8
+        }
+      })
+
+      // PRIORITY 2: Simple domain keywords (e.g., "soccer", "ball")
+      simpleKeywords.forEach(keyword => {
         const lowerKeyword = keyword.toLowerCase()
         const keywordWeight = 2000 // Much higher weight for domain keywords
 
@@ -1561,7 +1701,7 @@ async function searchHFModels(
         }
       })
 
-      // Generic keywords get lower weight (e.g., "detection", "model")
+      // PRIORITY 3: Generic keywords get lower weight (e.g., "detection", "model")
       genericKeywords.forEach(keyword => {
         const lowerKeyword = keyword.toLowerCase()
 
@@ -1596,6 +1736,12 @@ async function searchHFModels(
           score += 100
         }
       })
+
+      // Bonus for matching multiple compound keywords together
+      const compoundMatchCount = compoundKeywords.filter(compound =>
+        modelText.includes(compound.toLowerCase())
+      ).length
+      score += compoundMatchCount * 2000 // Very high bonus for multiple compound matches
 
       // Bonus for multiple domain keyword matches (much higher bonus)
       const domainKeywordMatchCount = domainKeywords.filter(keyword =>
