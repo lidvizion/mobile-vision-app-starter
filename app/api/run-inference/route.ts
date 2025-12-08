@@ -343,67 +343,39 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Check if Lambda endpoint is configured
-      const lambdaEndpoint = process.env.GEMINI_LAMBDA_ENDPOINT
-      
-      if (lambdaEndpoint) {
-        // Use Lambda endpoint
-        const lambdaResponse = await fetch(lambdaEndpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image: inputs,
-            prompt: parameters?.prompt,
-            model: model_id,
-            task: parameters?.task || 'object-detection'
-          })
-        })
+      // Always forward to /api/gemini-inference which handles Lambda/local routing
+      console.log('🔄 Forwarding Gemini request to /api/gemini-inference', {
+        model_id,
+        hasInputs: !!inputs,
+        task: parameters?.task
+      })
 
-        if (!lambdaResponse.ok) {
-          const errorText = await lambdaResponse.text()
-          throw new Error(`Lambda API error: ${lambdaResponse.status} - ${errorText}`)
-        }
-
-        const lambdaResult = await lambdaResponse.json()
-        const duration = Date.now() - startTime
-
-        return NextResponse.json({
-          success: true,
-          results: lambdaResult.results || lambdaResult,
+      const geminiResponse = await fetch(`${request.nextUrl.origin}/api/gemini-inference`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           model_id,
-          timestamp: new Date().toISOString(),
-          duration,
-          requestId
+          inputs,
+          parameters
         })
-      } else {
-        // Fallback to local API endpoint
-        const geminiResponse = await fetch(`${request.nextUrl.origin}/api/gemini-inference`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model_id,
-            inputs,
-            parameters
-          })
-        })
+      })
 
-        if (!geminiResponse.ok) {
-          const errorText = await geminiResponse.text()
-          throw new Error(`Gemini API error: ${geminiResponse.status} - ${errorText}`)
-        }
-
-        const geminiResult = await geminiResponse.json()
-        const duration = Date.now() - startTime
-
-        return NextResponse.json({
-          success: true,
-          results: geminiResult.results || geminiResult,
-          model_id,
-          timestamp: new Date().toISOString(),
-          duration,
-          requestId
-        })
+      if (!geminiResponse.ok) {
+        const errorText = await geminiResponse.text()
+        throw new Error(`Gemini API error: ${geminiResponse.status} - ${errorText}`)
       }
+
+      const geminiResult = await geminiResponse.json()
+      const duration = Date.now() - startTime
+
+      return NextResponse.json({
+        success: true,
+        results: geminiResult.results || geminiResult,
+        model_id,
+        timestamp: new Date().toISOString(),
+        duration,
+        requestId
+      })
     }
 
     // Validation for non-Gemini models
