@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { markModelAsWorking, markModelAsFailed } from '@/lib/mongodb/validatedModels'
 import OpenAI from 'openai'
+import { generatePrompt } from '@/lib/geminiUtils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -343,39 +344,101 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Always forward to /api/gemini-inference which handles Lambda/local routing
-      console.log('🔄 Forwarding Gemini request to /api/gemini-inference', {
-        model_id,
-        hasInputs: !!inputs,
-        task: parameters?.task
-      })
-
-      const geminiResponse = await fetch(`${request.nextUrl.origin}/api/gemini-inference`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Check if Lambda endpoint is configured (direct call - no internal fetch)
+      const lambdaEndpoint = process.env.GEMINI_LAMBDA_ENDPOINT
+      
+      if (lambdaEndpoint) {
+        console.log('✅ Using Lambda endpoint directly (bypassing internal fetch)', {
           model_id,
-          inputs,
-          parameters
+          hasInputs: !!inputs,
+          inputLength: inputs.length,
+          task: parameters?.task
         })
-      })
 
-      if (!geminiResponse.ok) {
-        const errorText = await geminiResponse.text()
-        throw new Error(`Gemini API error: ${geminiResponse.status} - ${errorText}`)
+        // Generate prompt based on task
+        const task = parameters?.task || 'object-detection'
+        const prompt = generatePrompt(task, parameters?.prompt)
+        
+        console.log('📤 Sending to Lambda', {
+          task,
+          promptLength: prompt.length,
+          model: model_id,
+          hasImage: !!inputs
+        })
+
+        // Direct call to Lambda (no internal fetch to avoid Amplify issues)
+        const lambdaResponse = await fetch(lambdaEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: inputs,
+            prompt: prompt,
+            model: model_id,
+            task: task
+          })
+        })
+
+        if (!lambdaResponse.ok) {
+          const errorText = await lambdaResponse.text()
+          console.error('❌ Lambda API error:', {
+            status: lambdaResponse.status,
+            statusText: lambdaResponse.statusText,
+            error: errorText
+          })
+          throw new Error(`Lambda API error: ${lambdaResponse.status} - ${errorText}`)
+        }
+
+        const lambdaResult = await lambdaResponse.json()
+        const duration = Date.now() - startTime
+
+        console.log('✅ Lambda response received', {
+          hasResults: !!lambdaResult.results,
+          resultsCount: Array.isArray(lambdaResult.results) ? lambdaResult.results.length : 'not array'
+        })
+
+        return NextResponse.json({
+          success: true,
+          results: lambdaResult.data?.detections || lambdaResult.data || lambdaResult.results || [],
+          model_id,
+          timestamp: new Date().toISOString(),
+          duration,
+          requestId,
+          source: 'lambda'
+        })
+      } else {
+        // Fallback: Use internal /api/gemini-inference (local development)
+        console.log('⚠️ Lambda endpoint not configured, using local /api/gemini-inference', {
+          model_id,
+          hasInputs: !!inputs
+        })
+
+        const geminiResponse = await fetch(`${request.nextUrl.origin}/api/gemini-inference`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model_id,
+            inputs,
+            parameters
+          })
+        })
+
+        if (!geminiResponse.ok) {
+          const errorText = await geminiResponse.text()
+          throw new Error(`Gemini API error: ${geminiResponse.status} - ${errorText}`)
+        }
+
+        const geminiResult = await geminiResponse.json()
+        const duration = Date.now() - startTime
+
+        return NextResponse.json({
+          success: true,
+          results: geminiResult.results || geminiResult,
+          model_id,
+          timestamp: new Date().toISOString(),
+          duration,
+          requestId
+        })
       }
-
-      const geminiResult = await geminiResponse.json()
-      const duration = Date.now() - startTime
-
-      return NextResponse.json({
-        success: true,
-        results: geminiResult.results || geminiResult,
-        model_id,
-        timestamp: new Date().toISOString(),
-        duration,
-        requestId
-      })
     }
 
     // Validation for non-Gemini models
