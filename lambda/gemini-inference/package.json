@@ -4,7 +4,7 @@
   "description": "AWS Lambda function for Gemini inference",
   "main": "index.js",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1"
+    "@google/generative-ai": "^0.24.1",
+    "mongodb": "^6.21.0"
   }
 }
-

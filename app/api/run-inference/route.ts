@@ -3,7 +3,9 @@ import crypto from 'crypto'
 import { markModelAsWorking, markModelAsFailed } from '@/lib/mongodb/validatedModels'
 import OpenAI from 'openai'
 import { generatePrompt } from '@/lib/geminiUtils'
+import { createInferenceJob } from '@/lib/mongodb/jobs'
 
+export const maxDuration = 300
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -344,11 +346,12 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Check if Lambda endpoint is configured (direct call - no internal fetch)
+      // Check if Lambda endpoint is configured
       const lambdaEndpoint = process.env.GEMINI_LAMBDA_ENDPOINT
       
       if (lambdaEndpoint) {
-        console.log('✅ Using Lambda endpoint directly (bypassing internal fetch)', {
+        // ASYNC JOB PATTERN: Create job, invoke Lambda async, return jobId immediately
+        console.log('🚀 Using async job pattern for Gemini inference', {
           model_id,
           hasInputs: !!inputs,
           inputLength: inputs.length,
@@ -359,51 +362,46 @@ export async function POST(request: NextRequest) {
         const task = parameters?.task || 'object-detection'
         const prompt = generatePrompt(task, parameters?.prompt)
         
-        console.log('📤 Sending to Lambda', {
+        // Create job in MongoDB (status: 'pending')
+        const jobId = await createInferenceJob({
+          model_id,
+          inputs,
+          parameters,
           task,
-          promptLength: prompt.length,
-          model: model_id,
-          hasImage: !!inputs
+          query: body.query || 'unknown',
         })
 
-        // Direct call to Lambda (no internal fetch to avoid Amplify issues)
-        const lambdaResponse = await fetch(lambdaEndpoint, {
+        console.log('✅ Created async job:', jobId)
+
+        // Fire and forget - Lambda will process and update MongoDB
+        // Lambda will mark job as 'processing' when it starts, then 'completed' or 'failed' when done
+        fetch(lambdaEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            job_id: jobId, // Pass job_id so Lambda can update MongoDB
             image: inputs,
             prompt: prompt,
             model: model_id,
             task: task
           })
-        })
-
-        if (!lambdaResponse.ok) {
-          const errorText = await lambdaResponse.text()
-          console.error('❌ Lambda API error:', {
-            status: lambdaResponse.status,
-            statusText: lambdaResponse.statusText,
-            error: errorText
+        }).catch(err => {
+          console.error('Failed to invoke Lambda:', err)
+          // Mark job as failed if Lambda invocation fails
+          import('@/lib/mongodb/jobs').then(({ failJob }) => {
+            failJob(jobId, `Lambda invocation failed: ${err.message}`)
           })
-          throw new Error(`Lambda API error: ${lambdaResponse.status} - ${errorText}`)
-        }
-
-        const lambdaResult = await lambdaResponse.json()
-        const duration = Date.now() - startTime
-
-        console.log('✅ Lambda response received', {
-          hasResults: !!lambdaResult.results,
-          resultsCount: Array.isArray(lambdaResult.results) ? lambdaResult.results.length : 'not array'
         })
 
+        // Return jobId immediately - frontend will poll for status
         return NextResponse.json({
           success: true,
-          results: lambdaResult.data?.detections || lambdaResult.data || lambdaResult.results || [],
+          job_id: jobId,
+          status: 'pending',
           model_id,
           timestamp: new Date().toISOString(),
-          duration,
           requestId,
-          source: 'lambda'
+          message: 'Job created. Poll /api/job-status/[jobId] for results.'
         })
       } else {
         // Fallback: Use internal /api/gemini-inference (local development)

@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDatabase } from '@/lib/mongodb/connection'
+import { getJob } from '@/lib/mongodb/jobs'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+/**
+ * GET /api/job-status/[jobId]
+ * Purpose: Poll job status for async inference jobs
+ * 
+ * Returns job status and results when available
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: { jobId: string } }
@@ -15,8 +24,7 @@ export async function GET(
       )
     }
 
-    const db = await getDatabase()
-    const job = await db.collection('inference_jobs').findOne({ jobId })
+    const job = await getJob(jobId)
 
     if (!job) {
       return NextResponse.json(
@@ -25,12 +33,21 @@ export async function GET(
       )
     }
 
-    return NextResponse.json(job)
+    // Return job status
+    return NextResponse.json({
+      job_id: job.job_id,
+      status: job.status,
+      result: job.result,
+      error: job.error,
+      created_at: job.created_at,
+      updated_at: job.updated_at,
+      duration_ms: job.duration_ms,
+    })
 
   } catch (error: any) {
     console.error('Job status error:', error)
     return NextResponse.json(
-      { error: 'Failed to get job status' },
+      { error: 'Failed to get job status', details: error.message },
       { status: 500 }
     )
   }

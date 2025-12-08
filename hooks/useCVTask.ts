@@ -121,7 +121,7 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
               })
             })
           } else {
-            // Use Hugging Face inference API
+            // Use Hugging Face inference API (may return job_id for async processing)
             response = await fetch('/api/run-inference', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -150,7 +150,69 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             throw enhancedError
           }
           
-          const inferenceData = await response.json()
+          let inferenceData = await response.json()
+          
+          // ASYNC JOB PATTERN: If job_id is returned, poll for completion
+          if (inferenceData.job_id && inferenceData.status === 'pending') {
+            logger.info('Async job detected, polling for completion', context, { job_id: inferenceData.job_id })
+            
+            const jobId = inferenceData.job_id
+            const maxPollAttempts = 150 // 150 * 2s = 5 minutes max wait
+            let pollAttempts = 0
+            
+            while (pollAttempts < maxPollAttempts) {
+              // Wait 2 seconds before polling
+              await new Promise(resolve => setTimeout(resolve, 2000))
+              
+              try {
+                const statusResponse = await fetch(`/api/job-status/${jobId}`)
+                if (!statusResponse.ok) {
+                  throw new Error(`Job status check failed: ${statusResponse.status}`)
+                }
+                
+                const jobStatus = await statusResponse.json()
+                
+                if (jobStatus.status === 'completed') {
+                  logger.info('Async job completed', context, { 
+                    job_id: jobId, 
+                    duration_ms: jobStatus.duration_ms,
+                    hasResult: !!jobStatus.result
+                  })
+                  
+                  // Transform job result to match expected inferenceData format
+                  inferenceData = {
+                    success: true,
+                    results: jobStatus.result,
+                    model_id: selectedModel.id,
+                    timestamp: jobStatus.updated_at,
+                    duration: jobStatus.duration_ms,
+                    requestId: jobId,
+                    source: 'lambda-async'
+                  }
+                  break
+                } else if (jobStatus.status === 'failed') {
+                  throw new Error(jobStatus.error || 'Job failed without error message')
+                } else if (jobStatus.status === 'processing') {
+                  // Continue polling
+                  pollAttempts++
+                  logger.info('Job still processing, continuing to poll', context, { 
+                    job_id: jobId,
+                    attempt: pollAttempts 
+                  })
+                } else {
+                  // pending - continue polling
+                  pollAttempts++
+                }
+              } catch (pollError) {
+                logger.error('Error polling job status', context, pollError as Error)
+                throw pollError
+              }
+            }
+            
+            if (pollAttempts >= maxPollAttempts) {
+              throw new Error('Job polling timeout: job did not complete within expected time')
+            }
+          }
           
           // Get actual image dimensions (use processed image if compressed)
           let imageDimensions: { width: number; height: number } | undefined
