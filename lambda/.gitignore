@@ -1,0 +1,5 @@
+# Lambda deployment artifacts
+function.zip
+gemini-inference/node_modules/
+*.zip
+

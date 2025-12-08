@@ -22,6 +22,46 @@ export async function POST(request: NextRequest) {
     const body: GeminiInferenceRequest = await request.json()
     const { model_id, inputs, parameters } = body
 
+    // Check if Lambda endpoint is configured
+    const lambdaEndpoint = process.env.GEMINI_LAMBDA_ENDPOINT
+    console.log('🔍 DEBUG - GEMINI_LAMBDA_ENDPOINT:', lambdaEndpoint)
+    
+    if (lambdaEndpoint) {
+      console.log('✅ Using Lambda endpoint:', lambdaEndpoint)
+      // Forward to Lambda function
+      const lambdaResponse = await fetch(lambdaEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: inputs,
+          prompt: parameters?.prompt,
+          model: model_id,
+          task: parameters?.task || 'object-detection'
+        })
+      })
+
+      if (!lambdaResponse.ok) {
+        const errorText = await lambdaResponse.text()
+        throw new Error(`Lambda API error: ${lambdaResponse.status} - ${errorText}`)
+      }
+
+      const lambdaResult = await lambdaResponse.json()
+      const duration = Date.now() - startTime
+
+      return NextResponse.json({
+        success: true,
+        model_id: 'gemini-3-pro-preview',
+        results: lambdaResult.data?.detections || lambdaResult.results || [],
+        requestId,
+        timestamp: new Date().toISOString(),
+        duration,
+        source: 'lambda'
+      })
+    }
+
+    // Fallback to local Gemini API if Lambda endpoint not configured
+    console.log('⚠️ Lambda endpoint not configured, using local Gemini API')
+
     // Validate API key
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) {

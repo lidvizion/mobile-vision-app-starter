@@ -81,3 +81,8 @@ jspm_packages/
 
 # TernJS port file
 .tern-port
+
+# Lambda deployment artifacts
+lambda/function.zip
+lambda/gemini-inference/node_modules/*.bak
+lambda-functions.json
