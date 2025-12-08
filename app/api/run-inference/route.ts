@@ -33,6 +33,7 @@ interface RunInferenceRequest {
   model_id: string
   inputs: string  // URL or base64 image
   parameters?: Record<string, any>
+  query?: string
 }
 
 interface ModelError {

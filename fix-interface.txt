@@ -1,0 +1,1 @@
+Find the RunInferenceRequest interface in app/api/run-inference/route.ts and add the query field.

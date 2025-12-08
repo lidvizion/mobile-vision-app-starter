@@ -4,7 +4,6 @@ import crypto from 'crypto'
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed'
 
 export interface InferenceJob {
-  _id?: string
   job_id: string
   status: JobStatus
   model_id: string
