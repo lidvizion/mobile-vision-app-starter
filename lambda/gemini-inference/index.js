@@ -109,7 +109,7 @@ exports.handler = async (event) => {
     };
   }
 
-  const { job_id, image, prompt, model = 'gemini-2.0-flash-exp' } = body;
+  const { job_id, image, prompt, model = 'gemini-2.5-flash-lite' } = body;
   const isAsyncJob = !!job_id;
 
   console.log('Request params:', { 
