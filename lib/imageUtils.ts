@@ -163,14 +163,66 @@ export interface CompressionResult {
 }
 
 /**
- * Compress image for Gemini API - max 1920px width, only if needed
+ * Compress image for Gemini API - targets ~50KB file size for optimal speed and accuracy
+ * Uses progressive compression: starts moderate, gets more aggressive if needed
  * Returns base64 string with compression stats
  * @param file - The image file to compress
  * @returns Promise<CompressionResult> - Compression result with base64 and stats
  */
 export async function compressImageForGemini(file: File): Promise<CompressionResult> {
   const originalSize = getFileSizeString(file)
+  const originalSizeKB = file.size / 1024
+  const targetSizeKB = 50 // Target ~50KB for optimal performance
+  const maxSizeKB = 100 // Maximum acceptable size (100KB)
   
+  // If already small (< 50KB), just convert to JPEG with minimal processing
+  if (originalSizeKB < 50) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const img = new Image()
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas')
+            const ctx = canvas.getContext('2d')
+            
+            if (!ctx) {
+              reject(new Error('Failed to get canvas context'))
+              return
+            }
+
+            canvas.width = img.width
+            canvas.height = img.height
+            ctx.drawImage(img, 0, 0, img.width, img.height)
+            
+            // Convert to JPEG with high quality since it's already small
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85)
+            const compressedSize = getBase64SizeString(compressedBase64.split(',')[1])
+            const compressedSizeKB = (compressedBase64.length * 3 / 4) / 1024
+            const reductionPercent = originalSizeKB > 0 
+              ? Math.round(((originalSizeKB - compressedSizeKB) / originalSizeKB) * 100)
+              : 0
+            
+            resolve({
+              compressedBase64,
+              wasCompressed: false,
+              originalSize,
+              compressedSize,
+              reductionPercent
+            })
+          } catch (error) {
+            reject(error)
+          }
+        }
+        img.onerror = () => reject(new Error('Failed to load image'))
+        img.src = e.target?.result as string
+      }
+      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.readAsDataURL(file)
+    })
+  }
+  
+  // Progressive compression: try different settings until we hit target size
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -185,39 +237,104 @@ export async function compressImageForGemini(file: File): Promise<CompressionRes
             return
           }
 
-          let width = img.width
-          let height = img.height
-          const originalWidth = width
-          const originalHeight = height
+          const originalWidth = img.width
+          const originalHeight = img.height
           
-          // Only compress if larger than 1920px width
-          const maxWidth = 1920
+          // Determine initial compression settings based on original file size
+          let maxDimension: number
+          let quality: number
+          
+          if (originalSizeKB > 1000) {
+            // Very large files: aggressive compression
+            maxDimension = 800
+            quality = 0.75
+          } else if (originalSizeKB > 500) {
+            // Large files: moderate-aggressive
+            maxDimension = 900
+            quality = 0.78
+          } else {
+            // Medium files: moderate compression
+            maxDimension = 1024
+            quality = 0.80
+          }
+          
+          // Calculate dimensions maintaining aspect ratio
+          let width = originalWidth
+          let height = originalHeight
           let wasCompressed = false
           
-          if (width > maxWidth) {
+          if (width > height) {
+            if (width > maxDimension) {
+              wasCompressed = true
+              height = (height * maxDimension) / width
+              width = maxDimension
+            }
+          } else {
+            if (height > maxDimension) {
+              wasCompressed = true
+              width = (width * maxDimension) / height
+              height = maxDimension
+            }
+          }
+          
+          // If image is already small dimension-wise, still compress for file size
+          if (!wasCompressed && originalSizeKB > 50) {
             wasCompressed = true
-            height = (height * maxWidth) / width
-            width = maxWidth
+            // Resize to ensure we hit target file size
+            if (width > 1024) {
+              height = (height * 1024) / width
+              width = 1024
+            }
           }
           
           canvas.width = width
           canvas.height = height
+          
+          // High quality rendering for detection accuracy
+          ctx.imageSmoothingEnabled = true
+          ctx.imageSmoothingQuality = 'high'
           ctx.drawImage(img, 0, 0, width, height)
           
-          // Convert to base64 with compression (JPEG, 0.85 quality)
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85)
+          // Convert to base64 with compression
+          let compressedBase64 = canvas.toDataURL('image/jpeg', quality)
+          let compressedSizeKB = (compressedBase64.length * 3 / 4) / 1024
           
-          // Calculate compression stats
+          // If still too large, reduce quality further
+          if (compressedSizeKB > maxSizeKB && quality > 0.70) {
+            quality = Math.max(0.70, quality - 0.05)
+            compressedBase64 = canvas.toDataURL('image/jpeg', quality)
+            compressedSizeKB = (compressedBase64.length * 3 / 4) / 1024
+          }
+          
+          // If still too large, reduce dimensions further
+          if (compressedSizeKB > maxSizeKB && maxDimension > 800) {
+            maxDimension = 800
+            quality = 0.75
+            
+            if (originalWidth > originalHeight) {
+              height = (originalHeight * maxDimension) / originalWidth
+              width = maxDimension
+            } else {
+              width = (originalWidth * maxDimension) / originalHeight
+              height = maxDimension
+            }
+            
+            canvas.width = width
+            canvas.height = height
+            ctx.drawImage(img, 0, 0, width, height)
+            compressedBase64 = canvas.toDataURL('image/jpeg', quality)
+            compressedSizeKB = (compressedBase64.length * 3 / 4) / 1024
+          }
+          
+          // Calculate final compression stats
           const compressedSize = getBase64SizeString(compressedBase64.split(',')[1])
-          const originalSizeKB = file.size / 1024
-          const compressedSizeKB = (compressedBase64.length * 3 / 4) / 1024
           const reductionPercent = originalSizeKB > 0 
             ? Math.round(((originalSizeKB - compressedSizeKB) / originalSizeKB) * 100)
             : 0
           
           resolve({
             compressedBase64,
-            wasCompressed,
+            wasCompressed: wasCompressed || originalSizeKB > 50,
             originalSize,
             compressedSize,
             reductionPercent
