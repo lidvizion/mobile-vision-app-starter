@@ -9,13 +9,14 @@ import CameraPreview from '@/components/CameraPreview'
 import ResultsDisplay from '@/components/ResultsDisplay'
 import { ModelMetadata } from '@/types/models'
 import { modelViewStore } from '@/stores/modelViewStore'
-import { Github, ExternalLink, Sparkles, ArrowRight } from 'lucide-react'
+import { Github, ExternalLink, Sparkles, ArrowRight, Info } from 'lucide-react'
 import LidVizionIcon from '@/components/LidVizionIcon'
 
 export default function Home() {
   const router = useRouter()
   const [selectedModel, setSelectedModel] = useState<ModelMetadata | null>(null)
-  const { currentTask, processImage, isProcessing, lastResponse } = useCVTask(selectedModel)
+  const [geminiModelVariant, setGeminiModelVariant] = useState<string>('gemini-2.5-flash-lite')
+  const { currentTask, processImage, isProcessing, lastResponse, compressionInfo } = useCVTask(selectedModel, geminiModelVariant)
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
 
@@ -135,6 +136,37 @@ export default function Home() {
                   </div>
                 </div>
 
+                {/* Gemini Model Variant Selector - Only show for Gemini models */}
+                {selectedModel && (selectedModel.id === 'gemini-3-pro-preview' || selectedModel.id?.toLowerCase().includes('gemini')) && (
+                  <div className="card-floating p-4 animate-fade-in mb-8">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-xs text-wells-warm-grey mb-1">Model Variant</div>
+                          <div className="text-sm font-semibold text-wells-dark-grey">Choose Gemini Model</div>
+                        </div>
+                      </div>
+                      <div>
+                        <select
+                          value={geminiModelVariant}
+                          onChange={(e) => setGeminiModelVariant(e.target.value)}
+                          className="w-full px-4 py-2.5 border border-wells-warm-grey/30 rounded-lg bg-white text-wells-dark-grey focus:outline-none focus:ring-2 focus:ring-wells-dark-grey/20 focus:border-wells-dark-grey/50 transition-all"
+                        >
+                          <option value="gemini-2.5-flash-lite">⚡⚡ Gemini 2.5 Flash-Lite - Ultra Fast (1-3s)</option>
+                          <option value="gemini-2.5-flash">⚡ Gemini 2.5 Flash - Balanced (2-5s)</option>
+                          <option value="gemini-2.5-pro">🎯 Gemini 2.5 Pro - Most Accurate (5-10s)</option>
+                        </select>
+                      </div>
+                      <div className="flex items-start gap-2 p-3 bg-wells-light-beige/50 rounded-lg border border-wells-warm-grey/20">
+                        <Info className="w-4 h-4 text-wells-warm-grey mt-0.5 flex-shrink-0" />
+                        <p className="text-xs text-wells-warm-grey">
+                          💡 Tip: Using Flash-Lite for fastest results. Switch to Pro for maximum accuracy.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Camera Preview - Visible After Model Selection */}
                 <div className="animate-fade-in" style={{ animationDelay: '0.1s' }}>
                   <CameraPreview
@@ -147,6 +179,7 @@ export default function Home() {
                     selectedModel={selectedModel}
                     onModelSelect={handleModelSelect}
                     availableModels={modelViewStore.modelList}
+                    compressionInfo={compressionInfo}
                   />
                 </div>
 

@@ -12,6 +12,7 @@ interface GeminiInferenceRequest {
   parameters?: {
     prompt?: string
     task?: string
+    model?: string
   }
 }
 
@@ -43,12 +44,14 @@ export async function POST(request: NextRequest) {
       // Generate prompt based on task
       const task = parameters?.task || 'object-detection'
       const prompt = generatePrompt(task, parameters?.prompt)
+      // Use model variant from parameters if provided, otherwise use model_id
+      const modelToUse = parameters?.model || model_id
       
       console.log('📤 Sending to Lambda', {
         task,
         promptLength: prompt.length,
         promptPreview: prompt.substring(0, 100) + '...',
-        model: model_id,
+        model: modelToUse,
         hasImage: !!inputs
       })
       
@@ -59,7 +62,7 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           image: inputs,
           prompt: prompt,
-          model: model_id,
+          model: modelToUse,
           task: task
         })
       })
@@ -102,7 +105,9 @@ export async function POST(request: NextRequest) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-3-pro-preview' })
+    // Use model variant from parameters if provided, otherwise default to gemini-2.5-flash
+    const modelToUse = parameters?.model || 'gemini-2.5-flash'
+    const model = genAI.getGenerativeModel({ model: modelToUse })
 
     let imageData: string
     let mimeType: string = 'image/jpeg'

@@ -137,3 +137,103 @@ export function getFileSizeString(file: File): string {
   return `${sizeMB.toFixed(2)} MB`
 }
 
+/**
+ * Get base64 string size in a human-readable format
+ * @param base64 - The base64 string to get size for
+ * @returns string - Human-readable file size (e.g., "2.5 MB")
+ */
+export function getBase64SizeString(base64: string): string {
+  // Base64 is approximately 33% larger than the original binary data
+  // Estimate: base64.length * 3 / 4 gives approximate byte size
+  const estimatedBytes = (base64.length * 3) / 4
+  const sizeKB = estimatedBytes / 1024
+  if (sizeKB < 1024) {
+    return `${sizeKB.toFixed(1)} KB`
+  }
+  const sizeMB = sizeKB / 1024
+  return `${sizeMB.toFixed(2)} MB`
+}
+
+export interface CompressionResult {
+  compressedBase64: string
+  wasCompressed: boolean
+  originalSize: string
+  compressedSize: string
+  reductionPercent: number
+}
+
+/**
+ * Compress image for Gemini API - max 1920px width, only if needed
+ * Returns base64 string with compression stats
+ * @param file - The image file to compress
+ * @returns Promise<CompressionResult> - Compression result with base64 and stats
+ */
+export async function compressImageForGemini(file: File): Promise<CompressionResult> {
+  const originalSize = getFileSizeString(file)
+  
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d')
+          
+          if (!ctx) {
+            reject(new Error('Failed to get canvas context'))
+            return
+          }
+
+          let width = img.width
+          let height = img.height
+          const originalWidth = width
+          const originalHeight = height
+          
+          // Only compress if larger than 1920px width
+          const maxWidth = 1920
+          let wasCompressed = false
+          
+          if (width > maxWidth) {
+            wasCompressed = true
+            height = (height * maxWidth) / width
+            width = maxWidth
+          }
+          
+          canvas.width = width
+          canvas.height = height
+          ctx.drawImage(img, 0, 0, width, height)
+          
+          // Convert to base64 with compression (JPEG, 0.85 quality)
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85)
+          
+          // Calculate compression stats
+          const compressedSize = getBase64SizeString(compressedBase64.split(',')[1])
+          const originalSizeKB = file.size / 1024
+          const compressedSizeKB = (compressedBase64.length * 3 / 4) / 1024
+          const reductionPercent = originalSizeKB > 0 
+            ? Math.round(((originalSizeKB - compressedSizeKB) / originalSizeKB) * 100)
+            : 0
+          
+          resolve({
+            compressedBase64,
+            wasCompressed,
+            originalSize,
+            compressedSize,
+            reductionPercent
+          })
+        } catch (error) {
+          reject(error)
+        }
+      }
+      img.onerror = () => {
+        reject(new Error('Failed to load image'))
+      }
+      img.src = e.target?.result as string
+    }
+    reader.onerror = () => {
+      reject(new Error('Failed to read file'))
+    }
+    reader.readAsDataURL(file)
+  })
+}

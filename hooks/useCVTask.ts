@@ -9,8 +9,9 @@ import { queryKeys } from '@/lib/query-client'
 import { ModelMetadata } from '@/types/models'
 import { modelViewStore } from '@/stores/modelViewStore'
 
-export function useCVTask(selectedModel?: ModelMetadata | null) {
+export function useCVTask(selectedModel?: ModelMetadata | null, geminiModelVariant?: string) {
   const [currentTask, setCurrentTask] = useState<CVTask>('multi-type')
+  const [compressionInfo, setCompressionInfo] = useState<{ originalSize: string; compressedSize: string; reductionPercent: number; wasCompressed: boolean } | null>(null)
   const queryClient = useQueryClient()
 
   const switchTask = useCallback((task: CVTask) => {
@@ -67,13 +68,43 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             // Continue with original image if compression fails
           }
           
-          // Convert image to base64
-          const base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onloadend = () => resolve(reader.result as string)
-            reader.onerror = reject
-            reader.readAsDataURL(processedImageFile)
-          })
+          // Check if this is a Gemini model
+          const isGeminiModel = selectedModel.id === 'gemini-3-pro-preview' || selectedModel.id?.toLowerCase().includes('gemini')
+          
+          // Convert image to base64 (with compression for Gemini models)
+          let base64: string
+          if (isGeminiModel) {
+            // Use Gemini-specific compression (max 1920px width)
+            const { compressImageForGemini } = await import('@/lib/imageUtils')
+            const compressionResult = await compressImageForGemini(processedImageFile)
+            base64 = compressionResult.compressedBase64
+            
+            // Store compression info for display
+            setCompressionInfo({
+              originalSize: compressionResult.originalSize,
+              compressedSize: compressionResult.compressedSize,
+              reductionPercent: compressionResult.reductionPercent,
+              wasCompressed: compressionResult.wasCompressed
+            })
+            
+            if (compressionResult.wasCompressed) {
+              logger.info('Image compressed for Gemini API', context, {
+                originalSize: compressionResult.originalSize,
+                compressedSize: compressionResult.compressedSize,
+                reductionPercent: compressionResult.reductionPercent
+              })
+            }
+          } else {
+            // Regular base64 conversion for non-Gemini models
+            base64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onloadend = () => resolve(reader.result as string)
+              reader.onerror = reject
+              reader.readAsDataURL(processedImageFile)
+            })
+            // Clear compression info for non-Gemini models
+            setCompressionInfo(null)
+          }
           
           // Prepare task-specific parameters for better compatibility
           const parameters: Record<string, any> = {}
@@ -122,13 +153,19 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             })
           } else {
             // Use Hugging Face inference API (may return job_id for async processing)
+            // Add Gemini model variant to parameters if it's a Gemini model
+            const finalParameters = { ...parameters }
+            if (geminiModelVariant && (selectedModel.id === 'gemini-3-pro-preview' || selectedModel.id?.toLowerCase().includes('gemini'))) {
+              finalParameters.model = geminiModelVariant
+            }
+            
             response = await fetch('/api/run-inference', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 model_id: selectedModel.id,
                 inputs: base64,
-                parameters: Object.keys(parameters).length > 0 ? parameters : undefined
+                parameters: Object.keys(finalParameters).length > 0 ? finalParameters : undefined
               })
             })
           }
@@ -376,6 +413,7 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
     isProcessing: processImageMutation.isPending,
     lastResponse: processImageMutation.data || null,
     error: processImageMutation.error,
+    compressionInfo,
   }
 }
 

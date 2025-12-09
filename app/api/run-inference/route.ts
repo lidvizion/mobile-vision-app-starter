@@ -376,6 +376,9 @@ export async function POST(request: NextRequest) {
 
         // Fire and forget - Lambda will process and update MongoDB
         // Lambda will mark job as 'processing' when it starts, then 'completed' or 'failed' when done
+        // Use model variant from parameters if provided, otherwise use model_id
+        const modelToUse = parameters?.model || model_id
+        
         fetch(lambdaEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -383,7 +386,7 @@ export async function POST(request: NextRequest) {
             job_id: jobId, // Pass job_id so Lambda can update MongoDB
             image: inputs,
             prompt: prompt,
-            model: model_id,
+            model: modelToUse,
             task: task
           })
         }).catch(err => {

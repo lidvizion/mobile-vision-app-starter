@@ -20,9 +20,10 @@ interface CameraPreviewProps {
   selectedModel: ModelMetadata | null
   onModelSelect: (model: ModelMetadata) => void
   availableModels: ModelMetadata[]
+  compressionInfo: { originalSize: string; compressedSize: string; reductionPercent: number; wasCompressed: boolean } | null
 }
 
-export default function CameraPreview({ currentTask, onImageProcessed, isProcessing, processImage, selectedImage, setSelectedImage, selectedModel, onModelSelect, availableModels }: CameraPreviewProps) {
+export default function CameraPreview({ currentTask, onImageProcessed, isProcessing, processImage, selectedImage, setSelectedImage, selectedModel, onModelSelect, availableModels, compressionInfo }: CameraPreviewProps) {
   const [dragActive, setDragActive] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -435,6 +436,13 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
                         )
                   }
                 </p>
+                {compressionInfo && compressionInfo.wasCompressed && (
+                  <div className="mt-2 px-3 py-1.5 bg-wells-light-beige/60 rounded-lg border border-wells-warm-grey/20 inline-block">
+                    <p className="text-xs text-wells-warm-grey">
+                      📦 Image compressed: {compressionInfo.originalSize} → {compressionInfo.compressedSize} ({compressionInfo.reductionPercent}% reduction)
+                    </p>
+                  </div>
+                )}
               </div>
               
               {isProcessing && (
