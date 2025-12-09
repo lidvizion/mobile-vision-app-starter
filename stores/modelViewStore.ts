@@ -43,6 +43,10 @@ class ModelViewStore {
     this.queryText = text
   }
 
+  setSelectedTaskType(taskType: string) {
+    this.taskType = taskType
+  }
+
   setRefinedData(data: {
     queryId: string
     keywords: string[]

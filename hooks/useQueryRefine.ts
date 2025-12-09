@@ -4,6 +4,7 @@ import { modelViewStore } from '@/stores/modelViewStore'
 interface QueryRefineRequest {
   query: string
   userId?: string
+  taskType?: string
 }
 
 interface QueryRefineResponse {

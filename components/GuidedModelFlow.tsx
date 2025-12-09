@@ -11,7 +11,7 @@ import {
   ScanLine, ScanFace, ScanBarcode, ScanEye, ScanSearch, ScanText, Globe,
   Loader2
 } from 'lucide-react'
-import { EXAMPLE_QUERIES } from '@/lib/keywordExtraction'
+import { EXAMPLE_QUERIES, EXAMPLE_QUERIES_BY_TASK } from '@/lib/keywordExtraction'
 import { ModelMetadata } from '@/types/models'
 import { modelViewStore } from '@/stores/modelViewStore'
 import { useQueryRefine } from '@/hooks/useQueryRefine'
@@ -30,6 +30,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
   const [showBackgroundSearchIndicator, setShowBackgroundSearchIndicator] = useState(false)
   const [hasBackgroundSearchCompleted, setHasBackgroundSearchCompleted] = useState(false)
   const [currentQueryId, setCurrentQueryId] = useState<string | undefined>(undefined)
+  const [selectedTaskType, setSelectedTaskType] = useState<'detection' | 'classification' | 'segmentation'>('detection')
   // Initialize hasAutoRedirected from sessionStorage to persist across navigation
   const [hasAutoRedirected, setHasAutoRedirected] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -247,9 +248,13 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
 
     try {
       // Step 1: Refine query
+      // Store selected task type in store for later use
+      modelViewStore.setSelectedTaskType(selectedTaskType)
+      
       const refineResult = await queryRefineMutation.mutateAsync({
         query: modelViewStore.queryText,
-        userId: 'anonymous'
+        userId: 'anonymous',
+        taskType: selectedTaskType // Pass selected task type to API
       })
 
       // Store query_id globally for inference result saving 
@@ -783,9 +788,50 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
     )
   }
 
+  // Get dynamic heading and examples based on task type
+  const getHeading = () => {
+    switch (selectedTaskType) {
+      case 'detection':
+        return 'What are you trying to detect?'
+      case 'classification':
+        return 'What are you trying to classify?'
+      case 'segmentation':
+        return 'What are you trying to segment?'
+      default:
+        return 'What are you trying to detect?'
+    }
+  }
+
+  const getExamples = () => {
+    return EXAMPLE_QUERIES_BY_TASK[selectedTaskType] || EXAMPLE_QUERIES
+  }
+
   // Show input form (Step 1)
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
+      {/* Task Type Selector */}
+      <div className="mb-8">
+        <div className="flex items-center justify-center mb-4">
+          <label className="text-sm font-medium text-wells-dark-grey mr-3">
+            Task Type:
+          </label>
+          <select
+            value={selectedTaskType}
+            onChange={(e) => {
+              const newTaskType = e.target.value as 'detection' | 'classification' | 'segmentation'
+              setSelectedTaskType(newTaskType)
+              // Clear query text when task type changes
+              modelViewStore.setQueryText('')
+            }}
+            className="px-4 py-2.5 rounded-lg border border-wells-warm-grey/30 bg-white text-wells-dark-grey focus:border-wells-dark-grey focus:ring-2 focus:ring-wells-dark-grey/20 focus:outline-none transition-all font-medium text-sm min-w-[180px]"
+          >
+            <option value="detection">Detection</option>
+            <option value="classification">Classification</option>
+            <option value="segmentation">Segmentation</option>
+          </select>
+        </div>
+      </div>
+
       {/* Step 1: Define Your Use Case */}
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-wells-warm-grey/10 rounded-full mb-4">
@@ -793,10 +839,12 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           <span className="text-sm font-medium text-wells-dark-grey">Step 1</span>
         </div>
         <h2 className="text-3xl font-serif font-bold text-wells-dark-grey mb-3">
-          What are you trying to detect?
+          {getHeading()}
         </h2>
         <p className="text-wells-warm-grey">
-          Example: Detect objects in images, classify scenes, or analyze visual content
+          {selectedTaskType === 'detection' && 'Example: Detect objects in images, identify items, or locate elements'}
+          {selectedTaskType === 'classification' && 'Example: Classify images, categorize content, or identify types'}
+          {selectedTaskType === 'segmentation' && 'Example: Segment regions, separate objects, or identify boundaries'}
         </p>
       </div>
 
@@ -808,7 +856,13 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         <textarea
           value={modelViewStore.queryText}
           onChange={(e) => modelViewStore.setQueryText(e.target.value)}
-          placeholder="I want to detect trash in images from beach cleanups..."
+          placeholder={
+            selectedTaskType === 'detection' 
+              ? "I want to detect trash in images from beach cleanups..."
+              : selectedTaskType === 'classification'
+              ? "I want to classify product quality as pass or fail..."
+              : "I want to segment building components in architectural images..."
+          }
           className="w-full px-4 py-3 text-base border-2 border-wells-warm-grey/30 rounded-xl focus:border-wells-dark-grey focus:outline-none resize-none transition-colors"
           rows={4}
           maxLength={500}
@@ -854,7 +908,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {EXAMPLE_QUERIES.map((example, index) => (
+          {getExamples().map((example, index) => (
             <button
               key={index}
               onClick={() => modelViewStore.setQueryText(example)}

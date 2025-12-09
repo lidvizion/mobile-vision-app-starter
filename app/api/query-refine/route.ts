@@ -12,6 +12,7 @@ export const dynamic = 'force-dynamic'
 interface QueryRefineRequest {
   query: string
   userId?: string
+  taskType?: string
 }
 
 interface QueryRefineResponse {
@@ -25,7 +26,7 @@ interface QueryRefineResponse {
 export async function POST(request: NextRequest) {
   try {
     const body: QueryRefineRequest = await request.json()
-    const { query, userId } = body
+    const { query, userId, taskType: requestedTaskType } = body
 
     // Validate input
     if (!query || typeof query !== 'string' || query.length < 10) {
@@ -39,8 +40,8 @@ export async function POST(request: NextRequest) {
     const extracted = await extractKeywordsWithChatGPT(query)
     let allKeywords = extracted.keywords
 
-    // Determine task type from ChatGPT response
-    const taskType = extracted.task_type || 'detection'
+    // Determine task type: Use requested task type if provided, otherwise use ChatGPT's detection
+    const taskType = requestedTaskType || extracted.task_type || 'detection'
 
     // Enhance keywords for specific task types
     if (taskType === 'segmentation') {

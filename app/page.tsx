@@ -7,9 +7,10 @@ import { useCVTask } from '@/hooks/useCVTask'
 import GuidedModelFlow from '@/components/GuidedModelFlow'
 import CameraPreview from '@/components/CameraPreview'
 import ResultsDisplay from '@/components/ResultsDisplay'
+import ParallelModelTester from '@/components/ParallelModelTester'
 import { ModelMetadata } from '@/types/models'
 import { modelViewStore } from '@/stores/modelViewStore'
-import { Github, ExternalLink, Sparkles, ArrowRight, Info } from 'lucide-react'
+import { Github, ExternalLink, Sparkles, ArrowRight, Info, ArrowLeft } from 'lucide-react'
 import LidVizionIcon from '@/components/LidVizionIcon'
 
 export default function Home() {
@@ -19,6 +20,72 @@ export default function Home() {
   const { currentTask, processImage, isProcessing, lastResponse, compressionInfo } = useCVTask(selectedModel, geminiModelVariant)
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
+  const [showMoreModels, setShowMoreModels] = useState(false)
+  const [selectedTaskType, setSelectedTaskType] = useState<'detection' | 'classification' | 'segmentation'>('detection')
+
+  // Featured models for quick testing (all task types)
+  const featuredModels: ModelMetadata[] = [
+    {
+      id: 'gemini-3-pro-preview',
+      name: 'Gemini 3 Pro',
+      description: 'Google\'s advanced multimodal AI model',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Google',
+      downloads: 0,
+      tags: [],
+      frameworks: [],
+      modelUrl: 'https://ai.google.dev/models/gemini',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://api-inference.huggingface.co/models/google/gemini-2.5-pro'
+    },
+    {
+      id: 'facebook/detr-resnet-101',
+      name: 'DETR ResNet-101',
+      description: 'Facebook\'s DETR object detection model with ResNet-101 backbone',
+      task: 'object-detection',
+      source: 'huggingface',
+      author: 'Facebook',
+      downloads: 1000000,
+      tags: ['object-detection', 'detr'],
+      frameworks: ['transformers'],
+      modelUrl: 'https://huggingface.co/facebook/detr-resnet-101',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://api-inference.huggingface.co/models/facebook/detr-resnet-101'
+    },
+    {
+      id: 'facebook/detr-resnet-50',
+      name: 'DETR ResNet-50',
+      description: 'Facebook\'s DETR object detection model with ResNet-50 backbone',
+      task: 'object-detection',
+      source: 'huggingface',
+      author: 'Facebook',
+      downloads: 2000000,
+      tags: ['object-detection', 'detr'],
+      frameworks: ['transformers'],
+      modelUrl: 'https://huggingface.co/facebook/detr-resnet-50',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://api-inference.huggingface.co/models/facebook/detr-resnet-50'
+    },
+    {
+      id: 'microsoft/resnet-50',
+      name: 'ResNet-50',
+      description: 'Microsoft\'s ResNet-50 image classification model',
+      task: 'image-classification',
+      source: 'huggingface',
+      author: 'Microsoft',
+      downloads: 5000000,
+      tags: ['image-classification', 'resnet'],
+      frameworks: ['transformers'],
+      modelUrl: 'https://huggingface.co/microsoft/resnet-50',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://api-inference.huggingface.co/models/microsoft/resnet-50'
+    }
+  ]
 
   // Handle image processing completion
   const handleImageProcessed = useCallback((response: any) => {
@@ -93,107 +160,165 @@ export default function Home() {
 
       {/* Main Content with Layered Cards */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="max-w-4xl mx-auto">
-          {/* Main Interface - Centered */}
-          <div className="space-y-8 w-full">
-            {/* Guided Model Discovery - Replaces Task Selector */}
-            {!selectedModel ? (
-              <div className="animate-fade-in">
-                <GuidedModelFlow onModelSelect={handleModelSelect} />
+        <div className="max-w-6xl mx-auto">
+          {/* Quick Test Section - Always visible */}
+          {!showMoreModels && (
+            <div className="space-y-8 animate-fade-in">
+              <div className="text-center">
+                <h2 className="text-2xl font-bold text-wells-dark-grey mb-4">
+                  Quick Model Comparison
+                </h2>
+                <p className="text-wells-warm-grey mb-6">
+                  Test 3 models simultaneously on the same image
+                </p>
               </div>
-            ) : (
-              <>
-                {/* Selected Model Info */}
-                <div className="card-floating p-4 animate-fade-in mb-8">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-wells-warm-grey mb-1">Selected Model</div>
-                      <div className="flex items-center gap-2">
-                        {selectedModel.id === 'gemini-3-pro-preview' && (
-                          <Image 
-                            src="/icons/gemini-icon.svg" 
-                            alt="Gemini" 
-                            width={32} 
-                            height={32}
-                            className="flex-shrink-0"
-                          />
-                        )}
-                        <div className="font-semibold text-wells-dark-grey">{selectedModel.name}</div>
-                      </div>
-                      <div className="text-sm text-wells-warm-grey">
-                        {selectedModel.id === 'gemini-3-pro-preview' ? 'Google' : selectedModel.source} • {selectedModel.task}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setSelectedModel(null)
-                        router.push('/')
-                      }}
-                      className="px-4 py-2 text-sm border border-wells-warm-grey/30 rounded-lg hover:bg-wells-warm-grey/5"
-                    >
-                      Change Model
-                    </button>
-                  </div>
-                </div>
 
-                {/* Gemini Model Variant Selector - Only show for Gemini models */}
-                {selectedModel && (selectedModel.id === 'gemini-3-pro-preview' || selectedModel.id?.toLowerCase().includes('gemini')) && (
+              {/* Task Type Selector */}
+              <div className="flex items-center justify-center mb-6">
+                <label className="text-sm font-medium text-wells-dark-grey mr-3">
+                  Task Type:
+                </label>
+                <select
+                  value={selectedTaskType}
+                  onChange={(e) => {
+                    const newTaskType = e.target.value as 'detection' | 'classification' | 'segmentation'
+                    setSelectedTaskType(newTaskType)
+                  }}
+                  className="px-4 py-2.5 rounded-lg border border-wells-warm-grey/30 bg-white text-wells-dark-grey focus:border-wells-dark-grey focus:ring-2 focus:ring-wells-dark-grey/20 focus:outline-none transition-all font-medium text-sm min-w-[180px]"
+                >
+                  <option value="detection">Detection</option>
+                  <option value="classification">Classification</option>
+                  <option value="segmentation">Segmentation</option>
+                </select>
+              </div>
+
+              <ParallelModelTester
+                featuredModels={featuredModels}
+                sharedImage={selectedImage}
+                onImageChange={setSelectedImage}
+                selectedTaskType={selectedTaskType}
+              />
+
+              {/* More Models Button */}
+              <div className="text-center pt-8">
+                <button
+                  onClick={() => setShowMoreModels(true)}
+                  className="btn-secondary btn-lg flex items-center gap-2 mx-auto"
+                >
+                  <span>Browse All Models</span>
+                  <ArrowRight className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Existing Model Discovery Flow */}
+          {showMoreModels && (
+            <div className="space-y-8 animate-fade-in">
+              <button
+                onClick={() => setShowMoreModels(false)}
+                className="btn-ghost mb-6 flex items-center gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back to Quick Test</span>
+              </button>
+              
+              {/* Existing GuidedModelFlow component */}
+              {!selectedModel ? (
+                <GuidedModelFlow onModelSelect={handleModelSelect} />
+              ) : (
+                <>
+                  {/* Selected Model Info */}
                   <div className="card-floating p-4 animate-fade-in mb-8">
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-xs text-wells-warm-grey mb-1">Model Variant</div>
-                          <div className="text-sm font-semibold text-wells-dark-grey">Choose Gemini Model</div>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs text-wells-warm-grey mb-1">Selected Model</div>
+                        <div className="flex items-center gap-2">
+                          {selectedModel.id === 'gemini-3-pro-preview' && (
+                            <Image 
+                              src="/icons/gemini-icon.svg" 
+                              alt="Gemini" 
+                              width={32} 
+                              height={32}
+                              className="flex-shrink-0"
+                            />
+                          )}
+                          <div className="font-semibold text-wells-dark-grey">{selectedModel.name}</div>
+                        </div>
+                        <div className="text-sm text-wells-warm-grey">
+                          {selectedModel.id === 'gemini-3-pro-preview' ? 'Google' : selectedModel.source} • {selectedModel.task}
                         </div>
                       </div>
-                      <div>
-                        <select
-                          value={geminiModelVariant}
-                          onChange={(e) => setGeminiModelVariant(e.target.value)}
-                          className="w-full px-4 py-2.5 border border-wells-warm-grey/30 rounded-lg bg-white text-wells-dark-grey focus:outline-none focus:ring-2 focus:ring-wells-dark-grey/20 focus:border-wells-dark-grey/50 transition-all"
-                        >
-                          <option value="gemini-2.5-flash-lite">⚡⚡ Gemini 2.5 Flash-Lite - Ultra Fast (1-3s)</option>
-                          <option value="gemini-2.5-flash">⚡ Gemini 2.5 Flash - Balanced (2-5s)</option>
-                          <option value="gemini-2.5-pro">🎯 Gemini 2.5 Pro - Most Accurate (5-10s)</option>
-                        </select>
-                      </div>
-                      <div className="flex items-start gap-2 p-3 bg-wells-light-beige/50 rounded-lg border border-wells-warm-grey/20">
-                        <Info className="w-4 h-4 text-wells-warm-grey mt-0.5 flex-shrink-0" />
-                        <p className="text-xs text-wells-warm-grey">
-                          💡 Tip: Using Flash-Lite for fastest results. Switch to Pro for maximum accuracy.
-                        </p>
-                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedModel(null)
+                          router.push('/')
+                        }}
+                        className="px-4 py-2 text-sm border border-wells-warm-grey/30 rounded-lg hover:bg-wells-warm-grey/5"
+                      >
+                        Change Model
+                      </button>
                     </div>
                   </div>
-                )}
 
-                {/* Camera Preview - Visible After Model Selection */}
-                <div className="animate-fade-in" style={{ animationDelay: '0.1s' }}>
-                  <CameraPreview
-                    currentTask={currentTask}
-                    onImageProcessed={handleImageProcessed}
-                    isProcessing={isProcessing}
-                    processImage={processImage}
-                    selectedImage={selectedImage}
-                    setSelectedImage={setSelectedImage}
-                    selectedModel={selectedModel}
-                    onModelSelect={handleModelSelect}
-                    availableModels={modelViewStore.modelList}
-                    compressionInfo={compressionInfo}
-                  />
-                </div>
+                  {/* Gemini Model Variant Selector - Only show for Gemini models */}
+                  {selectedModel && (selectedModel.id === 'gemini-3-pro-preview' || selectedModel.id?.toLowerCase().includes('gemini')) && (
+                    <div className="card-floating p-4 animate-fade-in mb-8">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-xs text-wells-warm-grey mb-1">Model Variant</div>
+                            <div className="text-sm font-semibold text-wells-dark-grey">Choose Gemini Model</div>
+                          </div>
+                        </div>
+                        <div>
+                          <select
+                            value={geminiModelVariant}
+                            onChange={(e) => setGeminiModelVariant(e.target.value)}
+                            className="w-full px-4 py-2.5 border border-wells-warm-grey/30 rounded-lg bg-white text-wells-dark-grey focus:outline-none focus:ring-2 focus:ring-wells-dark-grey/20 focus:border-wells-dark-grey/50 transition-all"
+                          >
+                            <option value="gemini-2.5-flash-lite">⚡⚡ Gemini 2.5 Flash-Lite - Ultra Fast (1-3s)</option>
+                            <option value="gemini-2.5-flash">⚡ Gemini 2.5 Flash - Balanced (2-5s)</option>
+                            <option value="gemini-2.5-pro">🎯 Gemini 2.5 Pro - Most Accurate (5-10s)</option>
+                          </select>
+                        </div>
+                        <div className="flex items-start gap-2 p-3 bg-wells-light-beige/50 rounded-lg border border-wells-warm-grey/20">
+                          <Info className="w-4 h-4 text-wells-warm-grey mt-0.5 flex-shrink-0" />
+                          <p className="text-xs text-wells-warm-grey">
+                            💡 Tip: Using Flash-Lite for fastest results. Switch to Pro for maximum accuracy.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-                {/* Results Display - Visible After Model Selection */}
-                <div className="animate-fade-in" style={{ animationDelay: '0.2s' }}>
-                  <ResultsDisplay
-                    response={lastResponse}
-                    selectedImage={selectedImage}
-                  />
-                </div>
-              </>
-            )}
-          </div>
+                  {/* Camera Preview - Visible After Model Selection */}
+                  <div className="animate-fade-in" style={{ animationDelay: '0.1s' }}>
+                    <CameraPreview
+                      currentTask={currentTask}
+                      onImageProcessed={handleImageProcessed}
+                      isProcessing={isProcessing}
+                      processImage={processImage}
+                      selectedImage={selectedImage}
+                      setSelectedImage={setSelectedImage}
+                      selectedModel={selectedModel}
+                      onModelSelect={handleModelSelect}
+                      availableModels={modelViewStore.modelList}
+                      compressionInfo={compressionInfo}
+                    />
+                  </div>
 
+                  {/* Results Display - Visible After Model Selection */}
+                  <div className="animate-fade-in" style={{ animationDelay: '0.2s' }}>
+                    <ResultsDisplay
+                      response={lastResponse}
+                      selectedImage={selectedImage}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </main>
 

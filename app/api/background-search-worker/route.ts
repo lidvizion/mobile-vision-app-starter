@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
                 frameworks: [model.library_name].filter(Boolean),
                 platforms: [],
                 supportsInference: Boolean(model.inference || (pipelineTag && pipelineTag !== 'unknown')),
-                inferenceEndpoint: `https://api-inference.huggingface.co/models/${model.id}`,
+                inferenceEndpoint: `https://router.huggingface.co/hf-inference/models/${model.id}`,
                 pipelineTag,
                 libraryName: model.library_name,
                 isCurated: false

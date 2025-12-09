@@ -1857,7 +1857,7 @@ async function searchHFModels(
         platforms: [],
         supportsInference,
         inferenceEndpoint: supportsInference
-          ? `https://api-inference.huggingface.co/models/${model.id}`
+          ? `https://router.huggingface.co/hf-inference/models/${model.id}`
           : undefined,
         pipelineTag: pipelineTag,
         libraryName: model.library_name
@@ -2306,9 +2306,57 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
       inferenceStatus: 'hosted',
       workingDate: new Date()
     }
+
+    // 🆕 INJECT DETR AS SECOND FEATURED MODEL
+    const detrModel = {
+      model_id: 'facebook/detr-resnet-101',
+      relevanceScore: 999998, // Second highest score (appears after Gemini)
+      name: 'DETR ResNet-101',
+      author: 'Facebook',
+      task_type: 'object-detection',
+      pipeline_tag: 'object-detection',
+      validated: true,
+      classes: keywords,
+      class_count: keywords.length,
+      downloads: 500000,
+      likes: 5000,
+      tags: ['object-detection', 'transformers', 'facebook', 'detr', 'vision', 'coco'],
+      library_name: 'transformers',
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/detr-resnet-101',
+      inference_endpoint: 'https://router.huggingface.co/hf-inference/models/facebook/detr-resnet-101',
+      supportsInference: true,
+      works: true,
+      hosted: true,
+      inferenceStatus: 'hosted',
+      workingDate: new Date()
+    }
+
+    // 🆕 INJECT RESNET-50 AS THIRD FEATURED MODEL (image classification)
+    const resnetModel = {
+      model_id: 'microsoft/resnet-50',
+      relevanceScore: 999997, // Third highest score
+      name: 'ResNet-50',
+      author: 'Microsoft',
+      task_type: 'image-classification',
+      pipeline_tag: 'image-classification',
+      validated: true,
+      classes: keywords,
+      class_count: keywords.length,
+      downloads: 800000,
+      likes: 2000,
+      tags: ['image-classification', 'vision', 'microsoft', 'resnet', 'imagenet'],
+      library_name: 'transformers',
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/microsoft/resnet-50',
+      inference_endpoint: 'https://router.huggingface.co/hf-inference/models/microsoft/resnet-50',
+      supportsInference: true,
+      works: true,
+      hosted: true,
+      inferenceStatus: 'hosted',
+      workingDate: new Date()
+    }
     
-    // Prepend Gemini to the validated models list
-    const allModels = [geminiModel, ...validatedModels]
+    // Prepend Gemini, DETR, and ResNet-50 to the validated models list
+    const allModels = [geminiModel, detrModel, resnetModel, ...validatedModels]
 
     // Convert to the expected format
     const curatedModels = allModels.map(model => {
@@ -2343,7 +2391,7 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
         // For Hugging Face models, use endpoint from database or generate default
         inferenceEndpoint = model.inferenceEndpoint || model.inference_endpoint ||
           (model.supportsInference || model.inferenceStatus === 'hosted' || model.inferenceStatus === 'warm'
-            ? `https://api-inference.huggingface.co/models/${model.model_id}`
+            ? `https://router.huggingface.co/hf-inference/models/${model.model_id}`
             : undefined);
       }
 
