@@ -383,10 +383,25 @@ function ModelWindow({
       // Process the image with current model
       const processWithModel = async () => {
         try {
-          await processImage(currentImageFile)
+          console.log(`[Model ${windowNumber}] Processing with model:`, {
+            id: model.id,
+            name: model.name,
+            source: model.source,
+            isGemini: model.id === 'gemini-3-pro-preview' || model.id?.toLowerCase().includes('gemini'),
+            geminiVariant
+          })
+          const result = await processImage(currentImageFile)
+          console.log(`[Model ${windowNumber}] Processing result:`, {
+            task: result.task,
+            hasDetections: !!result.results?.detections?.length,
+            hasLabels: !!result.results?.labels?.length,
+            detectionsCount: result.results?.detections?.length || 0,
+            labelsCount: result.results?.labels?.length || 0,
+            fullResponse: result
+          })
           setHasProcessedCurrentImage(true)
         } catch (error) {
-          console.error(`Error processing image in Model ${windowNumber}:`, error)
+          console.error(`[Model ${windowNumber}] Error processing image:`, error)
         }
       }
       
@@ -395,7 +410,7 @@ function ModelWindow({
         processWithModel()
       }
     }
-  }, [sharedImage, model, isProcessing, processImage, hasProcessedCurrentImage, currentImageFile, windowNumber])
+  }, [sharedImage, model, isProcessing, processImage, hasProcessedCurrentImage, currentImageFile, windowNumber, geminiVariant])
 
   // Reset processed flag when model changes (to trigger reprocessing)
   useEffect(() => {

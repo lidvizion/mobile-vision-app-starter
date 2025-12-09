@@ -197,12 +197,12 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
               {showOverlays ? (
                 <>
                   <EyeOff className="w-3.5 h-3.5" />
-                  Hide Overlays
+                  Hide Labels
                 </>
               ) : (
                 <>
                   <Eye className="w-3.5 h-3.5" />
-                  Show Overlays
+                  Show Labels
                 </>
               )}
             </button>

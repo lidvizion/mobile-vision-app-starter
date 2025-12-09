@@ -623,8 +623,25 @@ function enhanceClassName(className: string, colorDescriptor: string | null): st
 async function transformHFToCVResponse(inferenceData: any, model: ModelMetadata, imageDimensions?: { width: number; height: number }, imageBase64?: string, actualProcessingTime?: number): Promise<CVResponse> {
   const results = inferenceData.results || []
   
+  // Debug logging for Gemini
+  const isGemini = model.id === 'gemini-3-pro-preview' || model.id?.toLowerCase().includes('gemini')
+  if (isGemini) {
+    console.log('[transformHFToCVResponse] Gemini response:', {
+      modelId: model.id,
+      inferenceDataKeys: Object.keys(inferenceData),
+      resultsType: Array.isArray(results) ? 'array' : typeof results,
+      resultsLength: Array.isArray(results) ? results.length : 'N/A',
+      firstResult: results[0] || null,
+      fullInferenceData: inferenceData
+    })
+  }
+  
   // Determine task type from model and results
+  // For Gemini (multimodal), default to detection unless results indicate otherwise
   let task = model.task || 'detection'
+  if (task === 'multimodal') {
+    task = 'detection' // Default multimodal to detection for now
+  }
   
   // Check for specific data types to determine task
   if (results.length > 0) {
@@ -638,12 +655,23 @@ async function transformHFToCVResponse(inferenceData: any, model: ModelMetadata,
     else if (firstResult.box) {
       task = 'detection'
     }
+    // Handle bbox format (alternative to box)
+    else if (firstResult.bbox) {
+      task = 'detection'
+      // Convert bbox to box format for consistency
+      firstResult.box = {
+        xmin: firstResult.bbox.x || firstResult.bbox.xmin || 0,
+        ymin: firstResult.bbox.y || firstResult.bbox.ymin || 0,
+        xmax: (firstResult.bbox.x || 0) + (firstResult.bbox.width || 0) || firstResult.bbox.xmax || 0,
+        ymax: (firstResult.bbox.y || 0) + (firstResult.bbox.height || 0) || firstResult.bbox.ymax || 0
+      }
+    }
     // Image segmentation: has mask but no box
     else if (firstResult.mask) {
       task = 'segmentation'
     }
     // Classification: has label and score but no spatial data
-    else if (firstResult.label && firstResult.score && !firstResult.box && !firstResult.mask) {
+    else if (firstResult.label && firstResult.score && !firstResult.box && !firstResult.mask && !firstResult.bbox) {
       task = 'classification'
     }
   }

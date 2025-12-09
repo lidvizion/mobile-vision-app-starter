@@ -27,7 +27,7 @@ class ModelViewStore {
   activeFilters: string[] = ['all']
   
   // Confidence threshold for filtering results (client-side only, doesn't affect API)
-  confidenceThreshold: number = 0.0  // 0.0 to 1.0, filters UI display only
+  confidenceThreshold: number = 0.85  // 0.0 to 1.0, filters UI display only (default: 85% for high-confidence detections)
   
   // Pagination state
   currentPage: number = 1
@@ -276,7 +276,7 @@ class ModelViewStore {
   }
 
   resetConfidenceThreshold() {
-    this.confidenceThreshold = 0.0
+    this.confidenceThreshold = 0.85  // Reset to 85% default
   }
 }
 
