@@ -2272,6 +2272,9 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
       'facebook/detr-resnet-101',
       'Falconsai/nsfw_image_detection',
       'microsoft/resnet-50',
+      'google/vit-base-patch16-224', // Top classification model
+      'apple/mobilevit-small', // Mobile-optimized classification
+      'facebook/convnext-tiny-224', // Modern CNN classification
       'nvidia/mit-b3',
       'nvidia/segformer-b4-finetuned-cityscapes-1024-1024',
       'nvidia/segformer-b0-finetuned-ade-512-512', // High-quality image segmentation model (391k+ downloads)
@@ -2444,9 +2447,145 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
       inferenceStatus: 'hosted',
       workingDate: new Date()
     }
+
+    // 🆕 ADD 6 NEW HUGGINGFACE CLASSIFICATION MODELS
+    const classificationModels = [
+      {
+        model_id: 'google/vit-base-patch16-224',
+        relevanceScore: 999996,
+        name: 'Vision Transformer (ViT) Base',
+        author: 'Google',
+        task_type: 'image-classification',
+        pipeline_tag: 'image-classification',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 4050416,
+        likes: 907,
+        tags: ['vision', 'transformer', 'classification', 'imagenet', 'google', 'sota'],
+        library_name: 'transformers',
+        inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/google/vit-base-patch16-224',
+        inference_endpoint: 'https://router.huggingface.co/hf-inference/models/google/vit-base-patch16-224',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'warm',
+        workingDate: new Date()
+      },
+      {
+        model_id: 'google/efficientnet-b0',
+        relevanceScore: 999995,
+        name: 'EfficientNet B0',
+        author: 'Google',
+        task_type: 'image-classification',
+        pipeline_tag: 'image-classification',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 863403,
+        likes: 4,
+        tags: ['efficientnet', 'classification', 'fast', 'efficient', 'google', 'mobile'],
+        library_name: 'transformers',
+        inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/google/efficientnet-b0',
+        inference_endpoint: 'https://router.huggingface.co/hf-inference/models/google/efficientnet-b0',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'warm',
+        workingDate: new Date()
+      },
+      {
+        model_id: 'facebook/convnext-tiny-224',
+        relevanceScore: 999994,
+        name: 'ConvNeXt Tiny',
+        author: 'Facebook',
+        task_type: 'image-classification',
+        pipeline_tag: 'image-classification',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 1403276,
+        likes: 3,
+        tags: ['convnext', 'classification', 'modern-cnn', 'facebook', 'meta', 'fast'],
+        library_name: 'transformers',
+        inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/convnext-tiny-224',
+        inference_endpoint: 'https://router.huggingface.co/hf-inference/models/facebook/convnext-tiny-224',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'warm',
+        workingDate: new Date()
+      },
+      {
+        model_id: 'facebook/convnext-base-224',
+        relevanceScore: 999993,
+        name: 'ConvNeXt Base',
+        author: 'Facebook',
+        task_type: 'image-classification',
+        pipeline_tag: 'image-classification',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 0,
+        likes: 0,
+        tags: ['convnext', 'classification', 'modern-cnn', 'facebook', 'meta', 'accurate'],
+        library_name: 'transformers',
+        inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/convnext-base-224',
+        inference_endpoint: 'https://router.huggingface.co/hf-inference/models/facebook/convnext-base-224',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'warm',
+        workingDate: new Date()
+      },
+      {
+        model_id: 'microsoft/beit-base-patch16-224-pt22k-ft22k',
+        relevanceScore: 999992,
+        name: 'BEiT Base',
+        author: 'Microsoft',
+        task_type: 'image-classification',
+        pipeline_tag: 'image-classification',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 982211,
+        likes: 79,
+        tags: ['beit', 'vision-transformer', 'classification', 'microsoft', 'imagenet'],
+        library_name: 'transformers',
+        inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/microsoft/beit-base-patch16-224-pt22k-ft22k',
+        inference_endpoint: 'https://router.huggingface.co/hf-inference/models/microsoft/beit-base-patch16-224-pt22k-ft22k',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'warm',
+        workingDate: new Date()
+      },
+      {
+        model_id: 'apple/mobilevit-small',
+        relevanceScore: 999991,
+        name: 'MobileViT Small',
+        author: 'Apple',
+        task_type: 'image-classification',
+        pipeline_tag: 'image-classification',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 1532816,
+        likes: 82,
+        tags: ['mobilevit', 'mobile', 'classification', 'apple', 'edge', 'fast'],
+        library_name: 'transformers',
+        inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/apple/mobilevit-small',
+        inference_endpoint: 'https://router.huggingface.co/hf-inference/models/apple/mobilevit-small',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'warm',
+        workingDate: new Date()
+      }
+    ]
     
-    // Prepend all Gemini models, DETR, and ResNet-50 to the validated models list
-    const allModels = [...geminiModels, detrModel, resnetModel, ...validatedModels]
+    // Prepend all Gemini models, DETR, ResNet-50, and new classification models to the validated models list
+    const allModels = [...geminiModels, detrModel, resnetModel, ...classificationModels, ...validatedModels]
 
     // Convert to the expected format
     const curatedModels = allModels.map(model => {

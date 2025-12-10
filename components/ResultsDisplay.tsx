@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { observer } from 'mobx-react-lite'
 import { CVResponse } from '@/types'
 import { Clock, ChevronDown, ChevronUp, Download, Eye, EyeOff, Copy } from 'lucide-react'
@@ -24,9 +24,26 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
   const [showRawJSON, setShowRawJSON] = useState(false)
   const { showNotification } = useNotification()
   
+  // Determine task type
+  const currentTask = response?.task || 'object-detection'
+  const previousTaskRef = useRef<string | null>(null)
+  
   // Get confidence threshold from MobX store
   const confidenceThreshold = modelViewStore.confidenceThreshold
   const [sliderValue, setSliderValue] = useState<number>(0)
+  
+  // Set task-specific default confidence threshold when task changes
+  useEffect(() => {
+    if (currentTask && currentTask !== previousTaskRef.current) {
+      // Task has changed, set the default threshold for the new task
+      modelViewStore.setConfidenceThresholdForTask(currentTask)
+      previousTaskRef.current = currentTask
+    } else if (!previousTaskRef.current && currentTask) {
+      // First time setting task
+      modelViewStore.setConfidenceThresholdForTask(currentTask)
+      previousTaskRef.current = currentTask
+    }
+  }, [currentTask])
   
   // Sync local slider state with MobX store
   useEffect(() => {
@@ -62,8 +79,6 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
     [response?.results.segmentation?.regions, confidenceThreshold]
   )
 
-  // Determine task type
-  const currentTask = response?.task || 'object-detection'
   const isProcessing = false // This would come from props if needed
   
   const getResultCount = () => {

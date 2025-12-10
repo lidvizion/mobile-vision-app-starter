@@ -573,11 +573,27 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 {/* Model Type Icon */}
                 <div className="flex items-center justify-center mb-2">
                   <div className="w-12 h-12 bg-gradient-to-br from-wells-dark-grey/5 to-wells-dark-grey/10 rounded-xl flex items-center justify-center border border-wells-warm-grey/20">
-                    {model.id?.toLowerCase().includes('gemini') ? (
-                      <Image src="/icons/gemini-icon.svg" alt="Gemini" width={40} height={40} />
-                    ) : (
-                      <TaskIcon className="w-6 h-6 text-wells-dark-grey" />
-                    )}
+                    {(() => {
+                      const modelIdLower = model.id?.toLowerCase() || ''
+                      
+                      // Use same logo logic as ModelSelectDropdown for consistency
+                      if (modelIdLower.includes('gemini')) {
+                        return <Image src="/logos/google-gemini.png" alt="Gemini" width={40} height={40} className="object-contain" />
+                      }
+                      if (modelIdLower.startsWith('google/')) {
+                        return <Image src="/logos/google-gemini.png" alt="Google" width={40} height={40} className="object-contain" />
+                      }
+                      if (modelIdLower.startsWith('facebook/') || modelIdLower.startsWith('meta/')) {
+                        return <Image src="/logos/meta-logo.png" alt="Meta" width={40} height={40} className="object-contain" />
+                      }
+                      if (modelIdLower.startsWith('microsoft/')) {
+                        return <Image src="/logos/microsoft.svg" alt="Microsoft" width={40} height={40} className="object-contain" />
+                      }
+                      if (modelIdLower.startsWith('apple/')) {
+                        return <TaskIcon className="w-6 h-6 text-wells-dark-grey" /> // Apple logo not available, use task icon
+                      }
+                      return <TaskIcon className="w-6 h-6 text-wells-dark-grey" />
+                    })()}
                   </div>
                 </div>
 

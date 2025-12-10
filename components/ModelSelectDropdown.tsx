@@ -6,7 +6,39 @@ import { ChevronDown, Check } from 'lucide-react'
 import { ModelMetadata } from '@/types/models'
 import { cn } from '@/lib/utils'
 
-// Model logos mapping
+// Model logos mapping - dynamically determine logo based on model ID prefix
+const getModelLogo = (modelId: string): string | null => {
+  const idLower = modelId.toLowerCase()
+  
+  // Gemini models
+  if (idLower.includes('gemini')) {
+    return '/logos/google-gemini.png'
+  }
+  
+  // Google models
+  if (idLower.startsWith('google/')) {
+    return '/logos/google-gemini.png'
+  }
+  
+  // Facebook/Meta models
+  if (idLower.startsWith('facebook/') || idLower.startsWith('meta/')) {
+    return '/logos/meta-logo.png'
+  }
+  
+  // Microsoft models
+  if (idLower.startsWith('microsoft/')) {
+    return '/logos/microsoft.svg'
+  }
+  
+  // Apple models - use meta logo as fallback (no Apple logo available)
+  if (idLower.startsWith('apple/')) {
+    return '/logos/meta-logo.png' // Fallback - can be updated when Apple logo is added
+  }
+  
+  return null
+}
+
+// Legacy static mapping for backward compatibility
 const modelLogos: Record<string, string> = {
   'gemini-2.0-flash-exp': '/logos/google-gemini.png',
   'gemini-2.5-flash': '/logos/google-gemini.png',
@@ -17,6 +49,13 @@ const modelLogos: Record<string, string> = {
   'facebook/detr-resnet-101': '/logos/meta-logo.png',
   'facebook/detr-resnet-50': '/logos/meta-logo.png',
   'microsoft/resnet-50': '/logos/microsoft.svg',
+  // New classification models
+  'google/vit-base-patch16-224': '/logos/google-gemini.png',
+  'google/efficientnet-b0': '/logos/google-gemini.png',
+  'facebook/convnext-tiny-224': '/logos/meta-logo.png',
+  'facebook/convnext-base-224': '/logos/meta-logo.png',
+  'microsoft/beit-base-patch16-224-pt22k-ft22k': '/logos/microsoft.svg',
+  'apple/mobilevit-small': '/logos/meta-logo.png', // Fallback until Apple logo is added
 }
 
 // Gemini model speed indicators
@@ -79,7 +118,7 @@ export default function ModelSelectDropdown({
     }
   }, [isOpen])
 
-  const selectedLogo = modelLogos[selectedModel.id]
+  const selectedLogo = modelLogos[selectedModel.id] || getModelLogo(selectedModel.id)
   const selectedGeminiInfo = getGeminiModelInfo(selectedModel.id)
 
   return (
@@ -130,7 +169,7 @@ export default function ModelSelectDropdown({
         <div className="absolute z-50 w-full mt-1 bg-white border border-wells-warm-grey/20 rounded-lg shadow-lg overflow-hidden">
           <div className="py-1 max-h-60 overflow-auto">
             {availableModels.map((model) => {
-              const logo = modelLogos[model.id]
+              const logo = modelLogos[model.id] || getModelLogo(model.id)
               const isSelected = model.id === selectedModel.id
               const geminiInfo = getGeminiModelInfo(model.id)
 

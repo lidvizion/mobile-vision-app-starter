@@ -27,7 +27,19 @@ class ModelViewStore {
   activeFilters: string[] = ['all']
   
   // Confidence threshold for filtering results (client-side only, doesn't affect API)
+  // Task-specific defaults: detection = 0.85, classification = 0.0
   confidenceThreshold: number = 0.85  // 0.0 to 1.0, filters UI display only (default: 85% for high-confidence detections)
+  
+  // Task-specific confidence thresholds
+  private taskConfidenceThresholds: Record<string, number> = {
+    'detection': 0.85,
+    'object-detection': 0.85,
+    'classification': 0.0,
+    'image-classification': 0.0,
+    'segmentation': 0.0,
+    'keypoint-detection': 0.0,
+    'default': 0.85
+  }
   
   // Pagination state
   currentPage: number = 1
@@ -275,8 +287,49 @@ class ModelViewStore {
     this.confidenceThreshold = Math.max(0, Math.min(1, threshold)) // Clamp between 0 and 1
   }
 
+  // Get default confidence threshold for a specific task
+  getDefaultConfidenceThreshold(task?: string): number {
+    if (!task) return this.taskConfidenceThresholds['default']
+    
+    const normalizedTask = task.toLowerCase()
+    
+    // Check exact match first
+    if (this.taskConfidenceThresholds[normalizedTask]) {
+      return this.taskConfidenceThresholds[normalizedTask]
+    }
+    
+    // Check for detection tasks (object-detection, detection, etc.)
+    if (normalizedTask.includes('detection') && !normalizedTask.includes('classification')) {
+      return this.taskConfidenceThresholds['detection']
+    }
+    
+    // Check for classification tasks (image-classification, classification, etc.)
+    if (normalizedTask.includes('classification')) {
+      return this.taskConfidenceThresholds['classification']
+    }
+    
+    // Check for segmentation tasks
+    if (normalizedTask.includes('segmentation')) {
+      return this.taskConfidenceThresholds['segmentation']
+    }
+    
+    // Check for keypoint detection
+    if (normalizedTask.includes('keypoint')) {
+      return this.taskConfidenceThresholds['keypoint-detection']
+    }
+    
+    // Default fallback
+    return this.taskConfidenceThresholds['default']
+  }
+
+  // Set confidence threshold based on task type
+  setConfidenceThresholdForTask(task?: string) {
+    const defaultThreshold = this.getDefaultConfidenceThreshold(task)
+    this.confidenceThreshold = defaultThreshold
+  }
+
   resetConfidenceThreshold() {
-    this.confidenceThreshold = 0.85  // Reset to 85% default
+    this.confidenceThreshold = 0.85  // Reset to 85% default (for backward compatibility)
   }
 }
 

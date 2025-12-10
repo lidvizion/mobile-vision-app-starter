@@ -144,6 +144,96 @@ export default function Home() {
       platforms: [],
       supportsInference: true,
       inferenceEndpoint: 'https://api-inference.huggingface.co/models/microsoft/resnet-50'
+    },
+    {
+      id: 'google/vit-base-patch16-224',
+      name: 'Vision Transformer (ViT) Base',
+      description: 'State-of-the-art Vision Transformer for image classification. Trained on ImageNet-21k, excellent accuracy.',
+      task: 'image-classification',
+      source: 'huggingface',
+      author: 'Google',
+      downloads: 4050416,
+      tags: ['vision', 'transformer', 'classification', 'imagenet', 'google', 'sota'],
+      frameworks: ['transformers'],
+      modelUrl: 'https://huggingface.co/google/vit-base-patch16-224',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/google/vit-base-patch16-224'
+    },
+    {
+      id: 'google/efficientnet-b0',
+      name: 'EfficientNet B0',
+      description: 'Fast and efficient CNN for image classification. Excellent balance between speed and accuracy.',
+      task: 'image-classification',
+      source: 'huggingface',
+      author: 'Google',
+      downloads: 863403,
+      tags: ['efficientnet', 'classification', 'fast', 'efficient', 'google', 'mobile'],
+      frameworks: ['transformers'],
+      modelUrl: 'https://huggingface.co/google/efficientnet-b0',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/google/efficientnet-b0'
+    },
+    {
+      id: 'facebook/convnext-tiny-224',
+      name: 'ConvNeXt Tiny',
+      description: 'Modern pure ConvNet. Lightweight and efficient with modern training techniques.',
+      task: 'image-classification',
+      source: 'huggingface',
+      author: 'Facebook',
+      downloads: 1403276,
+      tags: ['convnext', 'classification', 'modern-cnn', 'facebook', 'meta', 'fast'],
+      frameworks: ['transformers'],
+      modelUrl: 'https://huggingface.co/facebook/convnext-tiny-224',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/convnext-tiny-224'
+    },
+    {
+      id: 'facebook/convnext-base-224',
+      name: 'ConvNeXt Base',
+      description: 'Larger ConvNeXt model for higher accuracy. Modern CNN with strong performance on ImageNet.',
+      task: 'image-classification',
+      source: 'huggingface',
+      author: 'Facebook',
+      downloads: 0,
+      tags: ['convnext', 'classification', 'modern-cnn', 'facebook', 'meta', 'accurate'],
+      frameworks: ['transformers'],
+      modelUrl: 'https://huggingface.co/facebook/convnext-base-224',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/convnext-base-224'
+    },
+    {
+      id: 'microsoft/beit-base-patch16-224-pt22k-ft22k',
+      name: 'BEiT Base',
+      description: 'Microsoft Vision Transformer using masked image modeling. Pre-trained on ImageNet-22k.',
+      task: 'image-classification',
+      source: 'huggingface',
+      author: 'Microsoft',
+      downloads: 982211,
+      tags: ['beit', 'vision-transformer', 'classification', 'microsoft', 'imagenet'],
+      frameworks: ['transformers'],
+      modelUrl: 'https://huggingface.co/microsoft/beit-base-patch16-224-pt22k-ft22k',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/microsoft/beit-base-patch16-224-pt22k-ft22k'
+    },
+    {
+      id: 'apple/mobilevit-small',
+      name: 'MobileViT Small',
+      description: 'Apple mobile-optimized vision transformer. Designed for on-device inference with low latency.',
+      task: 'image-classification',
+      source: 'huggingface',
+      author: 'Apple',
+      downloads: 1532816,
+      tags: ['mobilevit', 'mobile', 'classification', 'apple', 'edge', 'fast'],
+      frameworks: ['transformers'],
+      modelUrl: 'https://huggingface.co/apple/mobilevit-small',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/apple/mobilevit-small'
     }
   ]
 
@@ -286,19 +376,36 @@ export default function Home() {
                       <div>
                         <div className="text-xs text-wells-warm-grey mb-1">Selected Model</div>
                         <div className="flex items-center gap-2">
-                          {selectedModel.id?.toLowerCase().includes('gemini') && (
-                            <Image 
-                              src="/icons/gemini-icon.svg" 
-                              alt="Gemini" 
-                              width={32} 
-                              height={32}
-                              className="flex-shrink-0"
-                            />
-                          )}
+                          {(() => {
+                            const modelIdLower = selectedModel.id?.toLowerCase() || ''
+                            let logoPath: string | null = null
+                            
+                            if (modelIdLower.includes('gemini')) {
+                              logoPath = '/icons/gemini-icon.svg'
+                            } else if (modelIdLower.startsWith('google/')) {
+                              logoPath = '/logos/google-gemini.png'
+                            } else if (modelIdLower.startsWith('facebook/') || modelIdLower.startsWith('meta/')) {
+                              logoPath = '/logos/meta-logo.png'
+                            } else if (modelIdLower.startsWith('microsoft/')) {
+                              logoPath = '/logos/microsoft.svg'
+                            } else if (modelIdLower.startsWith('apple/')) {
+                              logoPath = '/logos/meta-logo.png' // Fallback until Apple logo is added
+                            }
+                            
+                            return logoPath ? (
+                              <Image 
+                                src={logoPath} 
+                                alt={selectedModel.author} 
+                                width={32} 
+                                height={32}
+                                className="flex-shrink-0 object-contain"
+                              />
+                            ) : null
+                          })()}
                           <div className="font-semibold text-wells-dark-grey">{selectedModel.name}</div>
                         </div>
                         <div className="text-sm text-wells-warm-grey">
-                          {selectedModel.id?.toLowerCase().includes('gemini') ? 'Google' : selectedModel.source} • {selectedModel.task}
+                          {selectedModel.author || (selectedModel.id?.toLowerCase().includes('gemini') ? 'Google' : selectedModel.source)} • {selectedModel.task}
                         </div>
                       </div>
                       <button

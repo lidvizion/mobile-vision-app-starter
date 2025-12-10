@@ -27,12 +27,24 @@ const modelsByTaskType: Record<string, string[]> = {
     'facebook/detr-resnet-50',
   ],
   classification: [
-    'gemini-2.0-flash-exp',
-    'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
-    'gemini-2.5-pro',
-    'gemini-3-pro',
-    'microsoft/resnet-50',
+    // Most capable models first (ordered by capability: speed + accuracy)
+    // Tier 1: Gemini models (fastest, most capable, multimodal)
+    'gemini-2.0-flash-exp',      // Ultra-fast, experimental, best speed
+    'gemini-2.5-flash-lite',     // Ultra-fast, lightweight
+    'gemini-2.5-flash',          // Fast, balanced
+    'gemini-2.5-pro',            // Balanced speed/accuracy
+    'gemini-3-pro',              // Most accurate, slightly slower
+    // Tier 2: State-of-the-art Vision Transformers (high accuracy)
+    'google/vit-base-patch16-224', // SOTA ViT, excellent accuracy
+    'microsoft/beit-base-patch16-224-pt22k-ft22k', // BEiT, strong performance
+    // Tier 3: Modern CNNs (efficient, fast)
+    'facebook/convnext-base-224',  // Larger ConvNeXt, higher accuracy
+    'facebook/convnext-tiny-224',  // Efficient ConvNeXt, fast
+    // Tier 4: Efficient models (good balance)
+    'google/efficientnet-b0',      // EfficientNet, good speed/accuracy
+    'apple/mobilevit-small',      // Mobile-optimized, fast
+    // Tier 5: Classic models (reliable baseline)
+    'microsoft/resnet-50',        // Classic ResNet, reliable
   ],
   segmentation: [] // Coming soon
 }
@@ -49,6 +61,7 @@ export default function ParallelModelTester({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Filter models based on task type using proper categorization
+  // Maintain order by capability (most capable first)
   const filteredModels = useMemo(() => {
     const taskTypeKey = selectedTaskType.toLowerCase()
     const allowedModelIds = modelsByTaskType[taskTypeKey] || []
@@ -58,10 +71,14 @@ export default function ParallelModelTester({
       return []
     }
     
-    // Filter featuredModels to only include models that match the task type
-    return featuredModels.filter(model => 
-      allowedModelIds.includes(model.id)
-    )
+    // Filter and sort models to maintain capability order
+    // Create a map for quick lookup
+    const modelMap = new Map(featuredModels.map(model => [model.id, model]))
+    
+    // Return models in the order specified in modelsByTaskType (capability order)
+    return allowedModelIds
+      .map(id => modelMap.get(id))
+      .filter((model): model is ModelMetadata => model !== undefined)
   }, [selectedTaskType, featuredModels])
   
   // Initialize models based on task type - auto-select first 3 available models
@@ -89,6 +106,43 @@ export default function ParallelModelTester({
         if (b.id === 'facebook/detr-resnet-50') return 1
         // Keep original order for others
         return 0
+      })
+    } else if (taskType.toLowerCase() === 'classification') {
+      // For classification task, select top 3 models:
+      // Model 1: google/efficientnet-b0 (Fastest, great for testing)
+      // Model 2: microsoft/resnet-50 (Reliable baseline, most popular)
+      // Model 3: facebook/convnext-base-224 (Best accuracy, modern)
+      sortedModels = [...filtered].sort((a, b) => {
+        // Priority order for default selection
+        // Top 3 for default: EfficientNet B0 + ResNet-50 + ConvNeXt Base
+        if (a.id === 'google/efficientnet-b0') return -1
+        if (b.id === 'google/efficientnet-b0') return 1
+        if (a.id === 'microsoft/resnet-50') return -1
+        if (b.id === 'microsoft/resnet-50') return 1
+        if (a.id === 'facebook/convnext-base-224') return -1
+        if (b.id === 'facebook/convnext-base-224') return 1
+        
+        // Rest maintain the order from modelsByTaskType (already sorted by capability)
+        // This ensures dropdown shows models in capability order
+        const capabilityOrder: Record<string, number> = {
+          'gemini-2.0-flash-exp': 1,
+          'gemini-2.5-flash-lite': 2,
+          'gemini-2.5-flash': 3,
+          'gemini-2.5-pro': 4,
+          'gemini-3-pro': 5,
+          'google/vit-base-patch16-224': 6,
+          'microsoft/beit-base-patch16-224-pt22k-ft22k': 7,
+          'facebook/convnext-base-224': 8,
+          'facebook/convnext-tiny-224': 9,
+          'google/efficientnet-b0': 10,
+          'apple/mobilevit-small': 11,
+          'microsoft/resnet-50': 12,
+        }
+        
+        const aOrder = capabilityOrder[a.id] || 999
+        const bOrder = capabilityOrder[b.id] || 999
+        
+        return aOrder - bOrder
       })
     }
     
