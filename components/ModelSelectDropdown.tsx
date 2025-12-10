@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Image from 'next/image'
-import { ChevronDown, Check, Box } from 'lucide-react'
+import { ChevronDown, Check } from 'lucide-react'
 import { ModelMetadata } from '@/types/models'
 import { cn } from '@/lib/utils'
 
@@ -35,21 +35,11 @@ const getModelLogo = (modelId: string): string | null => {
     return '/logos/meta-logo.png' // Fallback - can be updated when Apple logo is added
   }
   
-  // NVIDIA models - return null (no NVIDIA logo available, don't use Meta logo)
-  if (idLower.startsWith('nvidia/')) {
-    return null // No logo available - can be updated when NVIDIA logo is added
-  }
-  
-  // BRIA AI models - return null (no BRIA logo available, don't use Meta logo)
-  if (idLower.startsWith('briaai/')) {
-    return null // No logo available - can be updated when BRIA logo is added
-  }
-  
   return null
 }
 
 // Legacy static mapping for backward compatibility
-const modelLogos: Record<string, string | null> = {
+const modelLogos: Record<string, string> = {
   'gemini-2.0-flash-exp': '/logos/google-gemini.png',
   'gemini-2.5-flash': '/logos/google-gemini.png',
   'gemini-2.5-flash-lite': '/logos/google-gemini.png',
@@ -66,10 +56,6 @@ const modelLogos: Record<string, string | null> = {
   'facebook/convnext-base-224': '/logos/meta-logo.png',
   'microsoft/beit-base-patch16-224-pt22k-ft22k': '/logos/microsoft.svg',
   'apple/mobilevit-small': '/logos/meta-logo.png', // Fallback until Apple logo is added
-  // Segmentation models
-  'facebook/maskformer-swin-large-ade': '/logos/meta-logo.png',
-  'nvidia/segformer-b0-finetuned-ade-512-512': null, // No NVIDIA logo available - don't use Meta logo
-  'facebook/detr-resnet-50-panoptic': '/logos/meta-logo.png',
 }
 
 // Gemini model speed indicators
@@ -149,7 +135,7 @@ export default function ModelSelectDropdown({
         )}
       >
         {/* Selected Model Logo */}
-        {selectedLogo ? (
+        {selectedLogo && (
           <div className="flex-shrink-0 w-6 h-6 relative">
             <Image
               src={selectedLogo}
@@ -159,10 +145,6 @@ export default function ModelSelectDropdown({
               sizes="24px"
               style={{ mixBlendMode: 'normal' }}
             />
-          </div>
-        ) : (
-          <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-wells-warm-grey/10 rounded">
-            <Box className="w-4 h-4 text-wells-warm-grey" />
           </div>
         )}
         {/* Selected Model Name with Speed Indicator */}
@@ -218,9 +200,7 @@ export default function ModelSelectDropdown({
                       />
                     </div>
                   ) : (
-                    <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-wells-warm-grey/10 rounded">
-                      <Box className="w-4 h-4 text-wells-warm-grey" />
-                    </div>
+                    <div className="flex-shrink-0 w-6 h-6" />
                   )}
                   
                   {/* Model Name with Speed Indicator */}
