@@ -19,6 +19,7 @@ import { useModelSearch } from '@/hooks/useModelSearch'
 import { useSaveModelSelection } from '@/hooks/useSaveModelSelection'
 import { useBackgroundSearch } from '@/hooks/useBackgroundSearch'
 import ModelSearchSkeleton from './ModelSearchSkeleton'
+import TaskTypeSelectDropdown from './TaskTypeSelectDropdown'
 
 interface GuidedModelFlowProps {
   onModelSelect: (model: ModelMetadata) => void
@@ -70,7 +71,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
     // 4. First model isn't Gemini
     if (
       modelList.length > 0 && 
-      modelList[0].id === 'gemini-3-pro-preview' && 
+      modelList[0].id?.toLowerCase().includes('gemini') && 
       !hasAutoRedirected && 
       !isReturnVisit
     ) {
@@ -96,7 +97,11 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           
           // Fallback to querySelector with corrected selector
           // The data-model-id is ON the button, not on a parent element
-          const button = document.querySelector('button[data-model-id="gemini-3-pro-preview"]') as HTMLButtonElement
+          // Use the first Gemini model's ID dynamically
+          const firstGeminiModelId = modelList[0]?.id
+          const button = firstGeminiModelId 
+            ? document.querySelector(`button[data-model-id="${firstGeminiModelId}"]`) as HTMLButtonElement
+            : null
           if (button) {
             console.log('✅ Found button via querySelector, clicking...')
             button.click()
@@ -106,7 +111,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
               sessionStorage.setItem('gemini-auto-redirect-done', 'true')
             }
           } else {
-            console.error('❌ Button not found! Selector: button[data-model-id="gemini-3-pro-preview"]')
+            console.error(`❌ Button not found! Selector: button[data-model-id="${firstGeminiModelId}"]`)
             console.log('Available buttons with data-model-id:', Array.from(document.querySelectorAll('button[data-model-id]')).map(btn => ({
               id: btn.getAttribute('data-model-id'),
               text: btn.textContent?.trim()
@@ -413,7 +418,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 type="checkbox"
                 checked={modelViewStore.isFilterActive('all')}
                 onChange={() => modelViewStore.setActiveFilter('all')}
-                className="w-4 h-4 text-wells-dark-grey bg-white border-wells-warm-grey rounded focus:ring-wells-dark-grey focus:ring-2"
+                className="w-4 h-4 text-purple-600 bg-white border-wells-warm-grey rounded focus:ring-purple-500 focus:ring-2 checked:bg-purple-600 checked:border-purple-600"
               />
               <span className="text-wells-dark-grey">All</span>
             </label>
@@ -421,14 +426,24 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
               // Get unique task types from all models (not just displayed) and normalize them
               const uniqueTasks = Array.from(new Set(modelViewStore.modelList.map(model => normalizeTaskName(model.task))))
 
-              // Define common CV task filters to always show
+              // Define common CV task filters to always show (using same icons as TaskTypeSelectDropdown)
               const commonTasks = ['detection', 'classification', 'segmentation', 'live']
 
               // Combine all tasks and remove duplicates
               const allTasks = Array.from(new Set([...uniqueTasks, ...commonTasks]))
 
               return allTasks.map((task) => {
-                const Icon = taskIcons[task as keyof typeof taskIcons] || Grid
+                // Use same icons as TaskTypeSelectDropdown for consistency
+                let Icon: any = Grid
+                if (task === 'detection') {
+                  Icon = ScanEye
+                } else if (task === 'classification') {
+                  Icon = Tag
+                } else if (task === 'segmentation') {
+                  Icon = ScanLine
+                } else {
+                  Icon = taskIcons[task as keyof typeof taskIcons] || Grid
+                }
 
                 // Check if this task has models (including normalized variants)
                 // Use filteredModels to check what models would actually be shown with this filter
@@ -449,7 +464,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 }
 
                 const hasModels = checkHasModels()
-
+                const isActive = modelViewStore.isFilterActive(task)
 
                 return (
                   <label
@@ -468,13 +483,19 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                   >
                     <input
                       type="checkbox"
-                      checked={modelViewStore.isFilterActive(task)}
+                      checked={isActive}
                       onChange={() => { }} // Handled by label onClick
                       disabled={!hasModels}
-                      className="w-4 h-4 text-wells-dark-grey bg-white border-wells-warm-grey rounded focus:ring-wells-dark-grey focus:ring-2 disabled:opacity-50"
+                      className={`w-4 h-4 bg-white border-wells-warm-grey rounded focus:ring-purple-500 focus:ring-2 disabled:opacity-50 ${
+                        isActive 
+                          ? 'text-purple-600 checked:bg-purple-600 checked:border-purple-600' 
+                          : 'text-wells-dark-grey'
+                      }`}
                     />
-                    <Icon className="w-4 h-4" />
-                    <span className="capitalize text-wells-dark-grey">{task.replace(/([A-Z])/g, ' $1').trim()}</span>
+                    <Icon className={`w-5 h-5 ${hasModels ? 'text-wells-dark-grey' : 'text-wells-warm-grey'}`} />
+                    <span className={`capitalize ${hasModels ? 'text-wells-dark-grey' : 'text-wells-warm-grey'}`}>
+                      {task.replace(/([A-Z])/g, ' $1').trim()}
+                    </span>
                   </label>
                 )
               })
@@ -552,7 +573,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 {/* Model Type Icon */}
                 <div className="flex items-center justify-center mb-2">
                   <div className="w-12 h-12 bg-gradient-to-br from-wells-dark-grey/5 to-wells-dark-grey/10 rounded-xl flex items-center justify-center border border-wells-warm-grey/20">
-                    {model.id === 'gemini-3-pro-preview' ? (
+                    {model.id?.toLowerCase().includes('gemini') ? (
                       <Image src="/icons/gemini-icon.svg" alt="Gemini" width={40} height={40} />
                     ) : (
                       <TaskIcon className="w-6 h-6 text-wells-dark-grey" />
@@ -646,7 +667,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 {/* Action Buttons */}
                 <div className="flex gap-2 mt-auto flex-shrink-0">
                   <button
-                    ref={model.id === 'gemini-3-pro-preview' ? geminiButtonRef : null}
+                    ref={model.id?.toLowerCase().includes('gemini') && modelList[0]?.id === model.id ? geminiButtonRef : null}
                     data-model-id={model.id}
                     onClick={() => {
                       console.log('🔘 Use Model button clicked for:', model.id, model.name)
@@ -815,20 +836,14 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           <label className="text-sm font-medium text-wells-dark-grey mr-3">
             Task Type:
           </label>
-          <select
-            value={selectedTaskType}
-            onChange={(e) => {
-              const newTaskType = e.target.value as 'detection' | 'classification' | 'segmentation'
+          <TaskTypeSelectDropdown
+            selectedTaskType={selectedTaskType}
+            onTaskTypeChange={(newTaskType) => {
               setSelectedTaskType(newTaskType)
               // Clear query text when task type changes
               modelViewStore.setQueryText('')
             }}
-            className="px-4 py-2.5 rounded-lg border border-wells-warm-grey/30 bg-white text-wells-dark-grey focus:border-wells-dark-grey focus:ring-2 focus:ring-wells-dark-grey/20 focus:outline-none transition-all font-medium text-sm min-w-[180px]"
-          >
-            <option value="detection">Detection</option>
-            <option value="classification">Classification</option>
-            <option value="segmentation">Segmentation</option>
-          </select>
+          />
         </div>
       </div>
 

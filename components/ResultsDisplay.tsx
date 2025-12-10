@@ -3,11 +3,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import { observer } from 'mobx-react-lite'
 import { CVResponse } from '@/types'
-import { Clock, ChevronDown, ChevronUp, Download, Eye, EyeOff } from 'lucide-react'
+import { Clock, ChevronDown, ChevronUp, Download, Eye, EyeOff, Copy } from 'lucide-react'
 import OverlayRenderer from './OverlayRenderer'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
 import { modelViewStore } from '@/stores/modelViewStore'
+import { useNotification } from '@/contexts/NotificationContext'
 
 interface ResultsDisplayProps {
   response: CVResponse | null
@@ -20,6 +21,8 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
   const [labelDisplay, setLabelDisplay] = useState<LabelDisplayMode>('confidence')
   const [showDetectionList, setShowDetectionList] = useState(true)
   const [showOverlays, setShowOverlays] = useState(true)
+  const [showRawJSON, setShowRawJSON] = useState(false)
+  const { showNotification } = useNotification()
   
   // Get confidence threshold from MobX store
   const confidenceThreshold = modelViewStore.confidenceThreshold
@@ -150,6 +153,30 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
   const imageWidth = response?.image_metadata?.width || 640
   const imageHeight = response?.image_metadata?.height || 480
 
+  // Handle JSON download
+  const handleDownloadJSON = () => {
+    const data = JSON.stringify(response, null, 2)
+    const blob = new Blob([data], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `results-${Date.now()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Handle JSON copy to clipboard
+  const handleCopyJSON = async () => {
+    try {
+      const data = JSON.stringify(response, null, 2)
+      await navigator.clipboard.writeText(data)
+      showNotification('JSON copied to clipboard', 'success')
+    } catch (error) {
+      console.error('Failed to copy JSON:', error)
+      showNotification('Failed to copy JSON', 'error')
+    }
+  }
+
   if (!response || !selectedImage) {
     return (
       <div className="text-center py-12 text-wells-warm-grey">
@@ -276,33 +303,26 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
           )}
         </div>
 
-        {/* Export Button */}
-        <button
-          onClick={() => {
-            const data = JSON.stringify(response, null, 2)
-            const blob = new Blob([data], { type: 'application/json' })
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = `results-${Date.now()}.json`
-            a.click()
-            URL.revokeObjectURL(url)
-          }}
-          className="text-xs text-wells-warm-grey hover:text-wells-dark-grey flex items-center gap-1 transition-colors flex-shrink-0"
-        >
-          <Download className="w-3.5 h-3.5" />
-          JSON
-        </button>
+        {/* Export Button - Only show when NOT in raw JSON view */}
+        {!showRawJSON && (
+          <button
+            onClick={handleDownloadJSON}
+            className="text-xs text-wells-warm-grey hover:text-wells-dark-grey flex items-center gap-1 transition-colors flex-shrink-0"
+          >
+            <Download className="w-3.5 h-3.5" />
+            JSON
+          </button>
+        )}
       </div>
 
       {/* Results Section - Collapsible */}
       <div className="border border-wells-warm-grey/10 rounded-lg overflow-hidden bg-white">
         {/* Header */}
-        <button
-          onClick={() => setShowDetectionList(!showDetectionList)}
-          className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 transition-colors"
-        >
-          <div className="flex items-center gap-3">
+        <div className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 transition-colors">
+          <button
+            onClick={() => setShowDetectionList(!showDetectionList)}
+            className="flex items-center gap-3 flex-1"
+          >
             <span className="text-sm font-semibold text-wells-dark-grey">
               {currentTask === 'detection' || currentTask.includes('detection') 
                 ? 'Detections' 
@@ -315,42 +335,98 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
             <span className="text-xs px-2 py-0.5 bg-gray-100 text-wells-warm-grey rounded-full font-medium">
               {getResultCount()}
             </span>
-          </div>
-          {showDetectionList ? (
-            <ChevronUp className="w-4 h-4 text-wells-warm-grey" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-wells-warm-grey" />
-          )}
-        </button>
+            {showDetectionList ? (
+              <ChevronUp className="w-4 h-4 text-wells-warm-grey" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-wells-warm-grey" />
+            )}
+          </button>
+          
+          {/* Toggle for Raw JSON View */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowRawJSON(!showRawJSON)
+              if (!showRawJSON) {
+                setShowDetectionList(true)
+              }
+            }}
+            className={cn(
+              "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+              showRawJSON
+                ? "bg-wells-dark-grey text-white"
+                : "bg-white text-wells-dark-grey border border-wells-warm-grey/20 hover:bg-gray-50"
+            )}
+          >
+            {showRawJSON ? 'View Results' : 'View JSON'}
+          </button>
+        </div>
 
-        {/* Results List */}
-        {showDetectionList && resultsForList.length > 0 && (
-          <div className="divide-y divide-wells-warm-grey/5 max-h-64 overflow-y-auto">
-            {resultsForList.map((result: any, index: number) => (
-              <div
-                key={index}
-                className="px-4 py-2.5 hover:bg-gray-50 transition-colors flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div 
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0" 
-                    style={{ backgroundColor: result.color }} 
-                  />
-                  <span className="text-sm text-wells-dark-grey">{result.label}</span>
+        {/* Content */}
+        {showDetectionList && (
+          <>
+            {showRawJSON ? (
+              /* Raw JSON View */
+              <div className="px-4 py-4">
+                {/* Download and Copy Icons */}
+                <div className="flex items-center gap-2 mb-3">
+                  <button
+                    onClick={handleDownloadJSON}
+                    className="p-2 rounded-md text-wells-warm-grey hover:text-wells-dark-grey hover:bg-gray-50 transition-colors"
+                    title="Download JSON"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={handleCopyJSON}
+                    className="p-2 rounded-md text-wells-warm-grey hover:text-wells-dark-grey hover:bg-gray-50 transition-colors"
+                    title="Copy JSON"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
                 </div>
-                <span className="text-sm font-semibold text-wells-dark-grey">
-                  {Math.round((result.score || 0) * 100)}%
-                </span>
+                
+                {/* JSON Display */}
+                <div className="bg-gray-50 rounded-lg border border-wells-warm-grey/10 p-4 max-h-96 overflow-auto">
+                  <pre className="text-xs text-wells-dark-grey font-mono whitespace-pre-wrap break-words">
+                    {JSON.stringify(response, null, 2)}
+                  </pre>
+                </div>
               </div>
-            ))}
-          </div>
-        )}
+            ) : (
+              /* Normal Results List */
+              <>
+                {resultsForList.length > 0 && (
+                  <div className="divide-y divide-wells-warm-grey/5 max-h-64 overflow-y-auto">
+                    {resultsForList.map((result: any, index: number) => (
+                      <div
+                        key={index}
+                        className="px-4 py-2.5 hover:bg-gray-50 transition-colors flex items-center justify-between group"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div 
+                            className="w-2.5 h-2.5 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: result.color }} 
+                          />
+                          <span className="text-sm text-wells-dark-grey">{result.label}</span>
+                        </div>
+                        <span className="text-sm font-semibold text-wells-dark-grey">
+                          {Math.round((result.score || 0) * 100)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-        {/* Empty State */}
-        {showDetectionList && resultsForList.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-wells-warm-grey">
-            No results above {Math.round(confidenceThreshold * 100)}% confidence
-          </div>
+                {/* Empty State */}
+                {resultsForList.length === 0 && (
+                  <div className="px-4 py-8 text-center text-sm text-wells-warm-grey">
+                    No results above {Math.round(confidenceThreshold * 100)}% confidence
+                  </div>
+                )}
+              </>
+            )}
+          </>
         )}
       </div>
 

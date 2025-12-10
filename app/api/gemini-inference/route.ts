@@ -6,6 +6,36 @@ export const maxDuration = 60
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+/**
+ * Map our model IDs to actual Google AI Gemini model names
+ * Some models may be experimental or have different naming conventions
+ */
+function mapModelIdToGeminiModel(modelId: string): string {
+  const modelIdLower = modelId.toLowerCase()
+  
+  // Map our model IDs to actual Gemini API model names
+  if (modelIdLower.includes('2.0-flash-exp') || modelIdLower === 'gemini-2.0-flash-exp') {
+    return 'gemini-2.0-flash-exp' // Experimental model
+  }
+  if (modelIdLower.includes('2.5-flash-lite') || modelIdLower === 'gemini-2.5-flash-lite') {
+    return 'gemini-2.5-flash-lite'
+  }
+  if (modelIdLower.includes('2.5-flash') && !modelIdLower.includes('lite')) {
+    return 'gemini-2.5-flash'
+  }
+  if (modelIdLower.includes('2.5-pro')) {
+    return 'gemini-2.5-pro'
+  }
+  if (modelIdLower.includes('3-pro') || modelIdLower.includes('gemini-3-pro')) {
+    // Gemini 3 Pro might not exist yet, fallback to 2.5-pro
+    // When it becomes available, change this to 'gemini-3-pro'
+    return 'gemini-2.5-pro' // Fallback until gemini-3-pro is available
+  }
+  
+  // Default fallback
+  return modelId || 'gemini-2.5-flash'
+}
+
 interface GeminiInferenceRequest {
   model_id: string
   inputs: string
@@ -44,8 +74,10 @@ export async function POST(request: NextRequest) {
       // Generate prompt based on task
       const task = parameters?.task || 'object-detection'
       const prompt = generatePrompt(task, parameters?.prompt)
-      // Use model variant from parameters if provided, otherwise use model_id
-      const modelToUse = parameters?.model || model_id
+      // Map model ID to actual Gemini API model name
+      const modelToUse = parameters?.model 
+        ? mapModelIdToGeminiModel(parameters.model)
+        : mapModelIdToGeminiModel(model_id)
       
       console.log('📤 Sending to Lambda', {
         task,
@@ -79,7 +111,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        model_id: 'gemini-3-pro-preview',
+        model_id: model_id, // Return the original model_id
         results: lambdaResult.data?.detections || lambdaResult.data || lambdaResult.results || [],
         requestId,
         timestamp: new Date().toISOString(),
@@ -105,8 +137,10 @@ export async function POST(request: NextRequest) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey)
-    // Use model variant from parameters if provided, otherwise default to gemini-2.5-flash
-    const modelToUse = parameters?.model || 'gemini-2.5-flash'
+    // Map model ID to actual Gemini API model name
+    const modelToUse = parameters?.model 
+      ? mapModelIdToGeminiModel(parameters.model)
+      : mapModelIdToGeminiModel(model_id)
     const model = genAI.getGenerativeModel({ model: modelToUse })
 
     let imageData: string
@@ -172,7 +206,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      model_id: 'gemini-3-pro-preview',
+      model_id: model_id, // Return the original model_id
       results,
       requestId,
       timestamp: new Date().toISOString(),
@@ -191,7 +225,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: false,
-      model_id: 'gemini-3-pro-preview',
+      model_id: model_id || 'unknown',
       error: {
         type: 'inference_error',
         message: error.message || 'Gemini inference failed',

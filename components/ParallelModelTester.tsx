@@ -6,15 +6,7 @@ import ResultsDisplay from './ResultsDisplay'
 import { useCVTask } from '@/hooks/useCVTask'
 import { Loader2, Upload, Image as ImageIcon, Lightbulb, AlertCircle, Bell } from 'lucide-react'
 import { validateMediaFile } from '@/lib/validation'
-import Image from 'next/image'
-
-// Model logos mapping
-const modelLogos: Record<string, string> = {
-  'gemini-3-pro-preview': '/logos/google-gemini.png',
-  'facebook/detr-resnet-101': '/logos/meta.png',
-  'facebook/detr-resnet-50': '/logos/meta.png',
-  'microsoft/resnet-50': '/logos/microsoft.svg',
-}
+import ModelSelectDropdown from './ModelSelectDropdown'
 
 interface ParallelModelTesterProps {
   featuredModels: ModelMetadata[]
@@ -26,11 +18,20 @@ interface ParallelModelTesterProps {
 // Model categorization by task type
 const modelsByTaskType: Record<string, string[]> = {
   detection: [
-    'gemini-3-pro-preview',
+    'gemini-2.0-flash-exp',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-pro',
+    'gemini-3-pro',
     'facebook/detr-resnet-101',
     'facebook/detr-resnet-50',
   ],
   classification: [
+    'gemini-2.0-flash-exp',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-pro',
+    'gemini-3-pro',
     'microsoft/resnet-50',
   ],
   segmentation: [] // Coming soon
@@ -64,13 +65,35 @@ export default function ParallelModelTester({
   }, [selectedTaskType, featuredModels])
   
   // Initialize models based on task type - auto-select first 3 available models
-  const getInitialModels = useCallback((filtered: ModelMetadata[]): (ModelMetadata | null)[] => {
+  // For detection, prioritize gemini-2.5-flash-lite (fastest) as Model 1
+  const getInitialModels = useCallback((filtered: ModelMetadata[], taskType: string): (ModelMetadata | null)[] => {
     if (filtered.length === 0) {
       return [null, null, null]
     }
     
+    // For detection task, set specific default models:
+    // Model 1: gemini-2.0-flash-exp (fastest: 1-2s)
+    // Model 2: facebook/detr-resnet-101
+    // Model 3: facebook/detr-resnet-50
+    let sortedModels = [...filtered]
+    if (taskType.toLowerCase() === 'detection') {
+      sortedModels = [...filtered].sort((a, b) => {
+        // Model 1: gemini-2.0-flash-exp (fastest: 1-2s)
+        if (a.id === 'gemini-2.0-flash-exp') return -1
+        if (b.id === 'gemini-2.0-flash-exp') return 1
+        // Model 2: facebook/detr-resnet-101
+        if (a.id === 'facebook/detr-resnet-101') return -1
+        if (b.id === 'facebook/detr-resnet-101') return 1
+        // Model 3: facebook/detr-resnet-50
+        if (a.id === 'facebook/detr-resnet-50') return -1
+        if (b.id === 'facebook/detr-resnet-50') return 1
+        // Keep original order for others
+        return 0
+      })
+    }
+    
     // Auto-select first 3 models, or all available if less than 3
-    const initialModels: (ModelMetadata | null)[] = [...filtered.slice(0, 3)]
+    const initialModels: (ModelMetadata | null)[] = [...sortedModels.slice(0, 3)]
     
     // Pad with nulls if we have less than 3 models
     while (initialModels.length < 3) {
@@ -80,11 +103,11 @@ export default function ParallelModelTester({
     return initialModels.slice(0, 3)
   }, [])
   
-  const [selectedModels, setSelectedModels] = useState<(ModelMetadata | null)[]>(() => getInitialModels(filteredModels))
+  const [selectedModels, setSelectedModels] = useState<(ModelMetadata | null)[]>(() => getInitialModels(filteredModels, selectedTaskType))
 
   // Update models when task type or filtered models change
   useEffect(() => {
-    const newModels = getInitialModels(filteredModels)
+    const newModels = getInitialModels(filteredModels, selectedTaskType)
     setSelectedModels(newModels)
   }, [selectedTaskType, filteredModels, getInitialModels])
   
@@ -349,10 +372,8 @@ function ModelWindow({
   windowNumber: number
   prompt: string
 }) {
-  const [geminiVariant, setGeminiVariant] = useState('gemini-2.5-flash-lite')
   const { processImage, isProcessing, lastResponse } = useCVTask(
-    model || undefined, 
-    geminiVariant
+    model || undefined
   )
   const [currentImageFile, setCurrentImageFile] = useState<File | null>(null)
   const [hasProcessedCurrentImage, setHasProcessedCurrentImage] = useState(false)
@@ -387,8 +408,7 @@ function ModelWindow({
             id: model.id,
             name: model.name,
             source: model.source,
-            isGemini: model.id === 'gemini-3-pro-preview' || model.id?.toLowerCase().includes('gemini'),
-            geminiVariant
+            isGemini: model.id?.toLowerCase().includes('gemini')
           })
           const result = await processImage(currentImageFile)
           console.log(`[Model ${windowNumber}] Processing result:`, {
@@ -410,7 +430,7 @@ function ModelWindow({
         processWithModel()
       }
     }
-  }, [sharedImage, model, isProcessing, processImage, hasProcessedCurrentImage, currentImageFile, windowNumber, geminiVariant])
+  }, [sharedImage, model, isProcessing, processImage, hasProcessedCurrentImage, currentImageFile, windowNumber])
 
   // Reset processed flag when model changes (to trigger reprocessing)
   useEffect(() => {
@@ -444,50 +464,11 @@ function ModelWindow({
           </div>
           
           {/* Model Selector with Logo */}
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-wells-warm-grey/20 bg-white focus-within:border-wells-dark-grey focus-within:ring-2 focus-within:ring-wells-dark-grey/10 transition-all">
-            {modelLogos[model.id] && (
-              <div className="flex-shrink-0 w-6 h-6 relative">
-                <Image
-                  src={modelLogos[model.id]}
-                  alt={model.author}
-                  fill
-                  className="object-contain"
-                  sizes="24px"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement
-                    target.style.display = 'none'
-                  }}
-                />
-              </div>
-            )}
-            <select
-              value={model.id}
-              onChange={(e) => {
-                const selected = availableModels.find(m => m.id === e.target.value)
-                if (selected) onModelChange(selected)
-              }}
-              className="flex-1 text-sm font-medium text-wells-dark-grey bg-transparent border-none focus:outline-none cursor-pointer"
-            >
-              {availableModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} - {m.author}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Gemini Variant Selector */}
-          {(model.id === 'gemini-3-pro-preview' || model.id?.toLowerCase().includes('gemini')) && (
-            <select
-              value={geminiVariant}
-              onChange={(e) => setGeminiVariant(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-wells-warm-grey/20 text-xs text-wells-warm-grey bg-white focus:border-wells-dark-grey focus:outline-none"
-            >
-              <option value="gemini-2.5-flash-lite">⚡⚡ Ultra Fast (1-3s)</option>
-              <option value="gemini-2.5-flash">⚡ Balanced (2-5s)</option>
-              <option value="gemini-2.5-pro">🎯 Most Accurate (5-10s)</option>
-            </select>
-          )}
+          <ModelSelectDropdown
+            selectedModel={model}
+            availableModels={availableModels}
+            onModelChange={onModelChange}
+          />
         </div>
       </div>
 

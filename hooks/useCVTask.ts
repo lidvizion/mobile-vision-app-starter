@@ -9,7 +9,7 @@ import { queryKeys } from '@/lib/query-client'
 import { ModelMetadata } from '@/types/models'
 import { modelViewStore } from '@/stores/modelViewStore'
 
-export function useCVTask(selectedModel?: ModelMetadata | null, geminiModelVariant?: string) {
+export function useCVTask(selectedModel?: ModelMetadata | null) {
   const [currentTask, setCurrentTask] = useState<CVTask>('multi-type')
   const [compressionInfo, setCompressionInfo] = useState<{ originalSize: string; compressedSize: string; reductionPercent: number; wasCompressed: boolean } | null>(null)
   const queryClient = useQueryClient()
@@ -69,7 +69,7 @@ export function useCVTask(selectedModel?: ModelMetadata | null, geminiModelVaria
           }
           
           // Check if this is a Gemini model
-          const isGeminiModel = selectedModel.id === 'gemini-3-pro-preview' || selectedModel.id?.toLowerCase().includes('gemini')
+          const isGeminiModel = selectedModel.id?.toLowerCase().includes('gemini')
           
           // Convert image to base64 (with compression for Gemini models)
           let base64: string
@@ -153,10 +153,11 @@ export function useCVTask(selectedModel?: ModelMetadata | null, geminiModelVaria
             })
           } else {
             // Use Hugging Face inference API (may return job_id for async processing)
-            // Add Gemini model variant to parameters if it's a Gemini model
+            // For Gemini models, use the model.id directly as the model parameter
             const finalParameters = { ...parameters }
-            if (geminiModelVariant && (selectedModel.id === 'gemini-3-pro-preview' || selectedModel.id?.toLowerCase().includes('gemini'))) {
-              finalParameters.model = geminiModelVariant
+            if (isGeminiModel && selectedModel.id) {
+              // Use the model ID directly (e.g., 'gemini-2.5-flash', 'gemini-2.5-pro', etc.)
+              finalParameters.model = selectedModel.id
             }
             
             response = await fetch('/api/run-inference', {
@@ -624,7 +625,7 @@ async function transformHFToCVResponse(inferenceData: any, model: ModelMetadata,
   const results = inferenceData.results || []
   
   // Debug logging for Gemini
-  const isGemini = model.id === 'gemini-3-pro-preview' || model.id?.toLowerCase().includes('gemini')
+  const isGemini = model.id?.toLowerCase().includes('gemini')
   if (isGemini) {
     console.log('[transformHFToCVResponse] Gemini response:', {
       modelId: model.id,

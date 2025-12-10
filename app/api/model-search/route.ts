@@ -2283,29 +2283,119 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
     const validatedModels = await searchValidatedModels(keywords, taskType, limit)
     console.log(`📊 [getCuratedModels] searchValidatedModels returned ${validatedModels.length} models`)
 
-    // 🆕 INJECT GEMINI 3 PRO AS FIRST MODEL
-    const geminiModel = {
-      model_id: 'gemini-3-pro-preview',
-      relevanceScore: 999999, // Highest score to appear first
-      name: 'Gemini 3 Pro',
-      author: 'Google',
-      task_type: taskType || 'object-detection',
-      pipeline_tag: 'image-analysis',
-      validated: true,
-      classes: keywords, // Use search keywords as capabilities
-      class_count: keywords.length,
-      downloads: 1000000,
-      likes: 10000,
-      tags: ['vision', 'multimodal', 'google', 'gemini', 'detection', 'classification', 'segmentation'],
-      library_name: 'google-ai',
-      inferenceEndpoint: '/api/gemini-inference',
-      inference_endpoint: '/api/gemini-inference',
-      supportsInference: true,
-      works: true,
-      hosted: true,
-      inferenceStatus: 'hosted',
-      workingDate: new Date()
-    }
+    // 🆕 INJECT ALL GEMINI MODELS AS FEATURED MODELS
+    const geminiModels = [
+      {
+        model_id: 'gemini-2.0-flash-exp',
+        relevanceScore: 999999, // Highest score to appear first
+        name: 'Gemini 2.0 Flash Exp',
+        author: 'Google',
+        task_type: taskType || 'object-detection',
+        pipeline_tag: 'image-analysis',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 1000000,
+        likes: 10000,
+        tags: ['vision', 'multimodal', 'google', 'gemini', 'detection', 'classification', 'segmentation', 'ultra-fast'],
+        library_name: 'google-ai',
+        inferenceEndpoint: '/api/gemini-inference',
+        inference_endpoint: '/api/gemini-inference',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'hosted',
+        workingDate: new Date()
+      },
+      {
+        model_id: 'gemini-2.5-flash',
+        relevanceScore: 999998,
+        name: 'Gemini 2.5 Flash',
+        author: 'Google',
+        task_type: taskType || 'object-detection',
+        pipeline_tag: 'image-analysis',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 1000000,
+        likes: 10000,
+        tags: ['vision', 'multimodal', 'google', 'gemini', 'detection', 'classification', 'segmentation', 'fast'],
+        library_name: 'google-ai',
+        inferenceEndpoint: '/api/gemini-inference',
+        inference_endpoint: '/api/gemini-inference',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'hosted',
+        workingDate: new Date()
+      },
+      {
+        model_id: 'gemini-2.5-flash-lite',
+        relevanceScore: 999997,
+        name: 'Gemini 2.5 Flash Lite',
+        author: 'Google',
+        task_type: taskType || 'object-detection',
+        pipeline_tag: 'image-analysis',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 1000000,
+        likes: 10000,
+        tags: ['vision', 'multimodal', 'google', 'gemini', 'detection', 'classification', 'segmentation', 'ultra-fast'],
+        library_name: 'google-ai',
+        inferenceEndpoint: '/api/gemini-inference',
+        inference_endpoint: '/api/gemini-inference',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'hosted',
+        workingDate: new Date()
+      },
+      {
+        model_id: 'gemini-2.5-pro',
+        relevanceScore: 999996,
+        name: 'Gemini 2.5 Pro',
+        author: 'Google',
+        task_type: taskType || 'object-detection',
+        pipeline_tag: 'image-analysis',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 1000000,
+        likes: 10000,
+        tags: ['vision', 'multimodal', 'google', 'gemini', 'detection', 'classification', 'segmentation', 'accurate'],
+        library_name: 'google-ai',
+        inferenceEndpoint: '/api/gemini-inference',
+        inference_endpoint: '/api/gemini-inference',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'hosted',
+        workingDate: new Date()
+      },
+      {
+        model_id: 'gemini-3-pro',
+        relevanceScore: 999995,
+        name: 'Gemini 3 Pro',
+        author: 'Google',
+        task_type: taskType || 'object-detection',
+        pipeline_tag: 'image-analysis',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 1000000,
+        likes: 10000,
+        tags: ['vision', 'multimodal', 'google', 'gemini', 'detection', 'classification', 'segmentation', 'most-accurate'],
+        library_name: 'google-ai',
+        inferenceEndpoint: '/api/gemini-inference',
+        inference_endpoint: '/api/gemini-inference',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'hosted',
+        workingDate: new Date()
+      }
+    ]
 
     // 🆕 INJECT DETR AS SECOND FEATURED MODEL
     const detrModel = {
@@ -2355,8 +2445,8 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
       workingDate: new Date()
     }
     
-    // Prepend Gemini, DETR, and ResNet-50 to the validated models list
-    const allModels = [geminiModel, detrModel, resnetModel, ...validatedModels]
+    // Prepend all Gemini models, DETR, and ResNet-50 to the validated models list
+    const allModels = [...geminiModels, detrModel, resnetModel, ...validatedModels]
 
     // Convert to the expected format
     const curatedModels = allModels.map(model => {
