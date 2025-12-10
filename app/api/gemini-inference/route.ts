@@ -49,12 +49,14 @@ interface GeminiInferenceRequest {
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
   const requestId = `gemini_${Date.now()}_${Math.random().toString(36).substring(7)}`
+  let model_id: string = 'unknown'
 
   console.log('🚀 /api/gemini-inference called', { requestId, timestamp: new Date().toISOString() })
 
   try {
     const body: GeminiInferenceRequest = await request.json()
-    const { model_id, inputs, parameters } = body
+    const { model_id: bodyModelId, inputs, parameters } = body
+    model_id = bodyModelId
 
     console.log('📥 Request body received', {
       model_id,

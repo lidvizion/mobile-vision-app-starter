@@ -667,7 +667,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                 {/* Action Buttons */}
                 <div className="flex gap-2 mt-auto flex-shrink-0">
                   <button
-                    ref={model.id?.toLowerCase().includes('gemini') && modelList[0]?.id === model.id ? geminiButtonRef : null}
+                    ref={model.id?.toLowerCase().includes('gemini') && modelViewStore.modelList[0]?.id === model.id ? geminiButtonRef : null}
                     data-model-id={model.id}
                     onClick={() => {
                       console.log('🔘 Use Model button clicked for:', model.id, model.name)
