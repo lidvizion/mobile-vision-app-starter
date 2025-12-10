@@ -303,14 +303,14 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
           )}
         </div>
 
-        {/* Export Button - Only show when NOT in raw JSON view */}
+        {/* Export Button - Only show when NOT in raw JSON view, icon-only */}
         {!showRawJSON && (
           <button
             onClick={handleDownloadJSON}
-            className="text-xs text-wells-warm-grey hover:text-wells-dark-grey flex items-center gap-1 transition-colors flex-shrink-0"
+            className="p-2 rounded-md text-wells-warm-grey hover:text-wells-dark-grey hover:bg-gray-50 transition-colors flex-shrink-0"
+            title="Download JSON"
           >
-            <Download className="w-3.5 h-3.5" />
-            JSON
+            <Download className="w-4 h-4" />
           </button>
         )}
       </div>
@@ -342,24 +342,52 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
             )}
           </button>
           
-          {/* Toggle for Raw JSON View */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowRawJSON(!showRawJSON)
-              if (!showRawJSON) {
-                setShowDetectionList(true)
-              }
-            }}
-            className={cn(
-              "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-              showRawJSON
-                ? "bg-wells-dark-grey text-white"
-                : "bg-white text-wells-dark-grey border border-wells-warm-grey/20 hover:bg-gray-50"
+          <div className="flex items-center gap-2">
+            {/* Download and Copy Icons - Only show when viewing raw JSON */}
+            {showRawJSON && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDownloadJSON()
+                  }}
+                  className="p-2 rounded-md text-wells-warm-grey hover:text-wells-dark-grey hover:bg-gray-50 transition-colors"
+                  title="Download JSON"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleCopyJSON()
+                  }}
+                  className="p-2 rounded-md text-wells-warm-grey hover:text-wells-dark-grey hover:bg-gray-50 transition-colors"
+                  title="Copy JSON"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </>
             )}
-          >
-            {showRawJSON ? 'View Results' : 'View JSON'}
-          </button>
+            
+            {/* Toggle for Raw JSON View */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowRawJSON(!showRawJSON)
+                if (!showRawJSON) {
+                  setShowDetectionList(true)
+                }
+              }}
+              className={cn(
+                "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                showRawJSON
+                  ? "bg-wells-dark-grey text-white"
+                  : "bg-white text-wells-dark-grey border border-wells-warm-grey/20 hover:bg-gray-50"
+              )}
+            >
+              {showRawJSON ? 'View Results' : 'View JSON'}
+            </button>
+          </div>
         </div>
 
         {/* Content */}
@@ -368,24 +396,6 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
             {showRawJSON ? (
               /* Raw JSON View */
               <div className="px-4 py-4">
-                {/* Download and Copy Icons */}
-                <div className="flex items-center gap-2 mb-3">
-                  <button
-                    onClick={handleDownloadJSON}
-                    className="p-2 rounded-md text-wells-warm-grey hover:text-wells-dark-grey hover:bg-gray-50 transition-colors"
-                    title="Download JSON"
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={handleCopyJSON}
-                    className="p-2 rounded-md text-wells-warm-grey hover:text-wells-dark-grey hover:bg-gray-50 transition-colors"
-                    title="Copy JSON"
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
-                </div>
-                
                 {/* JSON Display */}
                 <div className="bg-gray-50 rounded-lg border border-wells-warm-grey/10 p-4 max-h-96 overflow-auto">
                   <pre className="text-xs text-wells-dark-grey font-mono whitespace-pre-wrap break-words">

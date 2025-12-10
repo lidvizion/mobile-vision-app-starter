@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Camera, Upload, Loader2, X, Video, Image as ImageIcon, AlertCircle } from 'lucide-react'
+import { Camera, Upload, Loader2, X, Video, Image as ImageIcon, AlertCircle, Play, RefreshCw } from 'lucide-react'
 import Image from 'next/image'
 import { CVTask, CVResponse } from '@/types'
 import { ModelMetadata } from '@/types/models'
@@ -36,6 +36,30 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
   const streamRef = useRef<MediaStream | null>(null)
   const fileClickInProgress = useRef(false)
   const autoProcessTriggered = useRef(false)
+
+  // Helper function to convert base64 data URL to File
+  const base64ToFile = (base64: string, filename: string = 'image.jpg'): File => {
+    const arr = base64.split(',')
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg'
+    const bstr = atob(arr[1])
+    let n = bstr.length
+    const u8arr = new Uint8Array(n)
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n)
+    }
+    return new File([u8arr], filename, { type: mime })
+  }
+
+  // Initialize currentImageFile from selectedImage if it exists but currentImageFile doesn't
+  useEffect(() => {
+    if (selectedImage && !currentImageFile) {
+      // Convert base64 to File for processing
+      const file = base64ToFile(selectedImage, 'uploaded-image.jpg')
+      setCurrentImageFile(file)
+      // Reset auto-process trigger so it can process with new model
+      autoProcessTriggered.current = false
+    }
+  }, [selectedImage, currentImageFile])
 
   // Automatic processing when both image and model are selected (only once)
   useEffect(() => {
@@ -245,6 +269,41 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
     setCurrentVideoFile(null)
     setIsVideo(false)
     stopCamera()
+    autoProcessTriggered.current = false // Reset trigger when image is removed
+  }
+
+  // Handle "Analyze Image" button click - process existing image
+  const handleAnalyzeImage = async () => {
+    if (!selectedImage || !selectedModel) return
+
+    const context = createLogContext(currentTask, 'CameraPreview', 'analyze-image')
+    logger.info('Analyze Image button clicked', context, {
+      model: selectedModel.name,
+      hasImage: !!selectedImage
+    })
+
+    // Convert base64 to File if needed
+    let fileToProcess = currentImageFile
+    if (!fileToProcess && selectedImage) {
+      fileToProcess = base64ToFile(selectedImage, 'uploaded-image.jpg')
+      setCurrentImageFile(fileToProcess)
+    }
+
+    if (!fileToProcess) {
+      setError('No image available to analyze')
+      return
+    }
+
+    try {
+      setError(null)
+      const response = await processImage(fileToProcess)
+      onImageProcessed(response)
+      logger.info('Image analysis completed successfully', context)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      logger.error('Image analysis failed', context, error as Error)
+      setError(`Failed to analyze image: ${errorMessage}`)
+    }
   }
 
   return (
@@ -254,8 +313,14 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
           <Camera className="w-4 h-4 text-white" />
         </div>
         <div>
-          <h3 className="text-lg font-serif font-semibold text-wells-dark-grey">Upload Image</h3>
-          <p className="text-sm text-wells-warm-grey">Upload or capture images for processing</p>
+          <h3 className="text-lg font-serif font-semibold text-wells-dark-grey">
+            {selectedImage ? 'Image Analysis' : 'Upload Image'}
+          </h3>
+          <p className="text-sm text-wells-warm-grey">
+            {selectedImage 
+              ? 'Analyze your image or upload a new one' 
+              : 'Upload or capture images for processing'}
+          </p>
         </div>
       </div>
 
@@ -444,6 +509,36 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
                   </div>
                 )}
               </div>
+
+              {/* Action Buttons - Show "Analyze Image" if model is selected, otherwise show upload options */}
+              {!isProcessing && selectedModel && (
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <button
+                    onClick={handleAnalyzeImage}
+                    disabled={!selectedModel || isProcessing}
+                    className="btn-primary btn-lg hover-lift flex items-center justify-center gap-2"
+                  >
+                    <Play className="w-5 h-5" />
+                    <span>Analyze Image</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      if (fileClickInProgress.current) return
+                      fileClickInProgress.current = true
+                      fileInputRef.current?.click()
+                      setTimeout(() => {
+                        fileClickInProgress.current = false
+                      }, 1000)
+                    }}
+                    className="btn-secondary btn-lg hover-lift flex items-center justify-center gap-2"
+                  >
+                    <RefreshCw className="w-5 h-5" />
+                    <span>Change Image</span>
+                  </button>
+                </div>
+              )}
               
               {isProcessing && (
                 <div className="flex items-center justify-center gap-2 text-sm text-wells-warm-grey">
@@ -505,7 +600,7 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
                     className="btn-primary btn-lg hover-lift"
                   >
                     <Upload className="w-5 h-5" />
-                    <span>Choose File</span>
+                    <span>Upload Image</span>
                   </button>
                   {/* Camera functionality temporarily disabled - no inference support */}
                   {false && (

@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     model_id = bodyModelId
 
     console.log('📥 Request body received', {
-      model_id,
+      model_id: bodyModelId,
       hasInputs: !!inputs,
       inputLength: inputs?.length,
       task: parameters?.task,
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
       // Map model ID to actual Gemini API model name
       const modelToUse = parameters?.model 
         ? mapModelIdToGeminiModel(parameters.model)
-        : mapModelIdToGeminiModel(model_id)
+        : mapModelIdToGeminiModel(bodyModelId)
       
       console.log('📤 Sending to Lambda', {
         task,
