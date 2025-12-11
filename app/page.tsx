@@ -21,7 +21,7 @@ export default function Home() {
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [showMoreModels, setShowMoreModels] = useState(false)
-  const [selectedTaskType, setSelectedTaskType] = useState<'detection' | 'classification' | 'segmentation'>('detection')
+  const [selectedTaskType, setSelectedTaskType] = useState<'detection' | 'classification' | 'segmentation' | 'keypoint-detection'>('detection')
 
   // Featured models for quick testing (all task types)
   const featuredModels: ModelMetadata[] = [

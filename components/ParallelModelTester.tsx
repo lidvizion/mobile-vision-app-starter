@@ -12,7 +12,7 @@ interface ParallelModelTesterProps {
   featuredModels: ModelMetadata[]
   sharedImage: string | null
   onImageChange: (image: string) => void
-  selectedTaskType?: 'detection' | 'classification' | 'segmentation'
+  selectedTaskType?: 'detection' | 'classification' | 'segmentation' | 'keypoint-detection'
 }
 
 // Model categorization by task type
@@ -50,7 +50,8 @@ const modelsByTaskType: Record<string, string[]> = {
     'facebook/maskformer-swin-large-ade',  // Semantic segmentation
     'nvidia/segformer-b0-finetuned-ade-512-512', // Scene segmentation
     'facebook/detr-resnet-50-panoptic' // Panoptic segmentation
-  ]
+  ],
+  'keypoint-detection': [] // Coming soon - will be populated when MediaPipe Pose is added
 }
 
 
@@ -174,6 +175,7 @@ export default function ParallelModelTester({
   // Check if we have models available for the selected task type
   const hasAvailableModels = filteredModels.length > 0
   const isSegmentationComingSoon = selectedTaskType === 'segmentation' && filteredModels.length === 0
+  const isKeypointDetectionComingSoon = selectedTaskType === 'keypoint-detection' && filteredModels.length === 0
 
   // Get dynamic heading based on task type
   const getHeading = () => {
@@ -184,6 +186,8 @@ export default function ParallelModelTester({
         return 'What would you like to classify?'
       case 'segmentation':
         return 'What would you like to segment?'
+      case 'keypoint-detection':
+        return 'What would you like to detect keypoints on?'
       default:
         return 'What would you like to analyze?'
     }
@@ -215,6 +219,14 @@ export default function ParallelModelTester({
           'Segment people from background in photos',
           'Segment different materials in recycling images',
           'Segment damaged areas in insurance claims'
+        ]
+      case 'keypoint-detection':
+        return [
+          'Detect human pose keypoints in fitness videos',
+          'Track athlete movements and form analysis',
+          'Detect hand gestures and sign language',
+          'Analyze dance movements and choreography',
+          'Detect facial keypoints for emotion recognition'
         ]
       default:
         return []
@@ -349,6 +361,13 @@ export default function ParallelModelTester({
             </div>
           )}
           
+          {isKeypointDetectionComingSoon && (
+            <div className="flex items-center gap-2 text-sm text-wells-warm-grey">
+              <Bell className="w-4 h-4" />
+              <span>Keypoint Detection models coming soon!</span>
+            </div>
+          )}
+          
           {/* Coming Soon Message for Segmentation */}
           {isSegmentationComingSoon && (
             <div className="mt-4 p-4 bg-wells-light-beige/50 border border-wells-warm-grey/20 rounded-lg">
@@ -360,6 +379,23 @@ export default function ParallelModelTester({
                   </p>
                   <p className="text-xs text-wells-warm-grey">
                     We're working on adding SAM, Mask R-CNN, and DeepLab models. Try Detection or Classification in the meantime.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Coming Soon Message for Keypoint Detection */}
+          {isKeypointDetectionComingSoon && (
+            <div className="mt-4 p-4 bg-wells-light-beige/50 border border-wells-warm-grey/20 rounded-lg">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-wells-warm-grey flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-wells-dark-grey mb-1">
+                    Keypoint Detection models coming soon!
+                  </p>
+                  <p className="text-xs text-wells-warm-grey">
+                    We're working on adding MediaPipe Pose and other keypoint detection models. Try Detection, Classification, or Segmentation in the meantime.
                   </p>
                 </div>
               </div>
@@ -405,7 +441,7 @@ export default function ParallelModelTester({
       </div>
 
       {/* Model Windows - Show only available models or placeholder for coming soon */}
-      {isSegmentationComingSoon ? (
+      {(isSegmentationComingSoon || isKeypointDetectionComingSoon) ? (
         <div className="bg-white rounded-xl shadow-sm border border-wells-warm-grey/10 p-12">
           <div className="text-center space-y-4">
             <div className="w-16 h-16 mx-auto rounded-full bg-wells-light-beige/50 flex items-center justify-center">
@@ -413,11 +449,12 @@ export default function ParallelModelTester({
             </div>
             <div>
               <h3 className="text-lg font-semibold text-wells-dark-grey mb-2">
-                Segmentation Models Coming Soon
+                {isKeypointDetectionComingSoon ? 'Keypoint Detection Models Coming Soon' : 'Segmentation Models Coming Soon'}
               </h3>
               <p className="text-sm text-wells-warm-grey max-w-md mx-auto">
-                We're working on adding segmentation models like SAM, Mask R-CNN, and DeepLab. 
-                Please try Detection or Classification tasks in the meantime.
+                {isKeypointDetectionComingSoon 
+                  ? "We're working on adding MediaPipe Pose and other keypoint detection models. Please try Detection, Classification, or Segmentation tasks in the meantime."
+                  : "We're working on adding segmentation models like SAM, Mask R-CNN, and DeepLab. Please try Detection or Classification tasks in the meantime."}
               </p>
             </div>
             <div className="pt-4">
@@ -429,7 +466,7 @@ export default function ParallelModelTester({
                 }}
                 className="px-6 py-2.5 bg-wells-dark-grey text-white rounded-lg font-medium text-sm hover:bg-wells-dark-grey/90 transition-all"
               >
-                Try Detection or Classification
+                {isKeypointDetectionComingSoon ? 'Try Other Tasks' : 'Try Detection or Classification'}
               </button>
             </div>
           </div>

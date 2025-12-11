@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { ChevronDown, Check, ScanEye, Tag, ScanLine } from 'lucide-react'
+import { ChevronDown, Check, ScanEye, Tag, ScanLine, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type TaskType = 'detection' | 'classification' | 'segmentation'
+export type TaskType = 'detection' | 'classification' | 'segmentation' | 'keypoint-detection'
 
 interface TaskTypeSelectDropdownProps {
   selectedTaskType: TaskType
@@ -17,6 +17,7 @@ const taskIcons: Record<TaskType, typeof ScanEye> = {
   'detection': ScanEye,
   'classification': Tag,
   'segmentation': ScanLine,
+  'keypoint-detection': Sparkles,
 }
 
 // Task type labels
@@ -24,9 +25,13 @@ const taskLabels: Record<TaskType, string> = {
   'detection': 'Detection',
   'classification': 'Classification',
   'segmentation': 'Segmentation',
+  'keypoint-detection': 'Keypoint Detection',
 }
 
-const taskTypes: TaskType[] = ['detection', 'classification', 'segmentation']
+// Task types that are coming soon (empty for now - handled in ParallelModelTester)
+const comingSoonTasks: Set<TaskType> = new Set([])
+
+const taskTypes: TaskType[] = ['detection', 'classification', 'segmentation', 'keypoint-detection']
 
 export default function TaskTypeSelectDropdown({
   selectedTaskType,
