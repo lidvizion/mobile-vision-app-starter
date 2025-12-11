@@ -386,11 +386,11 @@ export default function Home() {
                 selectedTaskType={selectedTaskType}
               />
 
-              {/* More Models Button */}
+              {/* Browse All Models Button - Original Position */}
               <div className="text-center pt-8">
                 <button
                   onClick={() => setShowMoreModels(true)}
-                  className="btn-secondary btn-lg flex items-center gap-2 mx-auto"
+                  className="btn-secondary btn-lg flex items-center gap-2 mx-auto hover-lift"
                 >
                   <span>Browse All Models</span>
                   <ArrowRight className="w-5 h-5" />

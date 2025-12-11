@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ModelMetadata } from '@/types/models'
 import ResultsDisplay from './ResultsDisplay'
 import { useCVTask } from '@/hooks/useCVTask'
-import { Loader2, Upload, Image as ImageIcon, Lightbulb, AlertCircle, Bell } from 'lucide-react'
+import { Loader2, Upload, Image as ImageIcon, Lightbulb, AlertCircle, Bell, X } from 'lucide-react'
+import Image from 'next/image'
 import { validateMediaFile } from '@/lib/validation'
 import ModelSelectDropdown from './ModelSelectDropdown'
 
@@ -291,9 +292,11 @@ export default function ParallelModelTester({
         <div className="space-y-4">
           {/* Drop Zone - Primary Action First */}
           <div
-            className={`relative border-2 border-dashed rounded-lg transition-all duration-300 ${
+            className={`relative border-2 border-dashed rounded-lg transition-all duration-300 overflow-hidden ${
               dragActive 
                 ? 'border-wells-dark-grey bg-wells-light-beige scale-[1.01] shadow-lg' 
+                : sharedImage
+                ? 'border-wells-warm-grey/20'
                 : 'border-wells-warm-grey/30 hover:border-wells-warm-grey/50 hover:bg-wells-light-beige/50'
             } ${
               !hasAvailableModels ? 'opacity-50 pointer-events-none cursor-not-allowed' : 'cursor-pointer'
@@ -303,33 +306,77 @@ export default function ParallelModelTester({
             onDragLeave={handleDragLeave}
             onClick={(e) => {
               if (!hasAvailableModels) return
+              // Don't trigger file input if clicking on the image or remove button
+              if ((e.target as HTMLElement).closest('.image-preview') || (e.target as HTMLElement).closest('.remove-button')) {
+                return
+              }
               // Only trigger file input if clicking on the drop zone itself (not on nested elements)
               if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.drop-zone-content')) {
                 fileInputRef.current?.click()
               }
             }}
           >
-            <div className="p-8 flex flex-col items-center justify-center gap-3 drop-zone-content">
-              <div className={`w-14 h-14 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                dragActive 
-                  ? 'bg-wells-dark-grey scale-110 shadow-lg' 
-                  : 'bg-wells-light-beige shadow-sm'
-              }`}>
-                <Upload className={`w-7 h-7 transition-colors duration-300 ${
-                  dragActive ? 'text-white' : 'text-wells-warm-grey'
-                }`} />
+            {sharedImage ? (
+              // Image Preview Mode
+              <div className="relative group">
+                <div className="relative w-full h-64 image-preview">
+                  <Image
+                    src={sharedImage}
+                    alt="Uploaded image"
+                    fill
+                    className="object-contain"
+                  />
+                </div>
+                {/* Overlay on hover */}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        fileInputRef.current?.click()
+                      }}
+                      className="px-4 py-2 bg-white/90 hover:bg-white text-wells-dark-grey rounded-lg font-medium text-sm transition-all flex items-center gap-2 shadow-lg"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Change Image
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onImageChange('')
+                      }}
+                      className="p-2 bg-red-500/90 hover:bg-red-600 text-white rounded-lg transition-all remove-button shadow-lg"
+                      title="Remove image"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="text-center">
-                <p className={`text-base font-medium ${
-                  dragActive ? 'text-wells-dark-grey' : 'text-wells-dark-grey'
+            ) : (
+              // Upload Mode
+              <div className="p-8 flex flex-col items-center justify-center gap-3 drop-zone-content min-h-[200px]">
+                <div className={`w-14 h-14 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                  dragActive 
+                    ? 'bg-wells-dark-grey scale-110 shadow-lg' 
+                    : 'bg-wells-light-beige shadow-sm'
                 }`}>
-                  {dragActive ? 'Drop your image here' : 'Drop image or click to upload'}
-                </p>
-                <p className="text-xs text-wells-warm-grey mt-1.5">
-                  {dragActive ? 'Release to upload' : 'Supports images and videos'}
-                </p>
+                  <Upload className={`w-7 h-7 transition-colors duration-300 ${
+                    dragActive ? 'text-white' : 'text-wells-warm-grey'
+                  }`} />
+                </div>
+                <div className="text-center">
+                  <p className={`text-base font-medium ${
+                    dragActive ? 'text-wells-dark-grey' : 'text-wells-dark-grey'
+                  }`}>
+                    {dragActive ? 'Drop your image here' : 'Drop image or click to upload'}
+                  </p>
+                  <p className="text-xs text-wells-warm-grey mt-1.5">
+                    {dragActive ? 'Release to upload' : 'Supports images and videos'}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Prompt Input - Secondary Action */}
