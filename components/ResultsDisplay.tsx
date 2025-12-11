@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { observer } from 'mobx-react-lite'
 import { CVResponse } from '@/types'
-import { Clock, ChevronDown, ChevronUp, Download, Eye, EyeOff, Copy, Maximize2, X } from 'lucide-react'
+import { Clock, ChevronDown, ChevronUp, Download, Eye, EyeOff, Copy, Maximize2, X, Loader2 } from 'lucide-react'
 import OverlayRenderer from './OverlayRenderer'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
@@ -13,11 +13,12 @@ import { useNotification } from '@/contexts/NotificationContext'
 interface ResultsDisplayProps {
   response: CVResponse | null
   selectedImage: string | null
+  isProcessing?: boolean
 }
 
 type LabelDisplayMode = 'confidence' | 'label'
 
-const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImage }: ResultsDisplayProps) {
+const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImage, isProcessing = false }: ResultsDisplayProps) {
   const [labelDisplay, setLabelDisplay] = useState<LabelDisplayMode>('confidence')
   const [showDetectionList, setShowDetectionList] = useState(true)
   const [showOverlays, setShowOverlays] = useState(true)
@@ -79,8 +80,6 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
     }) || [],
     [response?.results.segmentation?.regions, confidenceThreshold]
   )
-
-  const isProcessing = false // This would come from props if needed
   
   const getResultCount = () => {
     if (currentTask === 'detection' || currentTask.includes('detection')) {
@@ -193,6 +192,57 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
     }
   }
 
+  // Show processing state even if no response yet
+  if (isProcessing && selectedImage) {
+    return (
+      <div className="space-y-3">
+        {/* Header with Processing Status */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+            <span className="text-xs font-medium text-wells-dark-grey">Processing</span>
+            {getTaskBadge()}
+          </div>
+        </div>
+
+        {/* Image with Processing Overlay */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-wells-warm-grey uppercase tracking-wide">
+              Processing Image
+            </span>
+          </div>
+          
+          <div className="relative rounded-lg overflow-hidden border border-wells-warm-grey/10 bg-gray-50">
+            <Image
+              src={selectedImage}
+              alt="Processing image"
+              width={imageWidth}
+              height={imageHeight}
+              className="w-full h-auto object-contain blur-md opacity-70 transition-all duration-300"
+            />
+            
+            {/* Processing Overlay */}
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-10">
+              <div className="flex flex-col items-center gap-4 text-white">
+                <div className="relative">
+                  <Loader2 className="w-12 h-12 animate-spin text-white" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+                  </div>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-semibold mb-1">Processing...</p>
+                  <p className="text-sm text-white/80">Analyzing image with AI models</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (!response || !selectedImage) {
     return (
       <div className="text-center py-12 text-wells-warm-grey">
@@ -268,10 +318,32 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
               alt={showOverlays ? "Image with detections" : "Original image"}
               width={imageWidth}
               height={imageHeight}
-              className="w-full h-auto object-contain"
+              className={cn(
+                "w-full h-auto object-contain transition-all duration-300",
+                isProcessing && "blur-md opacity-70"
+              )}
             />
-            {/* Render overlays only if toggle is on */}
-            {showOverlays && (
+            
+            {/* Processing Overlay - Similar to Roboflow */}
+            {isProcessing && (
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-10">
+                <div className="flex flex-col items-center gap-4 text-white">
+                  <div className="relative">
+                    <Loader2 className="w-12 h-12 animate-spin text-white" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-semibold mb-1">Processing...</p>
+                    <p className="text-sm text-white/80">Analyzing image with AI models</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Render overlays only if toggle is on and not processing */}
+            {showOverlays && !isProcessing && (
               <OverlayRenderer
                 detections={filteredDetections}
                 segmentation={filteredSegmentationRegions}
@@ -542,11 +614,33 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
                 alt={showOverlays ? "Image with detections" : "Original image"}
                 width={imageWidth}
                 height={imageHeight}
-                className="max-w-full max-h-full object-contain"
+                className={cn(
+                  "max-w-full max-h-full object-contain transition-all duration-300",
+                  isProcessing && "blur-md opacity-70"
+                )}
                 style={{ maxHeight: 'calc(100vh - 80px)' }}
               />
-              {/* Render overlays only if toggle is on */}
-              {showOverlays && (
+              
+              {/* Processing Overlay for Full Screen */}
+              {isProcessing && (
+                <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-10">
+                  <div className="flex flex-col items-center gap-4 text-white">
+                    <div className="relative">
+                      <Loader2 className="w-16 h-16 animate-spin text-white" />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xl font-semibold mb-1">Processing...</p>
+                      <p className="text-base text-white/80">Analyzing image with AI models</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Render overlays only if toggle is on and not processing */}
+              {showOverlays && !isProcessing && (
                 <OverlayRenderer
                   detections={filteredDetections}
                   segmentation={filteredSegmentationRegions}

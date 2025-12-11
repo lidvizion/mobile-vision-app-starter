@@ -487,6 +487,7 @@ export default function Home() {
                     <ResultsDisplay
                       response={lastResponse}
                       selectedImage={selectedImage}
+                      isProcessing={isProcessing}
                     />
                   </div>
                 </>

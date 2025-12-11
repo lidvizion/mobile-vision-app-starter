@@ -528,6 +528,7 @@ function ModelWindow({
   const [currentImageFile, setCurrentImageFile] = useState<File | null>(null)
   const [hasProcessedCurrentImage, setHasProcessedCurrentImage] = useState(false)
   const [lastProcessedImageUrl, setLastProcessedImageUrl] = useState<string | null>(null)
+  const [isLocalProcessing, setIsLocalProcessing] = useState(false)
 
   // Load image file when shared image changes
   useEffect(() => {
@@ -554,6 +555,7 @@ function ModelWindow({
       // Process the image with current model
       const processWithModel = async () => {
         try {
+          setIsLocalProcessing(true)
           console.log(`[Model ${windowNumber}] Processing with model:`, {
             id: model.id,
             name: model.name,
@@ -570,8 +572,10 @@ function ModelWindow({
             fullResponse: result
           })
           setHasProcessedCurrentImage(true)
+          setIsLocalProcessing(false)
         } catch (error) {
           console.error(`[Model ${windowNumber}] Error processing image:`, error)
+          setIsLocalProcessing(false)
         }
       }
       
@@ -637,6 +641,7 @@ function ModelWindow({
           <ResultsDisplay
             response={lastResponse}
             selectedImage={sharedImage}
+            isProcessing={isProcessing || isLocalProcessing || (!hasProcessedCurrentImage && currentImageFile !== null && model !== null)}
           />
         )}
       </div>
