@@ -46,7 +46,11 @@ const modelsByTaskType: Record<string, string[]> = {
     // Tier 5: Classic models (reliable baseline)
     'microsoft/resnet-50',        // Classic ResNet, reliable
   ],
-  segmentation: [] // Coming soon
+  segmentation: [
+    'facebook/maskformer-swin-large-ade',  // MaskFormer semantic segmentation, state-of-the-art
+    'nvidia/segformer-b0-finetuned-ade-512-512',  // Scene segmentation, high quality
+    'facebook/detr-resnet-50-panoptic'    // Panoptic segmentation, complete scene understanding
+  ]
 }
 
 
@@ -143,6 +147,23 @@ export default function ParallelModelTester({
         const bOrder = capabilityOrder[b.id] || 999
         
         return aOrder - bOrder
+      })
+    } else if (taskType.toLowerCase() === 'segmentation') {
+      // For segmentation task, select top 3 models:
+      // Model 1: facebook/maskformer-swin-large-ade (MaskFormer semantic segmentation, state-of-the-art)
+      // Model 2: nvidia/segformer-b0-finetuned-ade-512-512 (Scene segmentation, high quality)
+      // Model 3: facebook/detr-resnet-50-panoptic (Panoptic segmentation, complete scene understanding)
+      sortedModels = [...filtered].sort((a, b) => {
+        // Priority order for default selection
+        if (a.id === 'facebook/maskformer-swin-large-ade') return -1
+        if (b.id === 'facebook/maskformer-swin-large-ade') return 1
+        if (a.id === 'nvidia/segformer-b0-finetuned-ade-512-512') return -1
+        if (b.id === 'nvidia/segformer-b0-finetuned-ade-512-512') return 1
+        if (a.id === 'facebook/detr-resnet-50-panoptic') return -1
+        if (b.id === 'facebook/detr-resnet-50-panoptic') return 1
+        
+        // Keep original order for others
+        return 0
       })
     }
     

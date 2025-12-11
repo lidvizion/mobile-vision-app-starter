@@ -590,7 +590,13 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                         return <Image src="/logos/microsoft.svg" alt="Microsoft" width={40} height={40} className="object-contain" />
                       }
                       if (modelIdLower.startsWith('apple/')) {
-                        return <TaskIcon className="w-6 h-6 text-wells-dark-grey" /> // Apple logo not available, use task icon
+                        return <Image src="/logos/meta-logo.png" alt="Apple" width={40} height={40} className="object-contain" /> // Fallback until Apple logo is added
+                      }
+                      if (modelIdLower.startsWith('nvidia/')) {
+                        return <TaskIcon className="w-6 h-6 text-wells-dark-grey" /> // No NVIDIA logo available - use task icon
+                      }
+                      if (modelIdLower.startsWith('briaai/')) {
+                        return <TaskIcon className="w-6 h-6 text-wells-dark-grey" /> // No BRIA logo available - use task icon
                       }
                       return <TaskIcon className="w-6 h-6 text-wells-dark-grey" />
                     })()}
