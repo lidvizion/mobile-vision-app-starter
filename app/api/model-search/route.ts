@@ -2276,6 +2276,9 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
       'google/vit-base-patch16-224', // Top classification model
       'apple/mobilevit-small', // Mobile-optimized classification
       'facebook/convnext-tiny-224', // Modern CNN classification
+      'facebook/maskformer-swin-large-ade', // Segmentation
+      'nvidia/segformer-b0-finetuned-ade-512-512', // Segmentation
+      'facebook/detr-resnet-50-panoptic', // Segmentation
       'nvidia/mit-b3',
       'nvidia/segformer-b4-finetuned-cityscapes-1024-1024',
       'nvidia/segformer-b0-finetuned-ade-512-512', // High-quality image segmentation model (391k+ downloads)
@@ -2584,9 +2587,79 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
         workingDate: new Date()
       }
     ]
-    
-    // Prepend all Gemini models, DETR, ResNet-50, and new classification models to the validated models list
-    const allModels = [...geminiModels, detrModel, resnetModel, ...classificationModels, ...validatedModels]
+
+    // ADD HUGGINGFACE SEGMENTATION MODELS
+    const segmentationModels = [
+      {
+        model_id: 'facebook/maskformer-swin-large-ade',
+        relevanceScore: 999990,
+        name: 'MaskFormer Swin Large',
+        author: 'Facebook',
+        task_type: 'image-segmentation',
+        pipeline_tag: 'image-segmentation',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 1766,
+        likes: 58,
+        tags: ['segmentation', 'maskformer', 'swin', 'facebook', 'meta', 'ade20k', 'semantic'],
+        library_name: 'transformers',
+        inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/maskformer-swin-large-ade',
+        inference_endpoint: 'https://router.huggingface.co/hf-inference/models/facebook/maskformer-swin-large-ade',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'warm',
+        workingDate: new Date()
+      },
+      {
+        model_id: 'nvidia/segformer-b0-finetuned-ade-512-512',
+        relevanceScore: 999989,
+        name: 'SegFormer B0 - Scene Segmentation',
+        author: 'NVIDIA',
+        task_type: 'image-segmentation',
+        pipeline_tag: 'image-segmentation',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 212434,
+        likes: 177,
+        tags: ['segmentation', 'scene-understanding', 'segformer', 'nvidia', 'ade20k'],
+        library_name: 'transformers',
+        inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/nvidia/segformer-b0-finetuned-ade-512-512',
+        inference_endpoint: 'https://router.huggingface.co/hf-inference/models/nvidia/segformer-b0-finetuned-ade-512-512',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'warm',
+        workingDate: new Date()
+      },
+      {
+        model_id: 'facebook/detr-resnet-50-panoptic',
+        relevanceScore: 999988,
+        name: 'DETR Panoptic Segmentation',
+        author: 'Facebook',
+        task_type: 'image-segmentation',
+        pipeline_tag: 'image-segmentation',
+        validated: true,
+        classes: keywords,
+        class_count: keywords.length,
+        downloads: 54178,
+        likes: 138,
+        tags: ['segmentation', 'panoptic', 'detr', 'facebook', 'meta'],
+        library_name: 'transformers',
+        inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/detr-resnet-50-panoptic',
+        inference_endpoint: 'https://router.huggingface.co/hf-inference/models/facebook/detr-resnet-50-panoptic',
+        supportsInference: true,
+        works: true,
+        hosted: true,
+        inferenceStatus: 'warm',
+        workingDate: new Date()
+      }
+    ]
+
+    // Prepend all Gemini models, DETR, ResNet-50, classification models, and segmentation models to the validated models list
+    const allModels = [...geminiModels, detrModel, resnetModel, ...classificationModels, ...segmentationModels, ...validatedModels]
 
     // Convert to the expected format
     const curatedModels = allModels.map(model => {

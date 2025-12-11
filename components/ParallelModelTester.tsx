@@ -46,7 +46,11 @@ const modelsByTaskType: Record<string, string[]> = {
     // Tier 5: Classic models (reliable baseline)
     'microsoft/resnet-50',        // Classic ResNet, reliable
   ],
-  segmentation: [] // Coming soon
+  segmentation: [
+    'facebook/maskformer-swin-large-ade',  // Semantic segmentation
+    'nvidia/segformer-b0-finetuned-ade-512-512', // Scene segmentation
+    'facebook/detr-resnet-50-panoptic' // Panoptic segmentation
+  ]
 }
 
 

@@ -234,6 +234,51 @@ export default function Home() {
       platforms: [],
       supportsInference: true,
       inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/apple/mobilevit-small'
+    },
+    {
+      id: 'facebook/maskformer-swin-large-ade',
+      name: 'MaskFormer Swin Large',
+      description: 'Facebook MaskFormer with Swin Transformer backbone. State-of-the-art semantic segmentation on ADE20k (150 classes).',
+      task: 'image-segmentation',
+      source: 'huggingface',
+      author: 'Facebook',
+      downloads: 1766,
+      tags: ['segmentation', 'maskformer', 'swin', 'facebook', 'meta', 'ade20k', 'semantic'],
+      frameworks: ['transformers'],
+      modelUrl: 'https://huggingface.co/facebook/maskformer-swin-large-ade',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/maskformer-swin-large-ade'
+    },
+    {
+      id: 'nvidia/segformer-b0-finetuned-ade-512-512',
+      name: 'SegFormer B0 - Scene Segmentation',
+      description: 'NVIDIA SegFormer for scene segmentation on ADE20k (150 classes).',
+      task: 'image-segmentation',
+      source: 'huggingface',
+      author: 'NVIDIA',
+      downloads: 212434,
+      tags: ['segmentation', 'scene-understanding', 'segformer', 'nvidia', 'ade20k'],
+      frameworks: ['transformers'],
+      modelUrl: 'https://huggingface.co/nvidia/segformer-b0-finetuned-ade-512-512',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/nvidia/segformer-b0-finetuned-ade-512-512'
+    },
+    {
+      id: 'facebook/detr-resnet-50-panoptic',
+      name: 'DETR Panoptic Segmentation',
+      description: 'Panoptic segmentation combining instance + semantic segmentation for full-scene understanding.',
+      task: 'image-segmentation',
+      source: 'huggingface',
+      author: 'Facebook',
+      downloads: 54178,
+      tags: ['segmentation', 'panoptic', 'detr', 'facebook', 'meta'],
+      frameworks: ['transformers'],
+      modelUrl: 'https://huggingface.co/facebook/detr-resnet-50-panoptic',
+      platforms: [],
+      supportsInference: true,
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/detr-resnet-50-panoptic'
     }
   ]
 
