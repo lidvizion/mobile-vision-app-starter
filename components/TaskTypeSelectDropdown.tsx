@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { ChevronDown, Check, ScanEye, Tag, ScanLine } from 'lucide-react'
+import { ChevronDown, Check, ScanEye, Tag, ScanLine, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type TaskType = 'detection' | 'classification' | 'segmentation'
+export type TaskType = 'detection' | 'classification' | 'segmentation' | 'pose-analysis'
 
 interface TaskTypeSelectDropdownProps {
   selectedTaskType: TaskType
@@ -17,6 +17,7 @@ const taskIcons: Record<TaskType, typeof ScanEye> = {
   'detection': ScanEye,
   'classification': Tag,
   'segmentation': ScanLine,
+  'pose-analysis': Activity,
 }
 
 // Task type labels
@@ -24,9 +25,10 @@ const taskLabels: Record<TaskType, string> = {
   'detection': 'Detection',
   'classification': 'Classification',
   'segmentation': 'Segmentation',
+  'pose-analysis': 'Pose Analysis',
 }
 
-const taskTypes: TaskType[] = ['detection', 'classification', 'segmentation']
+const taskTypes: TaskType[] = ['detection', 'classification', 'segmentation', 'pose-analysis']
 
 export default function TaskTypeSelectDropdown({
   selectedTaskType,
@@ -106,12 +108,12 @@ export default function TaskTypeSelectDropdown({
                 >
                   {/* Task Type Icon */}
                   <Icon className="w-5 h-5 text-wells-dark-grey flex-shrink-0" />
-                  
+
                   {/* Task Type Name */}
                   <span className="flex-1 text-sm font-medium text-wells-dark-grey">
                     {taskLabels[taskType]}
                   </span>
-                  
+
                   {/* Checkmark for selected */}
                   {isSelected && (
                     <Check className="w-4 h-4 text-wells-dark-grey flex-shrink-0" />
