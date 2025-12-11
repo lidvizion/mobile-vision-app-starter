@@ -443,22 +443,34 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
       )}
 
 
-      {/* Upload Area */}
+      {/* Drop Zone */}
       {!cameraActive && (
         <div
           className={cn(
-            'relative border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-300',
+            'relative border-2 border-dashed rounded-2xl transition-all duration-300 cursor-pointer',
             dragActive 
-              ? 'border-wells-dark-grey bg-wells-light-beige' 
-              : 'border-wells-warm-grey/30 hover:border-wells-warm-grey/50 hover:bg-wells-light-beige',
-            isProcessing && 'opacity-50 pointer-events-none'
+              ? 'border-wells-dark-grey bg-wells-light-beige scale-[1.02] shadow-lg' 
+              : 'border-wells-warm-grey/30 hover:border-wells-warm-grey/50 hover:bg-wells-light-beige/50',
+            isProcessing && 'opacity-50 pointer-events-none cursor-not-allowed',
+            !selectedImage && 'min-h-[300px]'
           )}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
+          onClick={(e) => {
+            // Only trigger file input if clicking on the drop zone itself (not on buttons or images)
+            if (!selectedImage && !isProcessing && e.target === e.currentTarget) {
+              if (fileClickInProgress.current) return
+              fileClickInProgress.current = true
+              fileInputRef.current?.click()
+              setTimeout(() => {
+                fileClickInProgress.current = false
+              }, 1000)
+            }
+          }}
         >
           {selectedImage ? (
-            <div className="space-y-4">
+            <div className="p-6 space-y-4">
               <div className="relative group">
                 <Image
                   src={selectedImage}
@@ -469,7 +481,10 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
                 />
                 <div className="absolute inset-0 bg-wells-dark-grey/0 group-hover:bg-wells-dark-grey/10 rounded-2xl transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
                   <button
-                    onClick={handleNewImage}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleNewImage()
+                    }}
                     className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-2xl flex items-center gap-2 transition-all duration-200 shadow-lg hover:shadow-xl"
                   >
                     <X className="w-4 h-4" />
@@ -514,7 +529,10 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
               {!isProcessing && selectedModel && (
                 <div className="flex flex-col sm:flex-row gap-3 justify-center">
                   <button
-                    onClick={handleAnalyzeImage}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleAnalyzeImage()
+                    }}
                     disabled={!selectedModel || isProcessing}
                     className="btn-primary btn-lg hover-lift flex items-center justify-center gap-2"
                   >
@@ -565,57 +583,38 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
               )}
             </div>
           ) : (
-            <div className="space-y-6">
-              <div className="flex justify-center">
-                <div className="w-16 h-16 bg-wells-light-beige rounded-2xl flex items-center justify-center shadow-sm">
-                  <ImageIcon className="w-8 h-8 text-wells-warm-grey" />
-                </div>
+            <div className="p-12 space-y-6 flex flex-col items-center justify-center min-h-[300px]">
+              <div className={cn(
+                'w-20 h-20 rounded-2xl flex items-center justify-center transition-all duration-300',
+                dragActive 
+                  ? 'bg-wells-dark-grey scale-110 shadow-lg' 
+                  : 'bg-wells-light-beige shadow-sm'
+              )}>
+                <Upload className={cn(
+                  'w-10 h-10 transition-colors duration-300',
+                  dragActive ? 'text-white' : 'text-wells-warm-grey'
+                )} />
               </div>
               
-              <div className="space-y-2">
+              <div className="space-y-2 text-center">
                 <h4 className="text-xl font-serif font-semibold text-wells-dark-grey">
-                  {isProcessing ? 'Processing Image...' : 'Upload an Image or Video'}
+                  {isProcessing ? 'Processing Image...' : dragActive ? 'Drop your image here' : 'Drop image or click to upload'}
                 </h4>
                 <p className="text-wells-warm-grey max-w-md mx-auto leading-relaxed">
                   {isProcessing 
                     ? 'Analyzing your image with computer vision models...'
-                    : 'Drag and drop an image or video here, or choose from the options below'
+                    : dragActive
+                      ? 'Release to upload your image or video'
+                      : 'Drag and drop an image or video here, or click anywhere to browse'
                   }
                 </p>
               </div>
               
-              {!isProcessing && (
-                <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      if (fileClickInProgress.current) return
-                      fileClickInProgress.current = true
-                      fileInputRef.current?.click()
-                      setTimeout(() => {
-                        fileClickInProgress.current = false
-                      }, 1000)
-                    }}
-                    className="btn-primary btn-lg hover-lift"
-                  >
-                    <Upload className="w-5 h-5" />
-                    <span>Upload Image</span>
-                  </button>
-                  {/* Camera functionality temporarily disabled - no inference support */}
-                  {false && (
-                  <button 
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      startCamera()
-                    }}
-                    className="btn-secondary btn-lg hover-lift"
-                  >
-                    <Video className="w-5 h-5" />
-                    <span>Use Camera</span>
-                  </button>
-                  )}
+              {!isProcessing && !dragActive && (
+                <div className="flex items-center gap-2 text-sm text-wells-warm-grey">
+                  <span>Supports:</span>
+                  <span className="px-2 py-1 bg-wells-light-beige rounded-lg">Images</span>
+                  <span className="px-2 py-1 bg-wells-light-beige rounded-lg">Videos</span>
                 </div>
               )}
               

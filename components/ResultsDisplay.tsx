@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { observer } from 'mobx-react-lite'
 import { CVResponse } from '@/types'
-import { Clock, ChevronDown, ChevronUp, Download, Eye, EyeOff, Copy } from 'lucide-react'
+import { Clock, ChevronDown, ChevronUp, Download, Eye, EyeOff, Copy, Maximize2, X } from 'lucide-react'
 import OverlayRenderer from './OverlayRenderer'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
@@ -22,6 +22,7 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
   const [showDetectionList, setShowDetectionList] = useState(true)
   const [showOverlays, setShowOverlays] = useState(true)
   const [showRawJSON, setShowRawJSON] = useState(false)
+  const [isFullScreen, setIsFullScreen] = useState(false)
   const { showNotification } = useNotification()
   
   // Determine task type
@@ -227,27 +228,37 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
       {/* Processed Image with Overlays */}
       {selectedImage && (
         <div className="space-y-2">
-          {/* Image Label and Prominent Toggle */}
+          {/* Image Label and Controls */}
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-wells-warm-grey uppercase tracking-wide">
               {showOverlays ? 'Processed Image' : 'Original Image'}
             </span>
-            <button
-              onClick={() => setShowOverlays(!showOverlays)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-wells-dark-grey bg-white border border-wells-warm-grey/20 hover:bg-gray-50 hover:border-wells-dark-grey/30 transition-colors shadow-sm"
-            >
-              {showOverlays ? (
-                <>
-                  <EyeOff className="w-3.5 h-3.5" />
-                  Hide Labels
-                </>
-              ) : (
-                <>
-                  <Eye className="w-3.5 h-3.5" />
-                  Show Labels
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsFullScreen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-wells-dark-grey bg-white border border-wells-warm-grey/20 hover:bg-gray-50 hover:border-wells-dark-grey/30 transition-colors shadow-sm"
+                title="Expand to full screen"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Expand</span>
+              </button>
+              <button
+                onClick={() => setShowOverlays(!showOverlays)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-wells-dark-grey bg-white border border-wells-warm-grey/20 hover:bg-gray-50 hover:border-wells-dark-grey/30 transition-colors shadow-sm"
+              >
+                {showOverlays ? (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Hide Labels</span>
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Show Labels</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
           
           {/* Image with Optional Overlays */}
@@ -462,6 +473,151 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
           <span className="text-wells-warm-grey/40">{response.model_version}</span>
         )}
       </div>
+
+      {/* Full Screen Modal */}
+      {isFullScreen && selectedImage && (
+        <div 
+          className="fixed inset-0 z-50 bg-black flex flex-col"
+          onClick={() => setIsFullScreen(false)}
+        >
+          {/* Header Bar */}
+          <div className="flex items-center justify-between p-4 bg-black/80 backdrop-blur-sm border-b border-white/10">
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                'w-2 h-2 rounded-full',
+                isProcessing ? 'bg-yellow-400 animate-pulse' : 'bg-green-500'
+              )} />
+              <span className="text-sm font-medium text-white">
+                {isProcessing ? 'Processing' : 'Complete'}
+              </span>
+              {getTaskBadge()}
+              {response.processing_time !== undefined && (
+                <div className="flex items-center gap-1 text-xs text-white/70">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span className="font-medium">{formatProcessingTime(response.processing_time)}</span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowOverlays(!showOverlays)
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white bg-white/10 hover:bg-white/20 transition-colors"
+              >
+                {showOverlays ? (
+                  <>
+                    <EyeOff className="w-4 h-4" />
+                    <span className="hidden sm:inline">Hide Labels</span>
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-4 h-4" />
+                    <span className="hidden sm:inline">Show Labels</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setIsFullScreen(false)
+                }}
+                className="p-2 rounded-md text-white hover:bg-white/20 transition-colors"
+                title="Close full screen"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Full Screen Image Container */}
+          <div 
+            className="flex-1 relative overflow-auto flex items-center justify-center p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative max-w-full max-h-full">
+              <Image
+                src={selectedImage}
+                alt={showOverlays ? "Image with detections" : "Original image"}
+                width={imageWidth}
+                height={imageHeight}
+                className="max-w-full max-h-full object-contain"
+                style={{ maxHeight: 'calc(100vh - 80px)' }}
+              />
+              {/* Render overlays only if toggle is on */}
+              {showOverlays && (
+                <OverlayRenderer
+                  detections={filteredDetections}
+                  segmentation={filteredSegmentationRegions}
+                  keypointDetections={filteredKeypointDetections}
+                  imageWidth={imageWidth}
+                  imageHeight={imageHeight}
+                  task={currentTask}
+                  confidenceThreshold={confidenceThreshold}
+                  labelDisplayMode={labelDisplay === 'confidence' ? 'confidence' : 'labels'}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Controls Bar */}
+          <div className="p-4 bg-black/80 backdrop-blur-sm border-t border-white/10">
+            <div className="flex items-center justify-between flex-wrap gap-3 max-w-4xl mx-auto">
+              <div className="flex items-center gap-4 flex-wrap">
+                {/* Confidence Slider */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-white/70 whitespace-nowrap">Confidence</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={sliderValue}
+                    onChange={(e) => {
+                      const newValue = parseInt(e.target.value, 10)
+                      if (!isNaN(newValue) && newValue >= 0 && newValue <= 100) {
+                        setSliderValue(newValue)
+                        modelViewStore.setConfidenceThreshold(newValue / 100)
+                      }
+                    }}
+                    className="w-24 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-white"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <span className="text-xs font-semibold text-white min-w-[32px]">
+                    {Math.round(confidenceThreshold * 100)}%
+                  </span>
+                </div>
+
+                {/* Label Display Toggle */}
+                {((currentTask === 'detection' || currentTask.includes('detection')) || 
+                  (currentTask === 'keypoint-detection')) && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-white/70 whitespace-nowrap">Label</span>
+                    <select
+                      value={labelDisplay}
+                      onChange={(e) => setLabelDisplay(e.target.value as LabelDisplayMode)}
+                      className="text-xs px-3 py-1 rounded-md border border-white/20 bg-white/10 text-white focus:outline-none focus:border-white/40 transition-colors min-w-[140px]"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <option value="confidence" className="bg-black">Show Confidence</option>
+                      <option value="label" className="bg-black">Labels Only</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Result Count */}
+              <div className="text-xs text-white/70">
+                {getResultCount()} {currentTask === 'detection' || currentTask.includes('detection') 
+                  ? 'detections' 
+                  : currentTask === 'classification' || currentTask.includes('classification')
+                  ? 'classifications'
+                  : 'results'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 })

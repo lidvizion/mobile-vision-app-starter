@@ -61,6 +61,7 @@ export default function ParallelModelTester({
   selectedTaskType = 'detection'
 }: ParallelModelTesterProps) {
   const [prompt, setPrompt] = useState('')
+  const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -247,12 +248,79 @@ export default function ParallelModelTester({
     reader.readAsDataURL(file)
   }, [onImageChange])
 
+  // Handle drag and drop
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+    
+    const files = e.dataTransfer.files
+    if (files.length > 0) {
+      handleFileSelect(files[0])
+    }
+  }, [handleFileSelect])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+  }, [])
+
   return (
     <div className="space-y-6">
-      {/* Prompt and Upload Section */}
+      {/* Upload and Prompt Section */}
       <div className="bg-white rounded-xl shadow-sm border border-wells-warm-grey/10 p-6">
         <div className="space-y-4">
-          {/* Prompt Input */}
+          {/* Drop Zone - Primary Action First */}
+          <div
+            className={`relative border-2 border-dashed rounded-lg transition-all duration-300 ${
+              dragActive 
+                ? 'border-wells-dark-grey bg-wells-light-beige scale-[1.01] shadow-lg' 
+                : 'border-wells-warm-grey/30 hover:border-wells-warm-grey/50 hover:bg-wells-light-beige/50'
+            } ${
+              !hasAvailableModels ? 'opacity-50 pointer-events-none cursor-not-allowed' : 'cursor-pointer'
+            }`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onClick={(e) => {
+              if (!hasAvailableModels) return
+              // Only trigger file input if clicking on the drop zone itself (not on nested elements)
+              if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.drop-zone-content')) {
+                fileInputRef.current?.click()
+              }
+            }}
+          >
+            <div className="p-8 flex flex-col items-center justify-center gap-3 drop-zone-content">
+              <div className={`w-14 h-14 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                dragActive 
+                  ? 'bg-wells-dark-grey scale-110 shadow-lg' 
+                  : 'bg-wells-light-beige shadow-sm'
+              }`}>
+                <Upload className={`w-7 h-7 transition-colors duration-300 ${
+                  dragActive ? 'text-white' : 'text-wells-warm-grey'
+                }`} />
+              </div>
+              <div className="text-center">
+                <p className={`text-base font-medium ${
+                  dragActive ? 'text-wells-dark-grey' : 'text-wells-dark-grey'
+                }`}>
+                  {dragActive ? 'Drop your image here' : 'Drop image or click to upload'}
+                </p>
+                <p className="text-xs text-wells-warm-grey mt-1.5">
+                  {dragActive ? 'Release to upload' : 'Supports images and videos'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Prompt Input - Secondary Action */}
           <div>
             <label className="block text-sm font-semibold text-wells-dark-grey mb-2">
               {getHeading()}
@@ -272,28 +340,14 @@ export default function ParallelModelTester({
               rows={2}
             />
           </div>
-
-          {/* Upload Button and Status */}
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={!hasAvailableModels}
-              className={`px-6 py-3 rounded-lg font-medium text-sm transition-all flex items-center gap-2 shadow-sm ${
-                hasAvailableModels
-                  ? 'bg-wells-dark-grey text-white hover:bg-wells-dark-grey/90 cursor-pointer'
-                  : 'bg-wells-warm-grey/30 text-wells-warm-grey cursor-not-allowed'
-              }`}
-            >
-              <Upload className="w-5 h-5" />
-              Upload Image
-            </button>
-            {isSegmentationComingSoon && (
-              <div className="flex items-center gap-2 text-sm text-wells-warm-grey">
-                <Bell className="w-4 h-4" />
-                <span>Segmentation models coming soon!</span>
-              </div>
-            )}
-          </div>
+          
+          {/* Status Messages */}
+          {isSegmentationComingSoon && (
+            <div className="flex items-center gap-2 text-sm text-wells-warm-grey">
+              <Bell className="w-4 h-4" />
+              <span>Segmentation models coming soon!</span>
+            </div>
+          )}
           
           {/* Coming Soon Message for Segmentation */}
           {isSegmentationComingSoon && (
