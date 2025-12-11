@@ -108,34 +108,35 @@ export default function ParallelModelTester({
         return 0
       })
     } else if (taskType.toLowerCase() === 'classification') {
-      // For classification task, select top 3 models:
-      // Model 1: google/efficientnet-b0 (Fastest, great for testing)
-      // Model 2: microsoft/resnet-50 (Reliable baseline, most popular)
-      // Model 3: facebook/convnext-base-224 (Best accuracy, modern)
+      // For classification task, select top 3 models (fast path):
+      // Model 1: facebook/convnext-tiny-224
+      // Model 2: google/efficientnet-b0
+      // Model 3: apple/mobilevit-small
       sortedModels = [...filtered].sort((a, b) => {
         // Priority order for default selection
-        // Top 3 for default: EfficientNet B0 + ResNet-50 + ConvNeXt Base
+        // Top 3 for default: ConvNeXt Tiny + EfficientNet B0 + MobileViT Small
+        if (a.id === 'facebook/convnext-tiny-224') return -1
+        if (b.id === 'facebook/convnext-tiny-224') return 1
         if (a.id === 'google/efficientnet-b0') return -1
         if (b.id === 'google/efficientnet-b0') return 1
-        if (a.id === 'microsoft/resnet-50') return -1
-        if (b.id === 'microsoft/resnet-50') return 1
-        if (a.id === 'facebook/convnext-base-224') return -1
-        if (b.id === 'facebook/convnext-base-224') return 1
+        if (a.id === 'apple/mobilevit-small') return -1
+        if (b.id === 'apple/mobilevit-small') return 1
         
         // Rest maintain the order from modelsByTaskType (already sorted by capability)
         // This ensures dropdown shows models in capability order
         const capabilityOrder: Record<string, number> = {
-          'gemini-2.0-flash-exp': 1,
-          'gemini-2.5-flash-lite': 2,
-          'gemini-2.5-flash': 3,
-          'gemini-2.5-pro': 4,
-          'gemini-3-pro': 5,
-          'google/vit-base-patch16-224': 6,
-          'microsoft/beit-base-patch16-224-pt22k-ft22k': 7,
-          'facebook/convnext-base-224': 8,
-          'facebook/convnext-tiny-224': 9,
-          'google/efficientnet-b0': 10,
-          'apple/mobilevit-small': 11,
+          // Classification fast-path capability ordering (lower is higher priority)
+          'facebook/convnext-tiny-224': 1,
+          'google/efficientnet-b0': 2,
+          'apple/mobilevit-small': 3,
+          'gemini-2.0-flash-exp': 4,
+          'gemini-2.5-flash-lite': 5,
+          'gemini-2.5-flash': 6,
+          'gemini-2.5-pro': 7,
+          'gemini-3-pro': 8,
+          'google/vit-base-patch16-224': 9,
+          'microsoft/beit-base-patch16-224-pt22k-ft22k': 10,
+          'facebook/convnext-base-224': 11,
           'microsoft/resnet-50': 12,
         }
         

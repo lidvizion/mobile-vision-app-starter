@@ -2272,6 +2272,7 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
       'facebook/detr-resnet-101',
       'Falconsai/nsfw_image_detection',
       'microsoft/resnet-50',
+      'facebook/convnext-base-224', // Fast-path ConvNeXt Base
       'google/vit-base-patch16-224', // Top classification model
       'apple/mobilevit-small', // Mobile-optimized classification
       'facebook/convnext-tiny-224', // Modern CNN classification
