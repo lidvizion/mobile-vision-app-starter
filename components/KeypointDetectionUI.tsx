@@ -3,13 +3,15 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Upload, Lightbulb, Bell, Loader2, Play, Pause, RefreshCw } from 'lucide-react'
 import { validateMediaFile } from '@/lib/validation'
-import { Pose, POSE_CONNECTIONS } from '@mediapipe/pose'
-import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils'
 import { SquatAnalyzer } from '@/lib/pose/exercises/squat'
 import { KettlebellAnalyzer } from '@/lib/pose/exercises/kettlebell'
 import { LongCycleAnalyzer } from '@/lib/pose/exercises/long_cycle'
 import { TemplateExerciseRunner, type ExerciseConfig } from '@/lib/pose/exercises/templates'
 import { generateExerciseConfig } from '@/lib/pose/gemini'
+
+// MediaPipe types - imported dynamically at runtime to avoid SSR issues
+type Pose = any
+type Results = any
 
 export default function KeypointDetectionUI() {
     const [prompt, setPrompt] = useState('')
@@ -29,6 +31,9 @@ export default function KeypointDetectionUI() {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const poseRef = useRef<Pose | null>(null)
     const requestRef = useRef<number>(0)
+    const drawConnectorsRef = useRef<any>(null)
+    const drawLandmarksRef = useRef<any>(null)
+    const poseConnectionsRef = useRef<any>(null)
 
     const exampleExercises = ['Squat', 'Kettlebell', 'Long Cycle']
     const geminiApiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || ''
@@ -39,65 +44,87 @@ export default function KeypointDetectionUI() {
     const longCycleAnalyzer = useMemo(() => new LongCycleAnalyzer(), [])
     const [dynamicAnalyzer, setDynamicAnalyzer] = useState<TemplateExerciseRunner | null>(null)
 
-    // Initialize MediaPipe Pose - EXACT same as working AnalysisPage
+    // Initialize MediaPipe Pose - DYNAMIC IMPORT for SSR compatibility
     useEffect(() => {
-        const pose = new Pose({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
-        })
+        let pose: Pose | null = null
 
-        pose.setOptions({
-            modelComplexity: 1,
-            smoothLandmarks: true,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5,
-        })
+        const initMediaPipe = async () => {
+            // Dynamic imports for MediaPipe (client-side only)
+            const [poseModule, drawingModule] = await Promise.all([
+                import('@mediapipe/pose'),
+                import('@mediapipe/drawing_utils')
+            ])
 
-        pose.onResults((results) => {
-            if (!canvasRef.current || !videoRef.current) return
-            const canvas = canvasRef.current
-            const ctx = canvas.getContext('2d')
-            if (!ctx) return
+            const { Pose, POSE_CONNECTIONS } = poseModule
+            const { drawConnectors, drawLandmarks } = drawingModule
 
-            // Draw video frame first
-            ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
+            // Store refs for use in callbacks
+            drawConnectorsRef.current = drawConnectors
+            drawLandmarksRef.current = drawLandmarks
+            poseConnectionsRef.current = POSE_CONNECTIONS
 
-            if (results.poseLandmarks) {
-                // Draw skeleton
-                drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#00FF00', lineWidth: 2 })
-                drawLandmarks(ctx, results.poseLandmarks, { color: '#FF0000', lineWidth: 1 })
+            pose = new Pose({
+                locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
+            })
 
-                // Run analyzer - EXACT same logic as working AnalysisPage
-                let currentAnalyzer
-                const normalizedExercise = selectedExercise.toLowerCase().replace(/\s+/g, '_')
+            pose.setOptions({
+                modelComplexity: 1,
+                smoothLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5,
+            })
 
-                if (normalizedExercise === 'squat') {
-                    currentAnalyzer = squatAnalyzer
-                } else if (normalizedExercise === 'kettlebell') {
-                    currentAnalyzer = kettlebellAnalyzer
-                } else if (normalizedExercise === 'long_cycle') {
-                    currentAnalyzer = longCycleAnalyzer
-                } else if (dynamicAnalyzer) {
-                    currentAnalyzer = dynamicAnalyzer
+            pose.onResults((results: Results) => {
+                if (!canvasRef.current || !videoRef.current) return
+                const canvas = canvasRef.current
+                const ctx = canvas.getContext('2d')
+                if (!ctx) return
+
+                // Draw video frame first
+                ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
+
+                if (results.poseLandmarks && drawConnectorsRef.current && drawLandmarksRef.current) {
+                    // Draw skeleton
+                    drawConnectorsRef.current(ctx, results.poseLandmarks, poseConnectionsRef.current, { color: '#00FF00', lineWidth: 2 })
+                    drawLandmarksRef.current(ctx, results.poseLandmarks, { color: '#FF0000', lineWidth: 1 })
+
+                    // Run analyzer
+                    let currentAnalyzer
+                    const normalizedExercise = selectedExercise.toLowerCase().replace(/\s+/g, '_')
+
+                    if (normalizedExercise === 'squat') {
+                        currentAnalyzer = squatAnalyzer
+                    } else if (normalizedExercise === 'kettlebell') {
+                        currentAnalyzer = kettlebellAnalyzer
+                    } else if (normalizedExercise === 'long_cycle') {
+                        currentAnalyzer = longCycleAnalyzer
+                    } else if (dynamicAnalyzer) {
+                        currentAnalyzer = dynamicAnalyzer
+                    }
+
+                    if (currentAnalyzer) {
+                        const state = currentAnalyzer.analyze(results)
+                        setReps(state.reps)
+                        setFeedback(state.feedback)
+                    }
                 }
+            })
 
-                if (currentAnalyzer) {
-                    const state = currentAnalyzer.analyze(results)
-                    setReps(state.reps)
-                    setFeedback(state.feedback)
-                }
-            }
-        })
+            poseRef.current = pose
+            setIsPoseLoaded(true)
+        }
 
-        poseRef.current = pose
-        setIsPoseLoaded(true)
+        initMediaPipe()
 
         return () => {
-            pose.close()
+            if (poseRef.current) {
+                poseRef.current.close()
+            }
             cancelAnimationFrame(requestRef.current)
         }
     }, [selectedExercise, squatAnalyzer, kettlebellAnalyzer, longCycleAnalyzer, dynamicAnalyzer])
 
-    // Frame processing loop - EXACT same as working AnalysisPage
+    // Frame processing loop
     const processFrame = useCallback(async () => {
         if (videoRef.current && poseRef.current && !videoRef.current.paused && !videoRef.current.ended) {
             await poseRef.current.send({ image: videoRef.current })
@@ -105,7 +132,7 @@ export default function KeypointDetectionUI() {
         }
     }, [])
 
-    // Handle file upload
+    // Handle file upload - FULLY RESET ALL STATE
     const handleFileSelect = useCallback(async (file: File) => {
         const validation = validateMediaFile(file)
         if (!validation.isValid) {
@@ -113,17 +140,44 @@ export default function KeypointDetectionUI() {
             return
         }
 
+        // Stop any ongoing playback first
+        if (videoRef.current) {
+            videoRef.current.pause()
+            videoRef.current.currentTime = 0
+        }
+        cancelAnimationFrame(requestRef.current)
+        setIsPlaying(false)
+
+        // Revoke old URL to prevent memory leaks
+        if (videoPreviewUrl) {
+            URL.revokeObjectURL(videoPreviewUrl)
+        }
+
+        // Clear canvas
+        if (canvasRef.current) {
+            const ctx = canvasRef.current.getContext('2d')
+            if (ctx) {
+                ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+            }
+        }
+
+        // Reset ALL state for fresh start
         setUploadedVideo(file)
         const previewUrl = URL.createObjectURL(file)
         setVideoPreviewUrl(previewUrl)
         setReps(0)
         setFeedback('Video loaded. Select an exercise.')
+        setSelectedExercise('')
+        setPrompt('')
+        setDynamicAnalyzer(null)
+        setIsProcessing(false)
+        setProcessingStatus('')
 
-        // Reset analyzers
+        // Reset all analyzers
         squatAnalyzer.reset()
         kettlebellAnalyzer.reset()
         longCycleAnalyzer.reset()
-    }, [squatAnalyzer, kettlebellAnalyzer, longCycleAnalyzer])
+    }, [squatAnalyzer, kettlebellAnalyzer, longCycleAnalyzer, videoPreviewUrl])
 
     // Setup exercise analyzer
     const setupExercise = useCallback(async (exerciseName: string) => {
@@ -137,7 +191,6 @@ export default function KeypointDetectionUI() {
 
         const normalizedName = exerciseName.toLowerCase().replace(/\s+/g, '_')
 
-        // Check if it's a built-in exercise
         if (['squat', 'kettlebell', 'long_cycle'].includes(normalizedName)) {
             setSelectedExercise(exerciseName)
             setIsProcessing(false)
@@ -157,7 +210,6 @@ export default function KeypointDetectionUI() {
             setFeedback(`Ready! Press play to analyze ${exerciseName}`)
         } catch (err) {
             console.error('Gemini failed:', err)
-            // Fallback to squat
             setSelectedExercise('squat')
             setProcessingStatus('')
             setIsProcessing(false)
@@ -173,7 +225,7 @@ export default function KeypointDetectionUI() {
         }
     }, [uploadedVideo, setupExercise])
 
-    // Toggle video playback - EXACT same as working AnalysisPage
+    // Toggle video playback
     const togglePlay = useCallback(() => {
         if (!videoRef.current || !canvasRef.current) return
 
@@ -181,7 +233,6 @@ export default function KeypointDetectionUI() {
             videoRef.current.pause()
             cancelAnimationFrame(requestRef.current)
         } else {
-            // Set canvas size to match video
             canvasRef.current.width = videoRef.current.videoWidth
             canvasRef.current.height = videoRef.current.videoHeight
             videoRef.current.play()
@@ -287,11 +338,18 @@ export default function KeypointDetectionUI() {
                             onClick={() => prompt.trim() && setupExercise(prompt.trim())}
                             disabled={!uploadedVideo || !prompt.trim() || isProcessing}
                             className={`mt-3 w-full py-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2 ${uploadedVideo && prompt.trim() && !isProcessing
-                                ? 'bg-wells-dark-grey text-white hover:bg-wells-dark-grey/90'
-                                : 'bg-wells-warm-grey/30 text-wells-warm-grey cursor-not-allowed'
+                                    ? 'bg-wells-dark-grey text-white hover:bg-wells-dark-grey/90'
+                                    : 'bg-wells-warm-grey/30 text-wells-warm-grey cursor-not-allowed'
                                 }`}
                         >
-                            {isProcessing ? <><Loader2 className="w-4 h-4 animate-spin" />{processingStatus}</> : <>Analyze with MediaPipe</>}
+                            {isProcessing ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    {processingStatus}
+                                </>
+                            ) : (
+                                <>Analyze with MediaPipe</>
+                            )}
                         </button>
                     </div>
 
@@ -307,7 +365,8 @@ export default function KeypointDetectionUI() {
                                     key={exercise}
                                     onClick={() => handleExampleClick(exercise)}
                                     disabled={isProcessing}
-                                    className={`px-4 py-2.5 text-sm border rounded-lg ${prompt === exercise ? 'bg-wells-light-beige border-wells-dark-grey' : 'bg-white border-wells-warm-grey/20'}`}
+                                    className={`px-4 py-2.5 text-sm border rounded-lg ${prompt === exercise ? 'bg-wells-light-beige border-wells-dark-grey' : 'bg-white border-wells-warm-grey/20'
+                                        }`}
                                 >
                                     {exercise}
                                 </button>
@@ -333,7 +392,9 @@ export default function KeypointDetectionUI() {
                                 <span className="text-blue-600 font-bold text-sm">MP</span>
                             </div>
                             <div>
-                                <div className="font-semibold text-wells-dark-grey">MediaPipe <span className="px-1 py-0.5 bg-purple-200 text-purple-800 rounded text-xs">Pose</span></div>
+                                <div className="font-semibold text-wells-dark-grey">
+                                    MediaPipe <span className="px-1 py-0.5 bg-purple-200 text-purple-800 rounded text-xs">Pose</span>
+                                </div>
                                 <div className="text-xs text-wells-warm-grey">Google</div>
                             </div>
                         </div>
@@ -341,7 +402,6 @@ export default function KeypointDetectionUI() {
                     <div className="p-5">
                         {selectedExercise && videoPreviewUrl ? (
                             <div className="space-y-3">
-                                {/* Video + Canvas overlay - EXACT same pattern as working AnalysisPage */}
                                 <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
                                     <video
                                         ref={videoRef}
@@ -350,10 +410,7 @@ export default function KeypointDetectionUI() {
                                         onEnded={() => setIsPlaying(false)}
                                         playsInline
                                     />
-                                    <canvas
-                                        ref={canvasRef}
-                                        className="absolute inset-0 w-full h-full object-contain"
-                                    />
+                                    <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain" />
 
                                     {/* Reps overlay */}
                                     <div className="absolute top-2 left-2 bg-black/60 text-white px-3 py-1.5 rounded-lg z-10">
@@ -377,7 +434,9 @@ export default function KeypointDetectionUI() {
                                         </button>
                                     </div>
                                 </div>
-                                <p className={`text-sm text-center ${feedback.includes('complete') ? 'text-green-600' : 'text-wells-warm-grey'}`}>{feedback}</p>
+                                <p className={`text-sm text-center ${feedback.includes('complete') ? 'text-green-600' : 'text-wells-warm-grey'}`}>
+                                    {feedback}
+                                </p>
                             </div>
                         ) : (
                             <div className="flex items-center justify-center py-16 text-center">
