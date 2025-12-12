@@ -195,12 +195,22 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
             logger.info('Async job detected, polling for completion', context, { job_id: inferenceData.job_id })
             
             const jobId = inferenceData.job_id
-            const maxPollAttempts = 150 // 150 * 2s = 5 minutes max wait
+            const maxPollAttempts = 150 // 150 attempts max
             let pollAttempts = 0
+            // Adaptive polling: start fast, then slow down
+            let pollInterval = 500 // Start with 500ms (faster initial polling)
             
             while (pollAttempts < maxPollAttempts) {
-              // Wait 2 seconds before polling
-              await new Promise(resolve => setTimeout(resolve, 2000))
+              // Adaptive polling interval: faster at start, slower after 10 attempts
+              if (pollAttempts < 10) {
+                pollInterval = 500 // 500ms for first 10 attempts (5 seconds)
+              } else if (pollAttempts < 30) {
+                pollInterval = 1000 // 1s for next 20 attempts (20 seconds)
+              } else {
+                pollInterval = 2000 // 2s for remaining attempts
+              }
+              
+              await new Promise(resolve => setTimeout(resolve, pollInterval))
               
               try {
                 const statusResponse = await fetch(`/api/job-status/${jobId}`)
