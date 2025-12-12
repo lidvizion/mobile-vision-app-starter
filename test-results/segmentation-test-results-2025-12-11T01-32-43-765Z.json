@@ -1,0 +1,78 @@
+{
+  "timestamp": "2025-12-11T01:32:43.767Z",
+  "testImage": "https://source.roboflow.com/pwYAXv1TDmQTo2kP8k3n/kF67y7s3EGMtgG3CTjSb/original.jpg",
+  "results": [
+    {
+      "modelName": "facebook/detr-resnet-50",
+      "status": "failed",
+      "responseTime": 0.21,
+      "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead.",
+      "rawResponse": {
+        "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead."
+      }
+    },
+    {
+      "modelName": "facebook/mask2former-swin-large-coco-instance",
+      "status": "failed",
+      "responseTime": 0.1,
+      "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead.",
+      "rawResponse": {
+        "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead."
+      }
+    },
+    {
+      "modelName": "nvidia/segformer-b0-finetuned-ade-512-512",
+      "status": "failed",
+      "responseTime": 0.13,
+      "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead.",
+      "rawResponse": {
+        "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead."
+      }
+    },
+    {
+      "modelName": "jonathandinu/face-parsing",
+      "status": "failed",
+      "responseTime": 0.1,
+      "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead.",
+      "rawResponse": {
+        "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead."
+      }
+    },
+    {
+      "modelName": "facebook/detr-resnet-101",
+      "status": "failed",
+      "responseTime": 0.09,
+      "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead.",
+      "rawResponse": {
+        "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead."
+      }
+    },
+    {
+      "modelName": "shi-labs/oneformer_ade20k_swin_large",
+      "status": "failed",
+      "responseTime": 0.09,
+      "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead.",
+      "rawResponse": {
+        "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead."
+      }
+    },
+    {
+      "modelName": "facebook/sam-vit-huge",
+      "status": "failed",
+      "responseTime": 0.09,
+      "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead.",
+      "rawResponse": {
+        "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead."
+      }
+    },
+    {
+      "modelName": "facebook/sam-vit-base",
+      "status": "failed",
+      "responseTime": 0.1,
+      "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead.",
+      "rawResponse": {
+        "error": "https://api-inference.huggingface.co is no longer supported. Please use https://router.huggingface.co instead."
+      }
+    }
+  ]
+}
