@@ -4,6 +4,7 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Expose environment variables to serverless functions
+  // CRITICAL: In AWS Amplify, env vars must be explicitly listed here to be available in API routes
   env: {
     GEMINI_LAMBDA_ENDPOINT: process.env.GEMINI_LAMBDA_ENDPOINT,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
@@ -11,6 +12,17 @@ const nextConfig = {
     MONGODB_URI: process.env.MONGODB_URI,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     ROBOFLOW_API_KEY: process.env.ROBOFLOW_API_KEY,
+    // S3 Configuration - Required for media uploads
+    S3_BUCKET_NAME: process.env.S3_BUCKET_NAME,
+    S3_REGION: process.env.S3_REGION,
+    S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID,
+    S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY,
+    // AWS fallback variables
+    AWS_REGION: process.env.AWS_REGION,
+    AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+    // Legacy fallback
+    NEXT_PUBLIC_STORAGE_BUCKET: process.env.NEXT_PUBLIC_STORAGE_BUCKET,
   },
   experimental: {
     optimizePackageImports: ['lucide-react'],
