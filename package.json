@@ -17,6 +17,8 @@
     "clean:packages": "npm run clean --workspaces || true"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.948.0",
+    "@aws-sdk/s3-request-presigner": "^3.948.0",
     "@google/generative-ai": "^0.24.1",
     "@huggingface/inference": "^4.13.0",
     "@mediapipe/camera_utils": "^0.3.1675466862",

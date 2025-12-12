@@ -73,8 +73,18 @@ export default function ParallelModelTester({
     const taskTypeKey = selectedTaskType.toLowerCase()
     const allowedModelIds = modelsByTaskType[taskTypeKey] || []
 
+    console.log('[ParallelModelTester] Filtering models:', {
+      selectedTaskType,
+      taskTypeKey,
+      allowedModelIdsCount: allowedModelIds.length,
+      allowedModelIds: allowedModelIds.slice(0, 5), // First 5 for debugging
+      featuredModelsCount: featuredModels.length,
+      featuredModelIds: featuredModels.map(m => m.id).slice(0, 5) // First 5 for debugging
+    })
+
     if (allowedModelIds.length === 0) {
       // No models available for this task type (e.g., segmentation)
+      console.warn('[ParallelModelTester] No allowed model IDs for task type:', taskTypeKey)
       return []
     }
 
@@ -83,9 +93,22 @@ export default function ParallelModelTester({
     const modelMap = new Map(featuredModels.map(model => [model.id, model]))
 
     // Return models in the order specified in modelsByTaskType (capability order)
-    return allowedModelIds
-      .map(id => modelMap.get(id))
+    const filtered = allowedModelIds
+      .map(id => {
+        const model = modelMap.get(id)
+        if (!model) {
+          console.warn('[ParallelModelTester] Model not found in featuredModels:', id)
+        }
+        return model
+      })
       .filter((model): model is ModelMetadata => model !== undefined)
+
+    console.log('[ParallelModelTester] Filtered models result:', {
+      filteredCount: filtered.length,
+      filteredIds: filtered.map(m => m.id)
+    })
+
+    return filtered
   }, [selectedTaskType, featuredModels])
 
   // Initialize models based on task type - auto-select first 3 available models
@@ -262,21 +285,37 @@ export default function ParallelModelTester({
 
   // Handle file upload
   const handleFileSelect = useCallback(async (file: File) => {
+    console.log('[ParallelModelTester] handleFileSelect called:', {
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+      selectedTaskType,
+      hasAvailableModels,
+      filteredModelsCount: filteredModels.length
+    })
+
     // Validate file
     const validation = validateMediaFile(file)
     if (!validation.isValid) {
+      console.error('[ParallelModelTester] File validation failed:', validation.error)
       alert(validation.error || 'Invalid file format')
       return
     }
+
+    console.log('[ParallelModelTester] File validation passed, converting to base64...')
 
     // Convert to base64 and trigger upload
     const reader = new FileReader()
     reader.onload = (e) => {
       const imageDataUrl = e.target?.result as string
+      console.log('[ParallelModelTester] File converted to base64, calling onImageChange')
       onImageChange(imageDataUrl)
     }
+    reader.onerror = (error) => {
+      console.error('[ParallelModelTester] FileReader error:', error)
+    }
     reader.readAsDataURL(file)
-  }, [onImageChange])
+  }, [onImageChange, selectedTaskType, hasAvailableModels, filteredModels.length])
 
   // Handle drag and drop
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -322,14 +361,34 @@ export default function ParallelModelTester({
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onClick={(e) => {
-              if (!hasAvailableModels) return
+              console.log('[ParallelModelTester] Drop zone clicked:', {
+                hasAvailableModels,
+                filteredModelsCount: filteredModels.length,
+                selectedTaskType,
+                target: (e.target as HTMLElement).className,
+                isImagePreview: !!(e.target as HTMLElement).closest('.image-preview'),
+                isRemoveButton: !!(e.target as HTMLElement).closest('.remove-button'),
+                isDropZoneContent: !!(e.target as HTMLElement).closest('.drop-zone-content')
+              })
+
+              if (!hasAvailableModels) {
+                console.warn('[ParallelModelTester] Upload blocked: No available models', {
+                  selectedTaskType,
+                  filteredModelsCount: filteredModels.length
+                })
+                return
+              }
               // Don't trigger file input if clicking on the image or remove button
               if ((e.target as HTMLElement).closest('.image-preview') || (e.target as HTMLElement).closest('.remove-button')) {
+                console.log('[ParallelModelTester] Click ignored: clicked on image preview or remove button')
                 return
               }
               // Only trigger file input if clicking on the drop zone itself (not on nested elements)
               if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.drop-zone-content')) {
+                console.log('[ParallelModelTester] Triggering file input click')
                 fileInputRef.current?.click()
+              } else {
+                console.log('[ParallelModelTester] Click ignored: not on drop zone or drop-zone-content')
               }
             }}
           >
@@ -488,6 +547,28 @@ export default function ParallelModelTester({
               </div>
             </div>
           )}
+
+          {/* Hidden File Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) {
+                console.log('[ParallelModelTester] File selected:', {
+                  fileName: file.name,
+                  fileType: file.type,
+                  fileSize: file.size,
+                  selectedTaskType,
+                  hasAvailableModels,
+                  filteredModelsCount: filteredModels.length
+                })
+                handleFileSelect(file)
+              }
+            }}
+            className="hidden"
+          />
         </div>
       </div>
 

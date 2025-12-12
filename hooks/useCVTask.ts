@@ -332,12 +332,28 @@ export function useCVTask(selectedModel?: ModelMetadata | null) {
               }
             }
             
+            // Determine task type from CV response
+            const taskType = cvResponse.task || 'detection'
+            
+            // Organize annotations by type for better MongoDB structure
+            const annotations: any = {
+              detections: cvResponse.results.detections || [],
+              classifications: cvResponse.results.labels || [],
+              segmentations: cvResponse.results.segmentation?.regions || [],
+              keypoint_detections: cvResponse.results.keypoint_detections || [],
+            }
+
             const savePayload: any = {
               user_id: 'anonymous',
               model_id: selectedModel.id,
+              model_provider: selectedModel.source || 'huggingface', // 'roboflow' | 'huggingface' | 'curated'
               query: modelViewStore.queryText || 'unknown',
-              image_url: base64, // Using base64 as image_url for now 
-              response: responseData
+              task_type: taskType,
+              image_base64: base64, // Will be uploaded to S3 by API
+              file_name: processedImageFile.name || 'image.jpg',
+              file_type: processedImageFile.type || 'image/jpeg',
+              response: responseData, // Keep for backward compatibility
+              annotations: annotations, // Organized by type
             }
             
             // Add inference endpoint for Roboflow models (required for future inference calls)

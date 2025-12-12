@@ -510,7 +510,6 @@ export default function Home() {
           <div className="text-center">
             <div className="flex items-center justify-center gap-3 mb-6">
               <LidVizionIcon className="w-30 h-30" />
-              <span className="text-xl font-serif font-semibold text-wells-dark-grey">Lid Vizion</span>
             </div>
             <p className="text-wells-warm-grey text-sm mb-6 max-w-2xl mx-auto leading-relaxed">
               Cross-platform mobile starter kit for camera-based CV apps. Built with modern design principles and professional-grade components.
@@ -519,7 +518,7 @@ export default function Home() {
               <span>© 2025 Lid Vizion</span>
               <span>•</span>
               <a 
-                href="https://lidvizion.ai/privacy" 
+                href="https://www.lidvizion.ai/legal/privacy" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="hover:text-wells-dark-grey transition-colors duration-200"
@@ -528,12 +527,12 @@ export default function Home() {
               </a>
               <span>•</span>
               <a 
-                href="https://lidvizion.ai/terms" 
+                href="https://www.lidvizion.ai/legal/terms" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="hover:text-wells-dark-grey transition-colors duration-200"
               >
-                Terms of Service
+                Terms & Conditions
               </a>
             </div>
           </div>
