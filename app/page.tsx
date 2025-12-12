@@ -515,12 +515,26 @@ export default function Home() {
             <p className="text-wells-warm-grey text-sm mb-6 max-w-2xl mx-auto leading-relaxed">
               Cross-platform mobile starter kit for camera-based CV apps. Built with modern design principles and professional-grade components.
             </p>
-            <div className="flex items-center justify-center gap-6 text-sm text-wells-warm-grey">
+            <div className="flex items-center justify-center gap-6 text-sm text-wells-warm-grey flex-wrap">
               <span>© 2025 Lid Vizion</span>
-              {/* <span>•</span> */}
-              {/* <span>MIT License</span>
               <span>•</span>
-              <span>Made for developers</span> */}
+              <a 
+                href="https://lidvizion.ai/privacy" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="hover:text-wells-dark-grey transition-colors duration-200"
+              >
+                Privacy Policy
+              </a>
+              <span>•</span>
+              <a 
+                href="https://lidvizion.ai/terms" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="hover:text-wells-dark-grey transition-colors duration-200"
+              >
+                Terms of Service
+              </a>
             </div>
           </div>
         </div>
