@@ -119,35 +119,60 @@ export async function POST(request: NextRequest) {
       host = isRoboflow ? 'roboflow' : isGemini ? 'google' : 'huggingface'
     }
 
-    // Upload to S3 if base64 provided (and URL not already provided)
+    // S3 Upload: MANDATORY for all images/videos (non-blocking if it fails)
+    // All images MUST be uploaded to S3. If S3 fails, we still save to MongoDB with fallback.
     let finalImageUrl = image_url
     let finalVideoUrl = video_url
 
-    try {
-      // Upload image to S3 if base64 provided
-      if (image_base64 && !image_url) {
+    // Upload image to S3 (MANDATORY - attempted for every image)
+    if (image_base64 && !image_url) {
+      try {
         const fileName = file_name || `image-${Date.now()}.jpg`
         const contentType = file_type || 'image/jpeg'
+        console.log(`📤 Uploading image to S3: ${fileName} (${Math.round(image_base64.length / 1024)}KB)`)
+        
         const uploadResult = await uploadBase64ToS3(image_base64, fileName, contentType)
         finalImageUrl = uploadResult.url
-        console.log(`✅ Image uploaded to S3: ${finalImageUrl}`)
+        console.log(`✅ Image successfully uploaded to S3: ${finalImageUrl}`)
+      } catch (s3Error) {
+        const errorMessage = s3Error instanceof Error ? s3Error.message : String(s3Error)
+        console.error(`❌ S3 image upload failed (non-blocking - MongoDB save will continue):`, errorMessage)
+        // Fallback: Use truncated base64 (to save MongoDB space)
+        // This ensures MongoDB save always succeeds even if S3 fails
+        finalImageUrl = image_base64.length > 500 
+          ? image_base64.substring(0, 500) + '...' 
+          : image_base64
+        console.warn(`⚠️ Using base64 fallback for image (S3 upload failed)`)
       }
+    } else if (image_url) {
+      console.log(`ℹ️ Image URL already provided, skipping S3 upload: ${image_url}`)
+    } else {
+      console.warn(`⚠️ No image_base64 or image_url provided - nothing to upload to S3`)
+    }
 
-      // Upload video to S3 if base64 provided
-      if (video_base64 && !video_url) {
+    // Upload video to S3 (MANDATORY - attempted for every video)
+    if (video_base64 && !video_url) {
+      try {
         const fileName = file_name || `video-${Date.now()}.mp4`
         const contentType = file_type || 'video/mp4'
         const buffer = Buffer.from(video_base64.includes(',') ? video_base64.split(',')[1] : video_base64, 'base64')
+        console.log(`📤 Uploading video to S3: ${fileName} (${Math.round(buffer.length / 1024)}KB)`)
+        
         const uploadResult = await uploadVideoToS3(buffer, fileName, contentType)
         finalVideoUrl = uploadResult.url
-        console.log(`✅ Video uploaded to S3: ${finalVideoUrl}`)
+        console.log(`✅ Video successfully uploaded to S3: ${finalVideoUrl}`)
+      } catch (s3Error) {
+        const errorMessage = s3Error instanceof Error ? s3Error.message : String(s3Error)
+        console.error(`❌ S3 video upload failed (non-blocking - MongoDB save will continue):`, errorMessage)
+        // Fallback: Use truncated base64 (to save MongoDB space)
+        // This ensures MongoDB save always succeeds even if S3 fails
+        finalVideoUrl = video_base64.length > 500 
+          ? video_base64.substring(0, 500) + '...' 
+          : video_base64
+        console.warn(`⚠️ Using base64 fallback for video (S3 upload failed)`)
       }
-    } catch (s3Error) {
-      console.error('⚠️ S3 upload failed, saving with base64 fallback:', s3Error)
-      // Continue with base64 fallback if S3 upload fails
-      if (!finalImageUrl && image_base64) {
-        finalImageUrl = image_base64.substring(0, 100) + '...' // Truncate for storage
-      }
+    } else if (video_url) {
+      console.log(`ℹ️ Video URL already provided, skipping S3 upload: ${video_url}`)
     }
 
     // Prepare inference job record with enhanced schema

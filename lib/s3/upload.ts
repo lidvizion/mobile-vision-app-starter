@@ -2,12 +2,16 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import crypto from 'crypto'
 
-// Initialize S3 client
+// Initialize S3 client with support for both S3_* and AWS_* naming conventions
+const AWS_REGION = process.env.S3_REGION || process.env.AWS_REGION || 'us-east-1'
+const ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID
+const SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY
+
 const s3Client = new S3Client({
-  region: process.env.AWS_REGION || 'us-east-1',
-  credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: AWS_REGION,
+  credentials: ACCESS_KEY_ID && SECRET_ACCESS_KEY ? {
+    accessKeyId: ACCESS_KEY_ID,
+    secretAccessKey: SECRET_ACCESS_KEY,
   } : undefined,
 })
 
@@ -33,8 +37,13 @@ export async function uploadToS3(
   contentType: string,
   folder: string = 'cv-results'
 ): Promise<UploadResult> {
+  // Validate S3 configuration
   if (!BUCKET_NAME) {
     throw new Error('S3_BUCKET_NAME or NEXT_PUBLIC_STORAGE_BUCKET environment variable is not set')
+  }
+
+  if (!ACCESS_KEY_ID || !SECRET_ACCESS_KEY) {
+    throw new Error('S3_ACCESS_KEY_ID (or AWS_ACCESS_KEY_ID) and S3_SECRET_ACCESS_KEY (or AWS_SECRET_ACCESS_KEY) environment variables are required for S3 upload')
   }
 
   // Generate unique file key
@@ -57,9 +66,7 @@ export async function uploadToS3(
     await s3Client.send(command)
     
     // Construct public URL
-    const url = `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`
-    
-    console.log(`✅ Uploaded to S3: ${url}`)
+    const url = `https://${BUCKET_NAME}.s3.${AWS_REGION}.amazonaws.com/${key}`
     
     return {
       url,
@@ -67,8 +74,20 @@ export async function uploadToS3(
       bucket: BUCKET_NAME,
     }
   } catch (error) {
-    console.error('❌ S3 upload error:', error)
-    throw new Error(`Failed to upload to S3: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    const errorDetails = error instanceof Error ? error.message : String(error)
+    const errorCode = (error as any)?.$metadata?.httpStatusCode || 'unknown'
+    const errorName = (error as any)?.name || 'UnknownError'
+    
+    console.error('❌ S3 upload error:', {
+      error: errorDetails,
+      code: errorCode,
+      name: errorName,
+      bucket: BUCKET_NAME,
+      region: AWS_REGION,
+      key: key
+    })
+    
+    throw new Error(`S3 upload failed: ${errorDetails} (${errorName}, HTTP ${errorCode})`)
   }
 }
 
