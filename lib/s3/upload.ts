@@ -2,20 +2,30 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import crypto from 'crypto'
 
-// Initialize S3 client with support for both S3_* and AWS_* naming conventions
-const AWS_REGION = process.env.S3_REGION || process.env.AWS_REGION || 'us-east-1'
-const ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID
-const SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY
+// Lazy-loaded S3 client to ensure environment variables are available at runtime
+// In AWS Amplify, env vars are injected at function execution time, not module load time
+let s3Client: S3Client | null = null
 
-const s3Client = new S3Client({
-  region: AWS_REGION,
-  credentials: ACCESS_KEY_ID && SECRET_ACCESS_KEY ? {
-    accessKeyId: ACCESS_KEY_ID,
-    secretAccessKey: SECRET_ACCESS_KEY,
-  } : undefined,
-})
+function getS3Client(): S3Client {
+  if (!s3Client) {
+    const AWS_REGION = process.env.S3_REGION || process.env.AWS_REGION || 'us-east-1'
+    const ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID
+    const SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY
 
-const BUCKET_NAME = process.env.S3_BUCKET_NAME || process.env.NEXT_PUBLIC_STORAGE_BUCKET
+    s3Client = new S3Client({
+      region: AWS_REGION,
+      credentials: ACCESS_KEY_ID && SECRET_ACCESS_KEY ? {
+        accessKeyId: ACCESS_KEY_ID,
+        secretAccessKey: SECRET_ACCESS_KEY,
+      } : undefined,
+    })
+  }
+  return s3Client
+}
+
+function getBucketName(): string {
+  return process.env.S3_BUCKET_NAME || process.env.NEXT_PUBLIC_STORAGE_BUCKET || ''
+}
 
 export interface UploadResult {
   url: string
@@ -37,14 +47,34 @@ export async function uploadToS3(
   contentType: string,
   folder: string = 'cv-results'
 ): Promise<UploadResult> {
+  // Get runtime environment variables (Amplify injects these at function execution time)
+  const BUCKET_NAME = getBucketName()
+  const AWS_REGION = process.env.S3_REGION || process.env.AWS_REGION || 'us-east-1'
+  const ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID
+  const SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY
+
   // Validate S3 configuration
   if (!BUCKET_NAME) {
+    console.error('❌ S3 Configuration Error:', {
+      S3_BUCKET_NAME: process.env.S3_BUCKET_NAME,
+      NEXT_PUBLIC_STORAGE_BUCKET: process.env.NEXT_PUBLIC_STORAGE_BUCKET,
+      allEnvKeys: Object.keys(process.env).filter(k => k.includes('S3') || k.includes('BUCKET')).join(', ')
+    })
     throw new Error('S3_BUCKET_NAME or NEXT_PUBLIC_STORAGE_BUCKET environment variable is not set')
   }
 
   if (!ACCESS_KEY_ID || !SECRET_ACCESS_KEY) {
+    console.error('❌ S3 Credentials Error:', {
+      hasAccessKey: !!ACCESS_KEY_ID,
+      hasSecretKey: !!SECRET_ACCESS_KEY,
+      S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID ? '***' : undefined,
+      AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID ? '***' : undefined,
+    })
     throw new Error('S3_ACCESS_KEY_ID (or AWS_ACCESS_KEY_ID) and S3_SECRET_ACCESS_KEY (or AWS_SECRET_ACCESS_KEY) environment variables are required for S3 upload')
   }
+  
+  // Get S3 client (lazy-loaded at runtime)
+  const client = getS3Client()
 
   // Generate unique file key
   const fileExtension = fileName.split('.').pop() || 'jpg'
@@ -63,7 +93,7 @@ export async function uploadToS3(
   })
 
   try {
-    await s3Client.send(command)
+    await client.send(command)
     
     // Construct public URL
     const url = `https://${BUCKET_NAME}.s3.${AWS_REGION}.amazonaws.com/${key}`
@@ -141,6 +171,7 @@ export async function getPresignedUploadUrl(
   contentType: string,
   expiresIn: number = 3600
 ): Promise<string> {
+  const BUCKET_NAME = getBucketName()
   if (!BUCKET_NAME) {
     throw new Error('S3_BUCKET_NAME or NEXT_PUBLIC_STORAGE_BUCKET environment variable is not set')
   }
@@ -151,7 +182,8 @@ export async function getPresignedUploadUrl(
     ContentType: contentType,
   })
 
-  const url = await getSignedUrl(s3Client, command, { expiresIn })
+  const client = getS3Client()
+  const url = await getSignedUrl(client, command, { expiresIn })
   return url
 }
 
