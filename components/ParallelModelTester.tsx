@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ModelMetadata } from '@/types/models'
 import ResultsDisplay from './ResultsDisplay'
 import { useCVTask } from '@/hooks/useCVTask'
-import { Loader2, Upload, Image as ImageIcon, Lightbulb, AlertCircle, Bell } from 'lucide-react'
+import { Loader2, Upload, Image as ImageIcon, Lightbulb, AlertCircle, Bell, X } from 'lucide-react'
+import Image from 'next/image'
 import { validateMediaFile } from '@/lib/validation'
 import ModelSelectDropdown from './ModelSelectDropdown'
 
@@ -12,7 +13,7 @@ interface ParallelModelTesterProps {
   featuredModels: ModelMetadata[]
   sharedImage: string | null
   onImageChange: (image: string) => void
-  selectedTaskType?: 'detection' | 'classification' | 'segmentation'
+  selectedTaskType?: 'detection' | 'classification' | 'segmentation' | 'keypoint-detection'
 }
 
 // Model categorization by task type
@@ -47,10 +48,11 @@ const modelsByTaskType: Record<string, string[]> = {
     'microsoft/resnet-50',        // Classic ResNet, reliable
   ],
   segmentation: [
-    'facebook/maskformer-swin-large-ade',  // MaskFormer semantic segmentation, state-of-the-art
-    'nvidia/segformer-b0-finetuned-ade-512-512',  // Scene segmentation, high quality
-    'facebook/detr-resnet-50-panoptic'    // Panoptic segmentation, complete scene understanding
-  ]
+    'facebook/maskformer-swin-large-ade',  // Semantic segmentation
+    'nvidia/segformer-b0-finetuned-ade-512-512', // Scene segmentation
+    'facebook/detr-resnet-50-panoptic' // Panoptic segmentation
+  ],
+  'keypoint-detection': [] // Coming soon - will be populated when MediaPipe Pose is added
 }
 
 
@@ -61,6 +63,7 @@ export default function ParallelModelTester({
   selectedTaskType = 'detection'
 }: ParallelModelTesterProps) {
   const [prompt, setPrompt] = useState('')
+  const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -112,34 +115,35 @@ export default function ParallelModelTester({
         return 0
       })
     } else if (taskType.toLowerCase() === 'classification') {
-      // For classification task, select top 3 models:
-      // Model 1: google/efficientnet-b0 (Fastest, great for testing)
-      // Model 2: microsoft/resnet-50 (Reliable baseline, most popular)
-      // Model 3: facebook/convnext-base-224 (Best accuracy, modern)
+      // For classification task, select top 3 models (fast path):
+      // Model 1: facebook/convnext-tiny-224
+      // Model 2: google/efficientnet-b0
+      // Model 3: apple/mobilevit-small
       sortedModels = [...filtered].sort((a, b) => {
         // Priority order for default selection
-        // Top 3 for default: EfficientNet B0 + ResNet-50 + ConvNeXt Base
+        // Top 3 for default: ConvNeXt Tiny + EfficientNet B0 + MobileViT Small
+        if (a.id === 'facebook/convnext-tiny-224') return -1
+        if (b.id === 'facebook/convnext-tiny-224') return 1
         if (a.id === 'google/efficientnet-b0') return -1
         if (b.id === 'google/efficientnet-b0') return 1
-        if (a.id === 'microsoft/resnet-50') return -1
-        if (b.id === 'microsoft/resnet-50') return 1
-        if (a.id === 'facebook/convnext-base-224') return -1
-        if (b.id === 'facebook/convnext-base-224') return 1
-
+        if (a.id === 'apple/mobilevit-small') return -1
+        if (b.id === 'apple/mobilevit-small') return 1
+        
         // Rest maintain the order from modelsByTaskType (already sorted by capability)
         // This ensures dropdown shows models in capability order
         const capabilityOrder: Record<string, number> = {
-          'gemini-2.0-flash-exp': 1,
-          'gemini-2.5-flash-lite': 2,
-          'gemini-2.5-flash': 3,
-          'gemini-2.5-pro': 4,
-          'gemini-3-pro': 5,
-          'google/vit-base-patch16-224': 6,
-          'microsoft/beit-base-patch16-224-pt22k-ft22k': 7,
-          'facebook/convnext-base-224': 8,
-          'facebook/convnext-tiny-224': 9,
-          'google/efficientnet-b0': 10,
-          'apple/mobilevit-small': 11,
+          // Classification fast-path capability ordering (lower is higher priority)
+          'facebook/convnext-tiny-224': 1,
+          'google/efficientnet-b0': 2,
+          'apple/mobilevit-small': 3,
+          'gemini-2.0-flash-exp': 4,
+          'gemini-2.5-flash-lite': 5,
+          'gemini-2.5-flash': 6,
+          'gemini-2.5-pro': 7,
+          'gemini-3-pro': 8,
+          'google/vit-base-patch16-224': 9,
+          'microsoft/beit-base-patch16-224-pt22k-ft22k': 10,
+          'facebook/convnext-base-224': 11,
           'microsoft/resnet-50': 12,
         }
 
@@ -189,6 +193,7 @@ export default function ParallelModelTester({
   // Check if we have models available for the selected task type
   const hasAvailableModels = filteredModels.length > 0
   const isSegmentationComingSoon = selectedTaskType === 'segmentation' && filteredModels.length === 0
+  const isKeypointDetectionComingSoon = selectedTaskType === 'keypoint-detection' && filteredModels.length === 0
 
   // Get dynamic heading based on task type
   const getHeading = () => {
@@ -199,6 +204,8 @@ export default function ParallelModelTester({
         return 'What would you like to classify?'
       case 'segmentation':
         return 'What would you like to segment?'
+      case 'keypoint-detection':
+        return 'What would you like to detect keypoints on?'
       default:
         return 'What would you like to analyze?'
     }
@@ -230,6 +237,14 @@ export default function ParallelModelTester({
           'Segment people from background in photos',
           'Segment different materials in recycling images',
           'Segment damaged areas in insurance claims'
+        ]
+      case 'keypoint-detection':
+        return [
+          'Detect human pose keypoints in fitness videos',
+          'Track athlete movements and form analysis',
+          'Detect hand gestures and sign language',
+          'Analyze dance movements and choreography',
+          'Detect facial keypoints for emotion recognition'
         ]
       default:
         return []
@@ -263,92 +278,125 @@ export default function ParallelModelTester({
     reader.readAsDataURL(file)
   }, [onImageChange])
 
+  // Handle drag and drop
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+    
+    const files = e.dataTransfer.files
+    if (files.length > 0) {
+      handleFileSelect(files[0])
+    }
+  }, [handleFileSelect])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+  }, [])
+
   return (
     <div className="space-y-6">
+      {/* Upload and Prompt Section */}
       <div className="bg-white rounded-xl shadow-sm border border-wells-warm-grey/10 p-6">
         <div className="space-y-4">
-          {/* Dropzone - "Drop image or click to upload" - matches live site */}
+          {/* Drop Zone - Primary Action First */}
           <div
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              e.currentTarget.classList.add('border-wells-dark-grey')
-            }}
-            onDragLeave={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              e.currentTarget.classList.remove('border-wells-dark-grey')
-            }}
-            onDrop={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              e.currentTarget.classList.remove('border-wells-dark-grey')
-              const files = e.dataTransfer.files
-              if (files.length > 0) {
-                handleFileSelect(files[0])
+            className={`relative border-2 border-dashed rounded-lg transition-all duration-300 overflow-hidden ${
+              dragActive 
+                ? 'border-wells-dark-grey bg-wells-light-beige scale-[1.01] shadow-lg' 
+                : sharedImage
+                ? 'border-wells-warm-grey/20'
+                : 'border-wells-warm-grey/30 hover:border-wells-warm-grey/50 hover:bg-wells-light-beige/50'
+            } ${
+              !hasAvailableModels ? 'opacity-50 pointer-events-none cursor-not-allowed' : 'cursor-pointer'
+            }`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onClick={(e) => {
+              if (!hasAvailableModels) return
+              // Don't trigger file input if clicking on the image or remove button
+              if ((e.target as HTMLElement).closest('.image-preview') || (e.target as HTMLElement).closest('.remove-button')) {
+                return
+              }
+              // Only trigger file input if clicking on the drop zone itself (not on nested elements)
+              if (e.target === e.currentTarget || (e.target as HTMLElement).closest('.drop-zone-content')) {
+                fileInputRef.current?.click()
               }
             }}
-            className="border-2 border-dashed border-wells-warm-grey/30 rounded-xl p-12 text-center cursor-pointer hover:border-wells-dark-grey/50 transition-colors"
           >
             {sharedImage ? (
-              <div className="space-y-4">
-                <img
-                  src={sharedImage}
-                  alt="Uploaded"
-                  className="max-h-48 mx-auto rounded-lg"
-                />
-                <div className="flex items-center justify-center gap-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      fileInputRef.current?.click()
-                    }}
-                    className="px-4 py-2 bg-white border border-wells-warm-grey/30 rounded-lg text-sm flex items-center gap-2 hover:bg-gray-50"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Change Image
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onImageChange('')
-                    }}
-                    className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600"
-                  >
-                    ✕
-                  </button>
+              // Image Preview Mode
+              <div className="relative group">
+                <div className="relative w-full h-64 image-preview">
+                  <Image
+                    src={sharedImage}
+                    alt="Uploaded image"
+                    fill
+                    className="object-contain"
+                  />
+                </div>
+                {/* Overlay on hover */}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        fileInputRef.current?.click()
+                      }}
+                      className="px-4 py-2 bg-white/90 hover:bg-white text-wells-dark-grey rounded-lg font-medium text-sm transition-all flex items-center gap-2 shadow-lg"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Change Image
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onImageChange('')
+                      }}
+                      className="p-2 bg-red-500/90 hover:bg-red-600 text-white rounded-lg transition-all remove-button shadow-lg"
+                      title="Remove image"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
-                <div className="w-12 h-12 mx-auto rounded-full bg-wells-light-beige/50 flex items-center justify-center">
-                  <Upload className="w-6 h-6 text-wells-warm-grey" />
+              // Upload Mode
+              <div className="p-8 flex flex-col items-center justify-center gap-3 drop-zone-content min-h-[200px]">
+                <div className={`w-14 h-14 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                  dragActive 
+                    ? 'bg-wells-dark-grey scale-110 shadow-lg' 
+                    : 'bg-wells-light-beige shadow-sm'
+                }`}>
+                  <Upload className={`w-7 h-7 transition-colors duration-300 ${
+                    dragActive ? 'text-white' : 'text-wells-warm-grey'
+                  }`} />
                 </div>
-                <div>
-                  <p className="text-sm text-wells-dark-grey">
-                    Drop image or <span className="text-wells-dark-grey font-medium">click to upload</span>
+                <div className="text-center">
+                  <p className={`text-base font-medium ${
+                    dragActive ? 'text-wells-dark-grey' : 'text-wells-dark-grey'
+                  }`}>
+                    {dragActive ? 'Drop your image here' : 'Drop image or click to upload'}
                   </p>
-                  <p className="text-xs text-wells-warm-grey mt-1">Supports images and videos</p>
+                  <p className="text-xs text-wells-warm-grey mt-1.5">
+                    {dragActive ? 'Release to upload' : 'Supports images and videos'}
+                  </p>
                 </div>
               </div>
             )}
           </div>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,video/*"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) {
-                handleFileSelect(file)
-              }
-            }}
-            className="hidden"
-          />
-
-          {/* Prompt Input */}
+          {/* Prompt Input - Secondary Action */}
           <div>
             <label className="block text-sm font-semibold text-wells-dark-grey mb-2">
               {getHeading()}
@@ -368,7 +416,22 @@ export default function ParallelModelTester({
               rows={2}
             />
           </div>
-
+          
+          {/* Status Messages */}
+          {isSegmentationComingSoon && (
+            <div className="flex items-center gap-2 text-sm text-wells-warm-grey">
+              <Bell className="w-4 h-4" />
+              <span>Segmentation models coming soon!</span>
+            </div>
+          )}
+          
+          {isKeypointDetectionComingSoon && (
+            <div className="flex items-center gap-2 text-sm text-wells-warm-grey">
+              <Bell className="w-4 h-4" />
+              <span>Keypoint Detection models coming soon!</span>
+            </div>
+          )}
+          
           {/* Coming Soon Message for Segmentation */}
           {isSegmentationComingSoon && (
             <div className="mt-4 p-4 bg-wells-light-beige/50 border border-wells-warm-grey/20 rounded-lg">
@@ -380,6 +443,23 @@ export default function ParallelModelTester({
                   </p>
                   <p className="text-xs text-wells-warm-grey">
                     We're working on adding SAM, Mask R-CNN, and DeepLab models. Try Detection or Classification in the meantime.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Coming Soon Message for Keypoint Detection */}
+          {isKeypointDetectionComingSoon && (
+            <div className="mt-4 p-4 bg-wells-light-beige/50 border border-wells-warm-grey/20 rounded-lg">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-wells-warm-grey flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-wells-dark-grey mb-1">
+                    Keypoint Detection models coming soon!
+                  </p>
+                  <p className="text-xs text-wells-warm-grey">
+                    We're working on adding MediaPipe Pose and other keypoint detection models. Try Detection, Classification, or Segmentation in the meantime.
                   </p>
                 </div>
               </div>
@@ -412,7 +492,7 @@ export default function ParallelModelTester({
       </div>
 
       {/* Model Windows - Show only available models or placeholder for coming soon */}
-      {isSegmentationComingSoon ? (
+      {(isSegmentationComingSoon || isKeypointDetectionComingSoon) ? (
         <div className="bg-white rounded-xl shadow-sm border border-wells-warm-grey/10 p-12">
           <div className="text-center space-y-4">
             <div className="w-16 h-16 mx-auto rounded-full bg-wells-light-beige/50 flex items-center justify-center">
@@ -420,11 +500,12 @@ export default function ParallelModelTester({
             </div>
             <div>
               <h3 className="text-lg font-semibold text-wells-dark-grey mb-2">
-                Segmentation Models Coming Soon
+                {isKeypointDetectionComingSoon ? 'Keypoint Detection Models Coming Soon' : 'Segmentation Models Coming Soon'}
               </h3>
               <p className="text-sm text-wells-warm-grey max-w-md mx-auto">
-                We're working on adding segmentation models like SAM, Mask R-CNN, and DeepLab.
-                Please try Detection or Classification tasks in the meantime.
+                {isKeypointDetectionComingSoon 
+                  ? "We're working on adding MediaPipe Pose and other keypoint detection models. Please try Detection, Classification, or Segmentation tasks in the meantime."
+                  : "We're working on adding segmentation models like SAM, Mask R-CNN, and DeepLab. Please try Detection or Classification tasks in the meantime."}
               </p>
             </div>
             <div className="pt-4">
@@ -436,7 +517,7 @@ export default function ParallelModelTester({
                 }}
                 className="px-6 py-2.5 bg-wells-dark-grey text-white rounded-lg font-medium text-sm hover:bg-wells-dark-grey/90 transition-all"
               >
-                Try Detection or Classification
+                {isKeypointDetectionComingSoon ? 'Try Other Tasks' : 'Try Detection or Classification'}
               </button>
             </div>
           </div>
@@ -497,6 +578,7 @@ function ModelWindow({
   const [currentImageFile, setCurrentImageFile] = useState<File | null>(null)
   const [hasProcessedCurrentImage, setHasProcessedCurrentImage] = useState(false)
   const [lastProcessedImageUrl, setLastProcessedImageUrl] = useState<string | null>(null)
+  const [isLocalProcessing, setIsLocalProcessing] = useState(false)
 
   // Load image file when shared image changes
   useEffect(() => {
@@ -523,6 +605,7 @@ function ModelWindow({
       // Process the image with current model
       const processWithModel = async () => {
         try {
+          setIsLocalProcessing(true)
           console.log(`[Model ${windowNumber}] Processing with model:`, {
             id: model.id,
             name: model.name,
@@ -539,8 +622,10 @@ function ModelWindow({
             fullResponse: result
           })
           setHasProcessedCurrentImage(true)
+          setIsLocalProcessing(false)
         } catch (error) {
           console.error(`[Model ${windowNumber}] Error processing image:`, error)
+          setIsLocalProcessing(false)
         }
       }
 
@@ -606,6 +691,7 @@ function ModelWindow({
           <ResultsDisplay
             response={lastResponse}
             selectedImage={sharedImage}
+            isProcessing={isProcessing || isLocalProcessing || (!hasProcessedCurrentImage && currentImageFile !== null && model !== null)}
           />
         )}
       </div>

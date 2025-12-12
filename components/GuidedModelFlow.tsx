@@ -31,7 +31,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
   const [showBackgroundSearchIndicator, setShowBackgroundSearchIndicator] = useState(false)
   const [hasBackgroundSearchCompleted, setHasBackgroundSearchCompleted] = useState(false)
   const [currentQueryId, setCurrentQueryId] = useState<string | undefined>(undefined)
-  const [selectedTaskType, setSelectedTaskType] = useState<'detection' | 'classification' | 'segmentation'>('detection')
+  const [selectedTaskType, setSelectedTaskType] = useState<'detection' | 'classification' | 'segmentation' | 'keypoint-detection'>('detection')
   // Initialize hasAutoRedirected from sessionStorage to persist across navigation
   const [hasAutoRedirected, setHasAutoRedirected] = useState(() => {
     if (typeof window !== 'undefined') {

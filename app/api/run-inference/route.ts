@@ -491,8 +491,8 @@ export async function POST(request: NextRequest) {
       provider: 'auto' // Let Hugging Face choose the best provider
     })
     
-    // For computer vision tasks, we need to use the direct inference endpoint
-    // since the OpenAI-compatible endpoint is for chat completions only
+    // For computer vision tasks, use the Hugging Face router inference endpoint
+    // (api-inference now responds 410 Gone; router is the supported path)
     const inferenceEndpoint = `https://router.huggingface.co/hf-inference/models/${model_id}`
     
     // Prepare the request payload
