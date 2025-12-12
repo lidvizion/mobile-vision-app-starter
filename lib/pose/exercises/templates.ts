@@ -233,6 +233,42 @@ export const EXERCISE_TEMPLATES: Record<string, ExerciseConfig> = {
         up_threshold: 140,
         use_left_side: true,
     },
+    kettlebell: {
+        name: 'Kettlebell Swing',
+        type: 'hinge',
+        primary_angle: {
+            point1: LANDMARKS.LEFT_SHOULDER,
+            point2: LANDMARKS.LEFT_HIP,
+            point3: LANDMARKS.LEFT_KNEE,
+        },
+        down_threshold: 90,
+        up_threshold: 160,
+        use_left_side: true,
+    },
+    long_cycle: {
+        name: 'Long Cycle',
+        type: 'hinge',
+        primary_angle: {
+            point1: LANDMARKS.LEFT_SHOULDER,
+            point2: LANDMARKS.LEFT_HIP,
+            point3: LANDMARKS.LEFT_KNEE,
+        },
+        down_threshold: 100,
+        up_threshold: 170,
+        use_left_side: true,
+    },
+    squat: {
+        name: 'Squat',
+        type: 'squat',
+        primary_angle: {
+            point1: LANDMARKS.LEFT_HIP,
+            point2: LANDMARKS.LEFT_KNEE,
+            point3: LANDMARKS.LEFT_ANKLE,
+        },
+        down_threshold: 90,
+        up_threshold: 150,
+        use_left_side: true,
+    },
 };
 
 /**

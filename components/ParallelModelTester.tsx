@@ -46,12 +46,16 @@ const modelsByTaskType: Record<string, string[]> = {
     // Tier 5: Classic models (reliable baseline)
     'microsoft/resnet-50',        // Classic ResNet, reliable
   ],
-  segmentation: [] // Coming soon
+  segmentation: [
+    'facebook/maskformer-swin-large-ade',  // MaskFormer semantic segmentation, state-of-the-art
+    'nvidia/segformer-b0-finetuned-ade-512-512',  // Scene segmentation, high quality
+    'facebook/detr-resnet-50-panoptic'    // Panoptic segmentation, complete scene understanding
+  ]
 }
 
 
-export default function ParallelModelTester({ 
-  featuredModels, 
+export default function ParallelModelTester({
+  featuredModels,
   sharedImage,
   onImageChange,
   selectedTaskType = 'detection'
@@ -65,29 +69,29 @@ export default function ParallelModelTester({
   const filteredModels = useMemo(() => {
     const taskTypeKey = selectedTaskType.toLowerCase()
     const allowedModelIds = modelsByTaskType[taskTypeKey] || []
-    
+
     if (allowedModelIds.length === 0) {
       // No models available for this task type (e.g., segmentation)
       return []
     }
-    
+
     // Filter and sort models to maintain capability order
     // Create a map for quick lookup
     const modelMap = new Map(featuredModels.map(model => [model.id, model]))
-    
+
     // Return models in the order specified in modelsByTaskType (capability order)
     return allowedModelIds
       .map(id => modelMap.get(id))
       .filter((model): model is ModelMetadata => model !== undefined)
   }, [selectedTaskType, featuredModels])
-  
+
   // Initialize models based on task type - auto-select first 3 available models
   // For detection, prioritize gemini-2.5-flash-lite (fastest) as Model 1
   const getInitialModels = useCallback((filtered: ModelMetadata[], taskType: string): (ModelMetadata | null)[] => {
     if (filtered.length === 0) {
       return [null, null, null]
     }
-    
+
     // For detection task, set specific default models:
     // Model 1: gemini-2.0-flash-exp (fastest: 1-2s)
     // Model 2: facebook/detr-resnet-101
@@ -121,7 +125,7 @@ export default function ParallelModelTester({
         if (b.id === 'microsoft/resnet-50') return 1
         if (a.id === 'facebook/convnext-base-224') return -1
         if (b.id === 'facebook/convnext-base-224') return 1
-        
+
         // Rest maintain the order from modelsByTaskType (already sorted by capability)
         // This ensures dropdown shows models in capability order
         const capabilityOrder: Record<string, number> = {
@@ -138,25 +142,42 @@ export default function ParallelModelTester({
           'apple/mobilevit-small': 11,
           'microsoft/resnet-50': 12,
         }
-        
+
         const aOrder = capabilityOrder[a.id] || 999
         const bOrder = capabilityOrder[b.id] || 999
-        
+
         return aOrder - bOrder
       })
+    } else if (taskType.toLowerCase() === 'segmentation') {
+      // For segmentation task, select top 3 models:
+      // Model 1: facebook/maskformer-swin-large-ade (MaskFormer semantic segmentation, state-of-the-art)
+      // Model 2: nvidia/segformer-b0-finetuned-ade-512-512 (Scene segmentation, high quality)
+      // Model 3: facebook/detr-resnet-50-panoptic (Panoptic segmentation, complete scene understanding)
+      sortedModels = [...filtered].sort((a, b) => {
+        // Priority order for default selection
+        if (a.id === 'facebook/maskformer-swin-large-ade') return -1
+        if (b.id === 'facebook/maskformer-swin-large-ade') return 1
+        if (a.id === 'nvidia/segformer-b0-finetuned-ade-512-512') return -1
+        if (b.id === 'nvidia/segformer-b0-finetuned-ade-512-512') return 1
+        if (a.id === 'facebook/detr-resnet-50-panoptic') return -1
+        if (b.id === 'facebook/detr-resnet-50-panoptic') return 1
+
+        // Keep original order for others
+        return 0
+      })
     }
-    
+
     // Auto-select first 3 models, or all available if less than 3
     const initialModels: (ModelMetadata | null)[] = [...sortedModels.slice(0, 3)]
-    
+
     // Pad with nulls if we have less than 3 models
     while (initialModels.length < 3) {
       initialModels.push(null)
     }
-    
+
     return initialModels.slice(0, 3)
   }, [])
-  
+
   const [selectedModels, setSelectedModels] = useState<(ModelMetadata | null)[]>(() => getInitialModels(filteredModels, selectedTaskType))
 
   // Update models when task type or filtered models change
@@ -164,7 +185,7 @@ export default function ParallelModelTester({
     const newModels = getInitialModels(filteredModels, selectedTaskType)
     setSelectedModels(newModels)
   }, [selectedTaskType, filteredModels, getInitialModels])
-  
+
   // Check if we have models available for the selected task type
   const hasAvailableModels = filteredModels.length > 0
   const isSegmentationComingSoon = selectedTaskType === 'segmentation' && filteredModels.length === 0
@@ -244,9 +265,89 @@ export default function ParallelModelTester({
 
   return (
     <div className="space-y-6">
-      {/* Prompt and Upload Section */}
       <div className="bg-white rounded-xl shadow-sm border border-wells-warm-grey/10 p-6">
         <div className="space-y-4">
+          {/* Dropzone - "Drop image or click to upload" - matches live site */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              e.currentTarget.classList.add('border-wells-dark-grey')
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              e.currentTarget.classList.remove('border-wells-dark-grey')
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              e.currentTarget.classList.remove('border-wells-dark-grey')
+              const files = e.dataTransfer.files
+              if (files.length > 0) {
+                handleFileSelect(files[0])
+              }
+            }}
+            className="border-2 border-dashed border-wells-warm-grey/30 rounded-xl p-12 text-center cursor-pointer hover:border-wells-dark-grey/50 transition-colors"
+          >
+            {sharedImage ? (
+              <div className="space-y-4">
+                <img
+                  src={sharedImage}
+                  alt="Uploaded"
+                  className="max-h-48 mx-auto rounded-lg"
+                />
+                <div className="flex items-center justify-center gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      fileInputRef.current?.click()
+                    }}
+                    className="px-4 py-2 bg-white border border-wells-warm-grey/30 rounded-lg text-sm flex items-center gap-2 hover:bg-gray-50"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Change Image
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onImageChange('')
+                    }}
+                    className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="w-12 h-12 mx-auto rounded-full bg-wells-light-beige/50 flex items-center justify-center">
+                  <Upload className="w-6 h-6 text-wells-warm-grey" />
+                </div>
+                <div>
+                  <p className="text-sm text-wells-dark-grey">
+                    Drop image or <span className="text-wells-dark-grey font-medium">click to upload</span>
+                  </p>
+                  <p className="text-xs text-wells-warm-grey mt-1">Supports images and videos</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) {
+                handleFileSelect(file)
+              }
+            }}
+            className="hidden"
+          />
+
           {/* Prompt Input */}
           <div>
             <label className="block text-sm font-semibold text-wells-dark-grey mb-2">
@@ -260,36 +361,14 @@ export default function ParallelModelTester({
                 selectedTaskType === 'detection'
                   ? "E.g., 'Detect objects in construction site' or 'Identify safety equipment'"
                   : selectedTaskType === 'classification'
-                  ? "E.g., 'Classify product quality' or 'Identify plant diseases'"
-                  : "E.g., 'Segment building components' or 'Separate objects from background'"
+                    ? "E.g., 'Classify product quality' or 'Identify plant diseases'"
+                    : "E.g., 'Segment building components' or 'Separate objects from background'"
               }
               className="w-full px-4 py-3 rounded-lg border border-wells-warm-grey/20 text-sm text-wells-dark-grey placeholder:text-wells-warm-grey/50 focus:border-wells-dark-grey focus:ring-2 focus:ring-wells-dark-grey/10 focus:outline-none resize-none transition-all"
               rows={2}
             />
           </div>
 
-          {/* Upload Button and Status */}
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={!hasAvailableModels}
-              className={`px-6 py-3 rounded-lg font-medium text-sm transition-all flex items-center gap-2 shadow-sm ${
-                hasAvailableModels
-                  ? 'bg-wells-dark-grey text-white hover:bg-wells-dark-grey/90 cursor-pointer'
-                  : 'bg-wells-warm-grey/30 text-wells-warm-grey cursor-not-allowed'
-              }`}
-            >
-              <Upload className="w-5 h-5" />
-              Upload Image
-            </button>
-            {isSegmentationComingSoon && (
-              <div className="flex items-center gap-2 text-sm text-wells-warm-grey">
-                <Bell className="w-4 h-4" />
-                <span>Segmentation models coming soon!</span>
-              </div>
-            )}
-          </div>
-          
           {/* Coming Soon Message for Segmentation */}
           {isSegmentationComingSoon && (
             <div className="mt-4 p-4 bg-wells-light-beige/50 border border-wells-warm-grey/20 rounded-lg">
@@ -306,19 +385,6 @@ export default function ParallelModelTester({
               </div>
             </div>
           )}
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,video/*"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) {
-                handleFileSelect(file)
-              }
-            }}
-            className="hidden"
-          />
 
           {/* Example Prompts Section */}
           {examplePrompts.length > 0 && (
@@ -357,7 +423,7 @@ export default function ParallelModelTester({
                 Segmentation Models Coming Soon
               </h3>
               <p className="text-sm text-wells-warm-grey max-w-md mx-auto">
-                We're working on adding segmentation models like SAM, Mask R-CNN, and DeepLab. 
+                We're working on adding segmentation models like SAM, Mask R-CNN, and DeepLab.
                 Please try Detection or Classification tasks in the meantime.
               </p>
             </div>
@@ -376,19 +442,18 @@ export default function ParallelModelTester({
           </div>
         </div>
       ) : (
-        <div className={`grid grid-cols-1 gap-6 ${
-          filteredModels.length === 1 
-            ? 'lg:grid-cols-1 max-w-md mx-auto' 
-            : filteredModels.length === 2 
-            ? 'lg:grid-cols-2 max-w-4xl mx-auto'
-            : 'lg:grid-cols-3'
-        }`}>
+        <div className={`grid grid-cols-1 gap-6 ${filteredModels.length === 1
+            ? 'lg:grid-cols-1 max-w-md mx-auto'
+            : filteredModels.length === 2
+              ? 'lg:grid-cols-2 max-w-4xl mx-auto'
+              : 'lg:grid-cols-3'
+          }`}>
           {[0, 1, 2].map((index) => {
             // Only render ModelWindow if we have a model for this slot or if there are more models available
             if (!selectedModels[index] && index >= filteredModels.length) {
               return null
             }
-            
+
             return (
               <ModelWindow
                 key={index}
@@ -411,9 +476,9 @@ export default function ParallelModelTester({
   )
 }
 
-function ModelWindow({ 
-  model, 
-  availableModels, 
+function ModelWindow({
+  model,
+  availableModels,
   onModelChange,
   sharedImage,
   windowNumber,
@@ -478,7 +543,7 @@ function ModelWindow({
           console.error(`[Model ${windowNumber}] Error processing image:`, error)
         }
       }
-      
+
       // Process if we haven't processed this image with this model yet
       if (!hasProcessedCurrentImage) {
         processWithModel()
@@ -516,7 +581,7 @@ function ModelWindow({
               Model {windowNumber}
             </span>
           </div>
-          
+
           {/* Model Selector with Logo */}
           <ModelSelectDropdown
             selectedModel={model}
