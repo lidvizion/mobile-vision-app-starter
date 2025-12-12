@@ -34,5 +34,12 @@ export const EXAMPLE_QUERIES_BY_TASK = {
     "Segment people from background in photos",
     "Segment different materials in recycling images",
     "Segment organs and tissues in medical scans"
+  ],
+  'keypoint-detection': [
+    "Detect human pose keypoints in fitness videos",
+    "Track athlete movements and form analysis",
+    "Detect hand gestures and sign language",
+    "Analyze dance movements and choreography",
+    "Detect facial keypoints for emotion recognition"
   ]
 }

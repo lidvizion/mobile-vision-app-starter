@@ -31,7 +31,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
   const [showBackgroundSearchIndicator, setShowBackgroundSearchIndicator] = useState(false)
   const [hasBackgroundSearchCompleted, setHasBackgroundSearchCompleted] = useState(false)
   const [currentQueryId, setCurrentQueryId] = useState<string | undefined>(undefined)
-  const [selectedTaskType, setSelectedTaskType] = useState<'detection' | 'classification' | 'segmentation'>('detection')
+  const [selectedTaskType, setSelectedTaskType] = useState<'detection' | 'classification' | 'segmentation' | 'keypoint-detection'>('detection')
   // Initialize hasAutoRedirected from sessionStorage to persist across navigation
   const [hasAutoRedirected, setHasAutoRedirected] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -51,11 +51,11 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
   // Only runs on first search, not when returning via "Change Model"
   useEffect(() => {
     const modelList = modelViewStore.modelList
-    
+
     // Check if this is a return visit (models already loaded from previous search)
-    const isReturnVisit = typeof window !== 'undefined' && 
+    const isReturnVisit = typeof window !== 'undefined' &&
       sessionStorage.getItem('gemini-auto-redirect-done') === 'true'
-    
+
     console.log('🔍 Auto-redirect useEffect running:', {
       modelListLength: modelList.length,
       firstModelId: modelList.length > 0 ? modelList[0].id : 'none',
@@ -70,17 +70,17 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
     // 3. Models aren't loaded yet
     // 4. First model isn't Gemini
     if (
-      modelList.length > 0 && 
-      modelList[0].id?.toLowerCase().includes('gemini') && 
-      !hasAutoRedirected && 
+      modelList.length > 0 &&
+      modelList[0].id?.toLowerCase().includes('gemini') &&
+      !hasAutoRedirected &&
       !isReturnVisit
     ) {
       console.log('✅ Gemini detected as first model, setting up auto-redirect')
       setShowGeminiReady(true)
-      
+
       const timer = setTimeout(() => {
         console.log('⏰ Auto-redirect timer fired, attempting to click button')
-        
+
         // Use requestAnimationFrame to ensure DOM is ready
         requestAnimationFrame(() => {
           // Try ref first (more reliable)
@@ -94,12 +94,12 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
             }
             return
           }
-          
+
           // Fallback to querySelector with corrected selector
           // The data-model-id is ON the button, not on a parent element
           // Use the first Gemini model's ID dynamically
           const firstGeminiModelId = modelList[0]?.id
-          const button = firstGeminiModelId 
+          const button = firstGeminiModelId
             ? document.querySelector(`button[data-model-id="${firstGeminiModelId}"]`) as HTMLButtonElement
             : null
           if (button) {
@@ -120,7 +120,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           }
         })
       }, 1500)
-      
+
       return () => {
         console.log('🧹 Cleaning up auto-redirect timer')
         clearTimeout(timer)
@@ -243,7 +243,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
     // Reset notification state for new search
     // Reset background search indicator when query changes
     setHasBackgroundSearchCompleted(false)
-    
+
     // Clear auto-redirect flag for new search (allow auto-redirect on fresh searches)
     // This ensures auto-redirect works for new searches but not when returning via "Change Model"
     if (typeof window !== 'undefined') {
@@ -255,7 +255,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
       // Step 1: Refine query
       // Store selected task type in store for later use
       modelViewStore.setSelectedTaskType(selectedTaskType)
-      
+
       const refineResult = await queryRefineMutation.mutateAsync({
         query: modelViewStore.queryText,
         userId: 'anonymous',
@@ -486,11 +486,10 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                       checked={isActive}
                       onChange={() => { }} // Handled by label onClick
                       disabled={!hasModels}
-                      className={`w-4 h-4 bg-white border-wells-warm-grey rounded focus:ring-purple-500 focus:ring-2 disabled:opacity-50 ${
-                        isActive 
-                          ? 'text-purple-600 checked:bg-purple-600 checked:border-purple-600' 
+                      className={`w-4 h-4 bg-white border-wells-warm-grey rounded focus:ring-purple-500 focus:ring-2 disabled:opacity-50 ${isActive
+                          ? 'text-purple-600 checked:bg-purple-600 checked:border-purple-600'
                           : 'text-wells-dark-grey'
-                      }`}
+                        }`}
                     />
                     <Icon className={`w-5 h-5 ${hasModels ? 'text-wells-dark-grey' : 'text-wells-warm-grey'}`} />
                     <span className={`capitalize ${hasModels ? 'text-wells-dark-grey' : 'text-wells-warm-grey'}`}>
@@ -575,7 +574,7 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                   <div className="w-12 h-12 bg-gradient-to-br from-wells-dark-grey/5 to-wells-dark-grey/10 rounded-xl flex items-center justify-center border border-wells-warm-grey/20">
                     {(() => {
                       const modelIdLower = model.id?.toLowerCase() || ''
-                      
+
                       // Use same logo logic as ModelSelectDropdown for consistency
                       if (modelIdLower.includes('gemini')) {
                         return <Image src="/logos/google-gemini.png" alt="Gemini" width={40} height={40} className="object-contain" />
@@ -888,11 +887,11 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
           value={modelViewStore.queryText}
           onChange={(e) => modelViewStore.setQueryText(e.target.value)}
           placeholder={
-            selectedTaskType === 'detection' 
+            selectedTaskType === 'detection'
               ? "I want to detect trash in images from beach cleanups..."
               : selectedTaskType === 'classification'
-              ? "I want to classify product quality as pass or fail..."
-              : "I want to segment building components in architectural images..."
+                ? "I want to classify product quality as pass or fail..."
+                : "I want to segment building components in architectural images..."
           }
           className="w-full px-4 py-3 text-base border-2 border-wells-warm-grey/30 rounded-xl focus:border-wells-dark-grey focus:outline-none resize-none transition-colors"
           rows={4}
