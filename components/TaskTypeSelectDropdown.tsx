@@ -111,12 +111,12 @@ export default function TaskTypeSelectDropdown({
                 >
                   {/* Task Type Icon */}
                   <Icon className="w-5 h-5 text-wells-dark-grey flex-shrink-0" />
-                  
+
                   {/* Task Type Name */}
                   <span className="flex-1 text-sm font-medium text-wells-dark-grey">
                     {taskLabels[taskType]}
                   </span>
-                  
+
                   {/* Checkmark for selected */}
                   {isSelected && (
                     <Check className="w-4 h-4 text-wells-dark-grey flex-shrink-0" />

@@ -14,9 +14,12 @@ module.exports = {
         'wells-white': '#FFFFFF',
         'wells-light-beige': '#F5F1ED',
         'wells-warm-grey': '#8B8680',
-        
+
         // Semantic color mappings
+        background: '#DDD0C8',
+        surface: '#FFFFFF',
         primary: {
+          DEFAULT: '#323232',
           50: '#F5F1ED',
           100: '#DDD0C8',
           200: '#C4B5A8',
@@ -29,6 +32,7 @@ module.exports = {
           900: '#121212',
         },
         secondary: {
+          DEFAULT: '#F5F1ED',
           50: '#F9F8F7',
           100: '#F0EDEA',
           200: '#E1DCD6',

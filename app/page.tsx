@@ -13,12 +13,13 @@ import { modelViewStore } from '@/stores/modelViewStore'
 import { Github, ExternalLink, Sparkles, ArrowRight, Info, ArrowLeft } from 'lucide-react'
 import LidVizionIcon from '@/components/LidVizionIcon'
 import TaskTypeSelectDropdown from '@/components/TaskTypeSelectDropdown'
+import KeypointDetectionUI from '@/components/KeypointDetectionUI'
 
 export default function Home() {
   const router = useRouter()
   const [selectedModel, setSelectedModel] = useState<ModelMetadata | null>(null)
   const { currentTask, processImage, isProcessing, lastResponse, compressionInfo } = useCVTask(selectedModel)
-  
+
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [showMoreModels, setShowMoreModels] = useState(false)
   const [selectedTaskType, setSelectedTaskType] = useState<'detection' | 'classification' | 'segmentation' | 'keypoint-detection'>('detection')
@@ -292,6 +293,9 @@ export default function Home() {
     setSelectedModel(model)
   }
 
+
+
+
   return (
     <div className="min-h-screen bg-wells-beige">
       {/* Luxury Header with Glassmorphism */}
@@ -305,15 +309,11 @@ export default function Home() {
                 <p className="text-xs text-wells-warm-grey">Computer Vision Platform</p>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <a href="https://github.com/lidvizion/mobile-vision-app-starter" target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm flex items-center justify-center">
                   <Github className="w-4 h-4" />
-                </a>
-                <a href="https://calendly.com/lidvizion-info/15" target="_blank" rel="noopener noreferrer" className="btn-primary btn-lg rounded-2xl flex items-center gap-2">
-                  <span>Book a Call</span>
-                  <ExternalLink className="w-4 h-4" />
                 </a>
               </div>
             </div>
@@ -329,21 +329,21 @@ export default function Home() {
           <div className="absolute bottom-20 right-10 w-24 h-24 bg-wells-dark-grey/5 rounded-full animate-float" style={{ animationDelay: '1s' }}></div>
           <div className="absolute top-1/2 left-1/4 w-16 h-16 bg-wells-dark-grey/5 rounded-full animate-float" style={{ animationDelay: '2s' }}></div>
         </div>
-        
+
         <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-sm text-wells-dark-grey rounded-xl text-sm font-medium mb-8 shadow-sm border border-wells-warm-grey/20">
             <Sparkles className="w-4 h-4" />
             <span>Cross-platform Computer Vision</span>
           </div>
-          
+
           <h1 className="text-4xl md:text-6xl font-serif font-bold text-wells-dark-grey mb-6 leading-tight">
             Deploy CV Apps <span className="text-wells-warm-grey">Faster Than Ever</span>
           </h1>
-          
+
           <p className="text-lg text-wells-warm-grey max-w-2xl mx-auto mb-10 leading-relaxed">
             Professional Starter kit for computer vision apps, overlays, and scalable cloud infra.
           </p>
-          
+
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <a href="https://calendly.com/lidvizion-info/15" target="_blank" rel="noopener noreferrer" className="btn-primary btn-lg rounded-2xl hover-lift flex items-center gap-2">
               <span>Book a Call</span>
@@ -374,17 +374,24 @@ export default function Home() {
                   Task Type:
                 </label>
                 <TaskTypeSelectDropdown
-                  selectedTaskType={selectedTaskType}
-                  onTaskTypeChange={setSelectedTaskType}
+                  selectedTaskType={selectedTaskType as any}
+                  onTaskTypeChange={(type) => {
+                    // @ts-ignore
+                    setSelectedTaskType(type);
+                  }}
                 />
               </div>
 
-              <ParallelModelTester
-                featuredModels={featuredModels}
-                sharedImage={selectedImage}
-                onImageChange={setSelectedImage}
-                selectedTaskType={selectedTaskType}
-              />
+              {selectedTaskType === 'keypoint-detection' ? (
+                <KeypointDetectionUI />
+              ) : (
+                <ParallelModelTester
+                  featuredModels={featuredModels}
+                  sharedImage={selectedImage}
+                  onImageChange={setSelectedImage}
+                  selectedTaskType={selectedTaskType}
+                />
+              )}
 
               {/* Browse All Models Button - Original Position */}
               <div className="text-center pt-8">
@@ -409,7 +416,7 @@ export default function Home() {
                 <ArrowLeft className="w-4 h-4" />
                 <span>Back to Quick Test</span>
               </button>
-              
+
               {/* Existing GuidedModelFlow component */}
               {!selectedModel ? (
                 <GuidedModelFlow onModelSelect={handleModelSelect} />
@@ -424,7 +431,7 @@ export default function Home() {
                           {(() => {
                             const modelIdLower = selectedModel.id?.toLowerCase() || ''
                             let logoPath: string | null = null
-                            
+
                             if (modelIdLower.includes('gemini')) {
                               logoPath = '/icons/gemini-icon.svg'
                             } else if (modelIdLower.startsWith('google/')) {
@@ -436,12 +443,12 @@ export default function Home() {
                             } else if (modelIdLower.startsWith('apple/')) {
                               logoPath = '/logos/meta-logo.png' // Fallback until Apple logo is added
                             }
-                            
+
                             return logoPath ? (
-                              <Image 
-                                src={logoPath} 
-                                alt={selectedModel.author} 
-                                width={32} 
+                              <Image
+                                src={logoPath}
+                                alt={selectedModel.author}
+                                width={32}
                                 height={32}
                                 className="flex-shrink-0 object-contain"
                               />
