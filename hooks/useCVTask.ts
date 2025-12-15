@@ -678,6 +678,9 @@ async function transformHFToCVResponse(inferenceData: any, model: ModelMetadata,
   }
   
   // Transform based on task type
+  // Calculate processing time from API response (duration is in milliseconds)
+  const processingTime = inferenceData.duration ? (inferenceData.duration / 1000) : 0.5
+  
   if (task === 'detection' || task.includes('detection')) {
     // Object Detection - enhance class names with color detection
     const detections = await Promise.all(
@@ -850,6 +853,13 @@ async function transformHFToCVResponse(inferenceData: any, model: ModelMetadata,
 async function transformRoboflowToCVResponse(inferenceData: any, model: ModelMetadata, imageDimensions?: { width: number; height: number }, imageBase64?: string, actualProcessingTime?: number): Promise<CVResponse> {
   // Roboflow API returns predictions, not results
   const predictions = inferenceData.predictions || inferenceData.results || []
+  
+  // Calculate processing time from API response (processing_time or duration in milliseconds)
+  const processingTime = inferenceData.processing_time 
+    ? (inferenceData.processing_time / 1000) 
+    : inferenceData.duration 
+      ? (inferenceData.duration / 1000) 
+      : 0.5 // Fallback to 0.5 seconds
   
   // Determine task type from model and results
   // Prioritize model's explicit task type, but verify with actual data

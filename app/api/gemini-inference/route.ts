@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
   console.log('🚀 /api/gemini-inference called', { requestId, timestamp: new Date().toISOString() })
 
   try {
+    // Parse request body - use request.json() for production compatibility
     const body: GeminiInferenceRequest = await request.json()
     const { model_id: bodyModelId, inputs, parameters } = body
     model_id = bodyModelId
@@ -201,7 +202,38 @@ export async function POST(request: NextRequest) {
     const CONFIDENCE_THRESHOLD = 0.3
     results = results.filter((result: any) => {
       const score = result.score || result.confidence || 0
-      return score >= CONFIDENCE_THRESHOLD
+      const hasValidBox = result.box && 
+        typeof result.box.xmin === 'number' && 
+        typeof result.box.ymin === 'number' &&
+        typeof result.box.xmax === 'number' && 
+        typeof result.box.ymax === 'number' &&
+        result.box.xmin < result.box.xmax &&
+        result.box.ymin < result.box.ymax &&
+        result.box.xmin >= 0 && result.box.ymin >= 0 &&
+        result.box.xmax <= 1 && result.box.ymax <= 1
+      return score >= CONFIDENCE_THRESHOLD && hasValidBox
+    })
+    
+    // Normalize and fix bounding boxes to ensure they're in correct format
+    results = results.map((result: any) => {
+      if (result.box) {
+        // Ensure coordinates are normalized (0-1)
+        const xmin = Math.max(0, Math.min(1, result.box.xmin))
+        const ymin = Math.max(0, Math.min(1, result.box.ymin))
+        const xmax = Math.max(xmin, Math.min(1, result.box.xmax))
+        const ymax = Math.max(ymin, Math.min(1, result.box.ymax))
+        
+        return {
+          ...result,
+          box: {
+            xmin,
+            ymin,
+            xmax,
+            ymax
+          }
+        }
+      }
+      return result
     })
 
     const duration = Date.now() - startTime

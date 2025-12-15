@@ -23,6 +23,9 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
   const [showOverlays, setShowOverlays] = useState(true)
   const [showRawJSON, setShowRawJSON] = useState(false)
   const { showNotification } = useNotification()
+  const imageContainerRef = useRef<HTMLDivElement>(null)
+  const resizeHandlerRef = useRef<(() => void) | null>(null)
+  const [containerDimensions, setContainerDimensions] = useState<{ width: number; height: number } | null>(null)
   
   // Determine task type
   const currentTask = response?.task || 'object-detection'
@@ -52,7 +55,16 @@ const ResultsDisplay = observer(function ResultsDisplay({ response, selectedImag
 
   // Filter results based on confidence
   const filteredDetections = useMemo(
-    () => response?.results.detections?.filter(d => d.confidence >= confidenceThreshold) || [],
+    () => {
+      const detections = response?.results.detections
+      
+      if (!detections || !Array.isArray(detections)) {
+        console.log('🔍 [filteredDetections] Returning empty array - detections is:', detections)
+        return []
+      }
+      
+      return detections.filter(d => d.confidence >= confidenceThreshold)
+    },
     [response?.results.detections, confidenceThreshold]
   )
   

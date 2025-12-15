@@ -40,6 +40,14 @@ export function useBackgroundSearch({
 
     try {
       const response = await fetch(`/api/background-search-status?queryId=${encodeURIComponent(queryId)}`)
+      
+      // Handle ERR_INSUFFICIENT_RESOURCES and other network errors
+      if (!response.ok && response.status >= 500) {
+        console.warn(`⚠️ Background search status check failed: ${response.status}`)
+        // Don't stop polling on server errors - might be temporary
+        return
+      }
+      
       const data = await response.json()
 
       if (data.success || data.status === 'not_found') {
@@ -67,12 +75,26 @@ export function useBackgroundSearch({
         }
       }
     } catch (error) {
+      // Handle ERR_INSUFFICIENT_RESOURCES and other network errors gracefully
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      const isNetworkError = errorMessage.includes('ERR_INSUFFICIENT_RESOURCES') || 
+                            errorMessage.includes('Failed to fetch') ||
+                            errorMessage.includes('NetworkError')
+      
+      if (isNetworkError) {
+        // Don't log network errors as failures - they're likely temporary
+        // Just skip this poll and try again next time
+        console.warn('⚠️ Background search status check skipped (network error):', errorMessage)
+        return
+      }
+      
       console.error('Error checking background search status:', error)
       setStatus(prev => ({
         ...prev,
         status: 'failed',
         message: 'Failed to check search status'
       }))
+      // Only stop polling on non-network errors
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
         intervalRef.current = null
