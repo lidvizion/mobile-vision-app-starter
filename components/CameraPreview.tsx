@@ -458,14 +458,25 @@ export default function CameraPreview({ currentTask, onImageProcessed, isProcess
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onClick={(e) => {
-            // Only trigger file input if clicking on the drop zone itself (not on buttons or images)
-            if (!selectedImage && !isProcessing && e.target === e.currentTarget) {
-              if (fileClickInProgress.current) return
-              fileClickInProgress.current = true
-              fileInputRef.current?.click()
-              setTimeout(() => {
-                fileClickInProgress.current = false
-              }, 1000)
+            // Trigger file input when clicking on drop zone (but not on buttons, inputs, or the image itself)
+            if (!isProcessing) {
+              // Check if click is on a button, input, or the image
+              const target = e.target as HTMLElement
+              const isButton = target.closest('button') || target.tagName === 'BUTTON'
+              const isInput = target.closest('input') || target.tagName === 'INPUT'
+              const isImage = target.closest('img') || target.tagName === 'IMG'
+              // Check if click is on the image container (div with class "relative group")
+              const imageContainer = target.closest('.relative.group')
+              
+              // Allow clicks on drop zone and its non-interactive children, but not on the image or its container
+              if (!isButton && !isInput && !isImage && !imageContainer) {
+                if (fileClickInProgress.current) return
+                fileClickInProgress.current = true
+                fileInputRef.current?.click()
+                setTimeout(() => {
+                  fileClickInProgress.current = false
+                }, 1000)
+              }
             }
           }}
         >

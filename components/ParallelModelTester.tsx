@@ -8,6 +8,7 @@ import { Loader2, Upload, Image as ImageIcon, Lightbulb, AlertCircle, Bell, X } 
 import Image from 'next/image'
 import { validateMediaFile } from '@/lib/validation'
 import ModelSelectDropdown from './ModelSelectDropdown'
+import SAMRedirectModal from './SAMRedirectModal'
 
 interface ParallelModelTesterProps {
   featuredModels: ModelMetadata[]
@@ -48,6 +49,7 @@ const modelsByTaskType: Record<string, string[]> = {
     'microsoft/resnet-50',        // Classic ResNet, reliable
   ],
   segmentation: [
+    'meta/sam-segment-anything',  // SAM - redirects to Meta AI Demos
     'facebook/maskformer-swin-large-ade',  // Semantic segmentation
     'nvidia/segformer-b0-finetuned-ade-512-512', // Scene segmentation
     'facebook/detr-resnet-50-panoptic' // Panoptic segmentation
@@ -180,6 +182,7 @@ export default function ParallelModelTester({
       // Model 1: facebook/maskformer-swin-large-ade (MaskFormer semantic segmentation, state-of-the-art)
       // Model 2: nvidia/segformer-b0-finetuned-ade-512-512 (Scene segmentation, high quality)
       // Model 3: facebook/detr-resnet-50-panoptic (Panoptic segmentation, complete scene understanding)
+      // Note: meta/sam-segment-anything is available but redirects to Meta AI Demos
       sortedModels = [...filtered].sort((a, b) => {
         // Priority order for default selection
         if (a.id === 'facebook/maskformer-swin-large-ade') return -1
@@ -188,6 +191,9 @@ export default function ParallelModelTester({
         if (b.id === 'nvidia/segformer-b0-finetuned-ade-512-512') return 1
         if (a.id === 'facebook/detr-resnet-50-panoptic') return -1
         if (b.id === 'facebook/detr-resnet-50-panoptic') return 1
+        // SAM should appear after the default 3, but before others
+        if (a.id === 'meta/sam-segment-anything') return -1
+        if (b.id === 'meta/sam-segment-anything') return 1
 
         // Keep original order for others
         return 0
@@ -660,6 +666,34 @@ function ModelWindow({
   const [hasProcessedCurrentImage, setHasProcessedCurrentImage] = useState(false)
   const [lastProcessedImageUrl, setLastProcessedImageUrl] = useState<string | null>(null)
   const [isLocalProcessing, setIsLocalProcessing] = useState(false)
+  const [showSAMModal, setShowSAMModal] = useState(false)
+  const [previousNonSAMModel, setPreviousNonSAMModel] = useState<ModelMetadata | null>(null)
+
+  // Check if model is SAM
+  const isSAM = model?.id === 'meta/sam-segment-anything'
+
+  // Track previous non-SAM model and show modal when SAM is selected
+  useEffect(() => {
+    if (model) {
+      if (isSAM) {
+        // SAM selected - show modal
+        setShowSAMModal(true)
+      } else {
+        // Non-SAM model selected - track it as previous
+        setPreviousNonSAMModel(model)
+      }
+    }
+  }, [model, isSAM])
+
+  // Handle SAM modal close - reset to previous non-SAM model or first available non-SAM model
+  const handleSAMModalClose = useCallback(() => {
+    setShowSAMModal(false)
+    // Restore to previous non-SAM model if available, otherwise use first non-SAM model
+    const modelToRestore = previousNonSAMModel || availableModels.find(m => m.id !== 'meta/sam-segment-anything')
+    if (modelToRestore) {
+      onModelChange(modelToRestore)
+    }
+  }, [availableModels, onModelChange, previousNonSAMModel])
 
   // Load image file when shared image changes
   useEffect(() => {
@@ -680,9 +714,9 @@ function ModelWindow({
     }
   }, [sharedImage, windowNumber, lastProcessedImageUrl])
 
-  // Auto-process when image file or model changes
+  // Auto-process when image file or model changes (skip if SAM is selected)
   useEffect(() => {
-    if (sharedImage && model && !isProcessing && currentImageFile) {
+    if (sharedImage && model && !isProcessing && currentImageFile && !isSAM) {
       // Process the image with current model
       const processWithModel = async () => {
         try {
@@ -715,7 +749,7 @@ function ModelWindow({
         processWithModel()
       }
     }
-  }, [sharedImage, model, isProcessing, processImage, hasProcessedCurrentImage, currentImageFile, windowNumber])
+  }, [sharedImage, model, isProcessing, processImage, hasProcessedCurrentImage, currentImageFile, windowNumber, isSAM])
 
   // Reset processed flag when model changes (to trigger reprocessing)
   useEffect(() => {
@@ -737,46 +771,75 @@ function ModelWindow({
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-wells-warm-grey/10 overflow-hidden">
-      {/* Header */}
-      <div className="px-5 py-4 border-b border-wells-warm-grey/10 bg-gray-50/50">
-        <div className="space-y-3">
-          {/* Model Label */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-wells-warm-grey uppercase tracking-wide">
-              Model {windowNumber}
-            </span>
-          </div>
+    <>
+      {/* SAM Redirect Modal */}
+      <SAMRedirectModal
+        isOpen={showSAMModal}
+        onClose={handleSAMModalClose}
+      />
 
-          {/* Model Selector with Logo */}
-          <ModelSelectDropdown
-            selectedModel={model}
-            availableModels={availableModels}
-            onModelChange={onModelChange}
-          />
+      <div className="bg-white rounded-xl shadow-sm border border-wells-warm-grey/10 overflow-hidden">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-wells-warm-grey/10 bg-gray-50/50">
+          <div className="space-y-3">
+            {/* Model Label */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-wells-warm-grey uppercase tracking-wide">
+                Model {windowNumber}
+              </span>
+            </div>
+
+            {/* Model Selector with Logo */}
+            <ModelSelectDropdown
+              selectedModel={model}
+              availableModels={availableModels}
+              onModelChange={onModelChange}
+            />
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-5">
+          {isSAM ? (
+            // Special display for SAM model
+            <div className="flex items-center justify-center py-20 text-center">
+              <div className="space-y-3">
+                <div className="w-16 h-16 mx-auto rounded-full bg-wells-light-beige flex items-center justify-center">
+                  <img
+                    src="/logos/meta-logo.png"
+                    alt="Meta AI"
+                    className="w-10 h-10 object-contain"
+                  />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-wells-dark-grey mb-1">
+                    SAM (Segment Anything Model)
+                  </p>
+                  <p className="text-xs text-wells-warm-grey">
+                    Click to open Meta AI Demos studio
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : !sharedImage ? (
+            <div className="flex items-center justify-center py-20 text-center">
+              <div className="space-y-2">
+                <div className="w-12 h-12 mx-auto rounded-full bg-gray-100 flex items-center justify-center">
+                  <ImageIcon className="w-6 h-6 text-gray-400" />
+                </div>
+                <p className="text-sm text-wells-warm-grey">Awaiting image upload</p>
+              </div>
+            </div>
+          ) : (
+            <ResultsDisplay
+              response={lastResponse}
+              selectedImage={sharedImage}
+              isProcessing={isProcessing || isLocalProcessing || (!hasProcessedCurrentImage && currentImageFile !== null && model !== null)}
+            />
+          )}
         </div>
       </div>
-
-      {/* Content */}
-      <div className="p-5">
-        {!sharedImage ? (
-          <div className="flex items-center justify-center py-20 text-center">
-            <div className="space-y-2">
-              <div className="w-12 h-12 mx-auto rounded-full bg-gray-100 flex items-center justify-center">
-                <ImageIcon className="w-6 h-6 text-gray-400" />
-              </div>
-              <p className="text-sm text-wells-warm-grey">Awaiting image upload</p>
-            </div>
-          </div>
-        ) : (
-          <ResultsDisplay
-            response={lastResponse}
-            selectedImage={sharedImage}
-            isProcessing={isProcessing || isLocalProcessing || (!hasProcessedCurrentImage && currentImageFile !== null && model !== null)}
-          />
-        )}
-      </div>
-    </div>
+    </>
   )
 }
 

@@ -280,6 +280,20 @@ export default function Home() {
       platforms: [],
       supportsInference: true,
       inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/detr-resnet-50-panoptic'
+    },
+    {
+      id: 'meta/sam-segment-anything',
+      name: 'SAM (Segment Anything Model)',
+      description: 'Meta\'s Segment Anything Model - state-of-the-art segmentation. Redirects to Meta AI Demos studio.',
+      task: 'image-segmentation',
+      source: 'curated',
+      author: 'Meta',
+      downloads: 0,
+      tags: ['segmentation', 'sam', 'meta', 'facebook', 'segment-anything'],
+      frameworks: [],
+      modelUrl: 'https://aidemos.meta.com/segment-anything/',
+      platforms: [],
+      supportsInference: false
     }
   ]
 

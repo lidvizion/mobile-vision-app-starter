@@ -83,12 +83,23 @@ export async function getValidatedModels(
     // Roboflow models are always included
     const strictTrustedOrgs = ['facebook/', 'microsoft/', 'nvidia/']
     
+    // Exclude Roboflow models that require API keys (FoodDetection, PrimeAI)
+    const excludedRoboflowAuthors = ['FoodDetection', 'PrimeAI']
+    const excludedRoboflowModelNames = [
+      'Food Computer Vision Model',
+      'POSE Computer Vision Model'
+    ]
+
     const query: any = { 
       validated: true,
       // Exclude text classification models
       $and: [
         { pipeline_tag: { $ne: 'text-classification' } },
         { task_type: { $ne: 'Text Classification' } },
+        // Exclude Roboflow models by author (case-insensitive)
+        { author: { $not: { $regex: excludedRoboflowAuthors.join('|'), $options: 'i' } } },
+        // Exclude Roboflow models by name (case-insensitive)
+        { name: { $not: { $regex: excludedRoboflowModelNames.join('|'), $options: 'i' } } },
         { 'tags': { $not: { $regex: 'text-classification', $options: 'i' } } },
         { 'tags': { $not: { $regex: 'sentiment', $options: 'i' } } },
         { 'tags': { $not: { $regex: 'emotion', $options: 'i' } } },

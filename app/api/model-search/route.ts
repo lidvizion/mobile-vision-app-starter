@@ -699,7 +699,31 @@ async function searchRoboflowModelsPython(keywords: string[], taskType: string):
 
     modelsWithScores.sort((a: any, b: any) => b.relevanceScore - a.relevanceScore);
 
-    const validModels = modelsWithScores.map(({ model, index }: { model: any, index: number }) => {
+    // Filter out excluded Roboflow models (FoodDetection, PrimeAI)
+    const excludedRoboflowAuthors = ['FoodDetection', 'PrimeAI']
+    const excludedRoboflowModelNames = [
+      'Food Computer Vision Model',
+      'POSE Computer Vision Model'
+    ]
+
+    const validModels = modelsWithScores
+      .filter(({ model }: { model: any }) => {
+        const modelAuthor = (model.author || '').toLowerCase()
+        const modelName = (model.project_title || model.model_name || '').toLowerCase()
+        
+        // Exclude models by author
+        const isExcludedAuthor = excludedRoboflowAuthors.some(author => 
+          modelAuthor.includes(author.toLowerCase())
+        )
+        
+        // Exclude models by name
+        const isExcludedModelName = excludedRoboflowModelNames.some(name => 
+          modelName.includes(name.toLowerCase())
+        )
+        
+        return !isExcludedAuthor && !isExcludedModelName
+      })
+      .map(({ model, index }: { model: any, index: number }) => {
       let modelName = model.project_title || model.model_name || "Roboflow Model";
       if (modelName === "Models" || modelName === "N/A" || !modelName) {
         const url = model.url || model.model_url || "";
@@ -1370,6 +1394,13 @@ async function searchHFModels(
       'josephlyr/detr-resnet-50_finetuned_road_traffic'
     ]
 
+    // Roboflow models to exclude (require API keys and don't work)
+    const excludedRoboflowAuthors = ['FoodDetection', 'PrimeAI']
+    const excludedRoboflowModelNames = [
+      'Food Computer Vision Model',
+      'POSE Computer Vision Model'
+    ]
+
     // Critical models that should NEVER be filtered out
     const criticalModels = [
       'microsoft/resnet-50',
@@ -1457,6 +1488,18 @@ async function searchHFModels(
 
       // ✅ EXCLUDE KNOWN FAILED MODELS
       if (knownFailedModels.includes(model.id)) {
+        return false
+      }
+
+      // ✅ EXCLUDE ROBOFLOW MODELS THAT REQUIRE API KEYS (FoodDetection, PrimeAI)
+      const modelAuthor = (model.author || '').toLowerCase()
+      const isExcludedAuthor = excludedRoboflowAuthors.some(author => 
+        modelAuthor.includes(author.toLowerCase())
+      )
+      const isExcludedModelName = excludedRoboflowModelNames.some(name => 
+        modelName.includes(name.toLowerCase())
+      )
+      if (isExcludedAuthor || isExcludedModelName) {
         return false
       }
 
