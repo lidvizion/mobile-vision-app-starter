@@ -279,20 +279,59 @@ export default function AnalysisPage() {
     const handleCreateExercise = async () => {
         if (!newExerciseName.trim()) return;
 
-        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-        if (!apiKey) {
-            setGenerationError("API Key missing.");
-            return;
-        }
-
         setGenerationError(null);
 
         try {
-            // Single API call - returns simple config, no code generation!
+            // Step 1: Check MongoDB for existing config
             setGenerationStep('analyzing');
+            const checkResponse = await fetch(`/api/exercise-configs?name=${encodeURIComponent(newExerciseName)}`);
+
+            if (checkResponse.ok) {
+                const data = await checkResponse.json();
+
+                if (data.found && data.config) {
+                    // Found in MongoDB! Use cached config
+                    console.log('✅ Found exercise config in database:', newExerciseName);
+                    const newEx = addExercise(newExerciseName, data.config as any);
+                    setSelectedExercise(newEx.id);
+                    setIsAddingExercise(false);
+                    setNewExerciseName('');
+                    setGenerationStep('idle');
+                    setReps(0);
+                    setVideoFeedback('Loaded from library!');
+                    return;
+                }
+            }
+
+            // Step 2: Not in database - generate via Gemini API
+            console.log('📡 Generating new config via Gemini for:', newExerciseName);
+            const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+            if (!apiKey) {
+                setGenerationError("API Key missing.");
+                setGenerationStep('idle');
+                return;
+            }
+
+            setGenerationStep('coding');
             const config = await generateExerciseConfig(apiKey, newExerciseName);
 
-            // Store config (typed as GeminiResponse for compatibility with hook)
+            // Step 3: Save new config to MongoDB for future use
+            try {
+                await fetch('/api/exercise-configs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: newExerciseName,
+                        config,
+                        source: 'gemini'
+                    })
+                });
+                console.log('💾 Saved new exercise config to database');
+            } catch (saveError) {
+                console.warn('⚠️ Failed to save config to database (will still work locally):', saveError);
+            }
+
+            // Store config locally (typed as GeminiResponse for compatibility with hook)
             const newEx = addExercise(newExerciseName, config as any);
             setSelectedExercise(newEx.id);
 
