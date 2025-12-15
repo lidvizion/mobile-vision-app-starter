@@ -23,7 +23,7 @@ export interface ModelMetadata {
   status?: 'active' | 'coming_soon' // Model availability status
   isDisabled?: boolean // Whether model is disabled/not available
   comingSoonReason?: string // Reason why model is coming soon
-  provider?: 'huggingface' | 'google' | 'anthropic' | 'openai' | 'meta' | 'mistral' | 'xai' | 'qwen' | 'microsoft' | 'roboflow' // Model provider
+  provider?: 'huggingface' | 'google' | 'anthropic' | 'openai' | 'meta' | 'mistral' | 'xai' | 'qwen' | 'microsoft' | 'roboflow' | 'nvidia' | 'ultralytics' | 'apple' // Model provider
   // Model metrics
   metrics?: {
     mAP?: number
