@@ -24,14 +24,34 @@ const getModelLogo = (modelId: string, provider?: string): string | null => {
     return '/logos/microsoft.svg'
   }
   
-  // Anthropic, OpenAI, Mistral, xAI, Qwen - no logos available yet, return null
-  if (providerLower === 'anthropic' || providerLower === 'openai' || providerLower === 'mistral' || providerLower === 'xai' || providerLower === 'qwen') {
-    return null
+  if (providerLower === 'nvidia' || idLower.startsWith('nvidia/')) {
+    return '/logos/nvidia-logo.png'
   }
   
-  // Apple models - use meta logo as fallback (no Apple logo available)
+  // Anthropic, OpenAI, Mistral, xAI, Qwen - use logos from desktop
+  if (providerLower === 'anthropic' || idLower.includes('claude')) {
+    return '/logos/anthropic-claude.png'
+  }
+  if (providerLower === 'openai' || idLower.includes('gpt')) {
+    return '/logos/openai-logo.webp'
+  }
+  if (providerLower === 'mistral' || idLower.includes('mistral') || idLower.includes('pixtral')) {
+    return '/logos/mistral-logo.png'
+  }
+  if (providerLower === 'xai' || idLower.includes('grok')) {
+    return '/logos/xai-grok.webp'
+  }
+  if (providerLower === 'qwen' || idLower.includes('qwen')) {
+    return '/logos/qwen-logo.jpeg'
+  }
+  
+  if (providerLower === 'ultralytics' || idLower.includes('yolo')) {
+    return '/logos/yolo-logo.png'
+  }
+  
+  // Apple models
   if (idLower.startsWith('apple/')) {
-    return '/logos/meta-logo.png' // Fallback - can be updated when Apple logo is added
+    return '/logos/apple-logo.png'
   }
   
   return null
@@ -54,7 +74,40 @@ const modelLogos: Record<string, string> = {
   'facebook/convnext-tiny-224': '/logos/meta-logo.png',
   'facebook/convnext-base-224': '/logos/meta-logo.png',
   'microsoft/beit-base-patch16-224-pt22k-ft22k': '/logos/microsoft.svg',
-  'apple/mobilevit-small': '/logos/meta-logo.png', // Fallback until Apple logo is added
+  'apple/mobilevit-small': '/logos/apple-logo.png',
+  // NVIDIA models
+  'nvidia/segformer-b0-finetuned-ade-512-512': '/logos/nvidia-logo.png',
+  // Coming soon models - Anthropic
+  'anthropic/claude-3-haiku': '/logos/anthropic-claude.png',
+  'anthropic/claude-3.7-sonnet': '/logos/anthropic-claude.png',
+  'anthropic/claude-4-opus': '/logos/anthropic-claude.png',
+  'anthropic/claude-4-sonnet': '/logos/anthropic-claude.png',
+  'anthropic/claude-4.1-opus': '/logos/anthropic-claude.png',
+  'anthropic/claude-4.5-haiku': '/logos/anthropic-claude.png',
+  'anthropic/claude-4.5-sonnet': '/logos/anthropic-claude.png',
+  // Coming soon models - OpenAI
+  'openai/gpt-4o': '/logos/openai-logo.webp',
+  // Coming soon models - Microsoft
+  'microsoft/florence-2': '/logos/microsoft.svg',
+  // Coming soon models - Google
+  'google/gemma-3-4b': '/logos/google-gemini.png',
+  'google/gemma-3-12b': '/logos/google-gemini.png',
+  'google/gemma-3-27b': '/logos/google-gemini.png',
+  'google/vision-ocr': '/logos/google-gemini.png',
+  // Coming soon models - Meta
+  'meta/llama-3.2-vision-11b': '/logos/meta-logo.png',
+  'meta/llama-3.2-vision-90b': '/logos/meta-logo.png',
+  'meta/llama-4-maverick': '/logos/meta-logo.png',
+  'meta/llama-4-scout': '/logos/meta-logo.png',
+  // Coming soon models - Mistral
+  'mistral/small-3.1-24b': '/logos/mistral-logo.png',
+  'mistral/medium-3.1': '/logos/mistral-logo.png',
+  'mistral/pixtral-12b': '/logos/mistral-logo.png',
+  // Coming soon models - xAI
+  'xai/grok-4': '/logos/xai-grok.webp',
+  // Coming soon models - Qwen
+  'qwen/qwen-vl-max': '/logos/qwen-logo.jpeg',
+  'qwen/qwen2.5-vl-7b-instruct': '/logos/qwen-logo.jpeg',
 }
 
 // Gemini model speed indicators
@@ -194,16 +247,31 @@ export default function ModelSelectDropdown({
                 >
                   {/* Model Logo */}
                   {logo ? (
-                    <div className="flex-shrink-0 w-6 h-6 relative">
-                      <Image
-                        src={logo}
-                        alt={model.author}
-                        fill
-                        className="object-contain"
-                        sizes="24px"
-                        style={{ mixBlendMode: 'normal' }}
-                      />
-                    </div>
+                    logo.endsWith('-text') ? (
+                      // Text-based logos for providers without image logos (none remaining)
+                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-wells-light-beige/50 flex items-center justify-center border border-wells-warm-grey/20">
+                      </div>
+                    ) : (
+                      <div className="flex-shrink-0 w-6 h-6 relative">
+                        <Image
+                          src={logo}
+                          alt={model.author}
+                          fill
+                          className="object-contain"
+                          sizes="24px"
+                          style={{ mixBlendMode: 'normal' }}
+                          onError={(e) => {
+                            // Fallback if logo doesn't exist
+                            const target = e.target as HTMLImageElement
+                            target.style.display = 'none'
+                            const parent = target.parentElement
+                            if (parent) {
+                              parent.innerHTML = '<div class="w-full h-full rounded-full bg-wells-light-beige/50 flex items-center justify-center border border-wells-warm-grey/20"><span class="text-[10px] font-bold text-wells-dark-grey">?</span></div>'
+                            }
+                          }}
+                        />
+                      </div>
+                    )
                   ) : (
                     <div className="flex-shrink-0 w-6 h-6" />
                   )}
