@@ -931,7 +931,7 @@ export default function Home() {
                             } else if (modelIdLower.startsWith('microsoft/')) {
                               logoPath = '/logos/microsoft.svg'
                             } else if (modelIdLower.startsWith('apple/')) {
-                              logoPath = '/logos/meta-logo.png' // Fallback until Apple logo is added
+                              logoPath = '/logos/apple-logo.png'
                             }
 
                             return logoPath ? (

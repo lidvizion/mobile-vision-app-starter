@@ -591,28 +591,59 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                       if (provider === 'microsoft' || modelIdLower.startsWith('microsoft/')) {
                         return <Image src="/logos/microsoft.svg" alt="Microsoft" width={40} height={40} className="object-contain" />
                       }
+                      if (provider === 'nvidia' || modelIdLower.startsWith('nvidia/')) {
+                        return <Image src="/logos/nvidia-logo.png" alt="NVIDIA" width={40} height={40} className="object-contain" />
+                      }
                       if (provider === 'anthropic' || modelIdLower.includes('claude')) {
-                        // Anthropic logo - using text for now, can be replaced with actual logo
-                        return <div className="text-2xl font-bold text-wells-dark-grey">∧</div>
+                        // Anthropic Claude logo - from desktop
+                        return (
+                          <div className="w-10 h-10 rounded-full bg-wells-light-beige/50 flex items-center justify-center border border-wells-warm-grey/20 p-2">
+                            <img src="/logos/anthropic-claude.png" alt="Anthropic" className="w-full h-full object-contain" />
+                          </div>
+                        )
                       }
                       if (provider === 'openai' || modelIdLower.includes('gpt')) {
-                        // OpenAI logo - using text for now, can be replaced with actual logo
-                        return <div className="text-xs font-bold text-wells-dark-grey">OpenAI</div>
+                        // OpenAI logo - from desktop
+                        return (
+                          <div className="w-10 h-10 rounded-full bg-wells-light-beige/50 flex items-center justify-center border border-wells-warm-grey/20 p-2">
+                            <img src="/logos/openai-logo.webp" alt="OpenAI" className="w-full h-full object-contain" />
+                          </div>
+                        )
                       }
                       if (provider === 'mistral' || modelIdLower.includes('mistral') || modelIdLower.includes('pixtral')) {
-                        // Mistral logo - using text for now
-                        return <div className="text-xs font-bold text-wells-dark-grey">M</div>
+                        // Mistral logo - from desktop
+                        return (
+                          <div className="w-10 h-10 rounded-full bg-wells-light-beige/50 flex items-center justify-center border border-wells-warm-grey/20 p-2">
+                            <img src="/logos/mistral-logo.png" alt="Mistral" className="w-full h-full object-contain" />
+                          </div>
+                        )
                       }
                       if (provider === 'xai' || modelIdLower.includes('grok')) {
-                        // xAI logo - using text for now
-                        return <div className="text-xs font-bold text-wells-dark-grey">xAI</div>
+                        // xAI/Grok logo - from desktop
+                        return (
+                          <div className="w-10 h-10 rounded-full bg-wells-light-beige/50 flex items-center justify-center border border-wells-warm-grey/20 p-2">
+                            <img src="/logos/xai-grok.webp" alt="xAI" className="w-full h-full object-contain" />
+                          </div>
+                        )
                       }
                       if (provider === 'qwen' || modelIdLower.includes('qwen')) {
-                        // Qwen logo - using text for now
-                        return <div className="text-xs font-bold text-wells-dark-grey">Qwen</div>
+                        // Qwen logo - from desktop
+                        return (
+                          <div className="w-10 h-10 rounded-full bg-wells-light-beige/50 flex items-center justify-center border border-wells-warm-grey/20 p-2">
+                            <img src="/logos/qwen-logo.jpeg" alt="Qwen" className="w-full h-full object-contain" />
+                          </div>
+                        )
+                      }
+                      if (provider === 'ultralytics' || modelIdLower.includes('yolo')) {
+                        // YOLO/Ultralytics logo - from desktop
+                        return (
+                          <div className="w-10 h-10 rounded-full bg-wells-light-beige/50 flex items-center justify-center border border-wells-warm-grey/20 p-2">
+                            <img src="/logos/yolo-logo.png" alt="Ultralytics" className="w-full h-full object-contain" />
+                          </div>
+                        )
                       }
                       if (modelIdLower.startsWith('apple/')) {
-                        return <TaskIcon className="w-6 h-6 text-wells-dark-grey" /> // Apple logo not available, use task icon
+                        return <Image src="/logos/apple-logo.png" alt="Apple" width={40} height={40} className="object-contain" />
                       }
                       return <TaskIcon className="w-6 h-6 text-wells-dark-grey" />
                     })()}

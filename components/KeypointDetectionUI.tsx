@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import Image from 'next/image'
 import { Upload, Lightbulb, Bell, Loader2, Play, Pause, RefreshCw } from 'lucide-react'
 import { validateMediaFile } from '@/lib/validation'
 import { SquatAnalyzer } from '@/lib/pose/exercises/squat'
@@ -429,8 +430,12 @@ export default function KeypointDetectionUI() {
                             </span>
                         </div>
                         <div className="flex items-center gap-3 mt-2">
-                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                                <span className="text-blue-600 font-bold text-sm">MP</span>
+                            <div className="w-8 h-8 rounded-full bg-white border border-wells-warm-grey/20 flex items-center justify-center overflow-hidden p-1.5">
+                                <img
+                                    src="/logos/google-gemini.png"
+                                    alt="Google"
+                                    className="w-full h-full object-contain"
+                                />
                             </div>
                             <div>
                                 <div className="font-semibold text-wells-dark-grey">
@@ -500,8 +505,8 @@ export default function KeypointDetectionUI() {
                             <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">Coming Soon</span>
                         </div>
                         <div className="flex items-center gap-3 mt-2">
-                            <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
-                                <span className="text-purple-600 font-bold text-sm">Y8</span>
+                            <div className="w-8 h-8 rounded-full bg-white border border-wells-warm-grey/20 flex items-center justify-center overflow-hidden p-1.5">
+                                <img src="/logos/yolo-logo.png" alt="Ultralytics" className="w-full h-full object-contain" />
                             </div>
                             <div>
                                 <div className="font-semibold text-wells-dark-grey">YOLOv8 Pose</div>
@@ -525,8 +530,8 @@ export default function KeypointDetectionUI() {
                             <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">Coming Soon</span>
                         </div>
                         <div className="flex items-center gap-3 mt-2">
-                            <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
-                                <span className="text-purple-600 font-bold text-sm">Y11</span>
+                            <div className="w-8 h-8 rounded-full bg-white border border-wells-warm-grey/20 flex items-center justify-center overflow-hidden p-1.5">
+                                <img src="/logos/yolo-logo.png" alt="Ultralytics" className="w-full h-full object-contain" />
                             </div>
                             <div>
                                 <div className="font-semibold text-wells-dark-grey">YOLOv11 Pose</div>

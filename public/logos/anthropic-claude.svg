@@ -1,0 +1,13 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Anthropic Claude logo - reddish-orange starburst/sun design -->
+  <g>
+    <!-- Central mass with radiating rays/petals -->
+    <path d="M12 12 L12 4 L13 5 L14 4.5 L15 5 L16 4.5 L17 5 L18 6 L17.5 7 L18 8 L17.5 9 L18 10 L17 11 L16 10.5 L15 11 L14 10.5 L13 11 L12 12 L11 11 L10 10.5 L9 11 L8 10.5 L7 11 L6 10 L6.5 9 L6 8 L6.5 7 L6 6 L7 5 L8 4.5 L9 5 L10 4.5 L11 5 Z" fill="#D97757" stroke="#D97757" stroke-width="0.5"/>
+    <!-- Additional rays for starburst effect -->
+    <path d="M12 2 L12.5 3 L13 2.5 L13.5 3 L12 2 Z" fill="#D97757"/>
+    <path d="M22 12 L21 12.5 L20 12 L21 11.5 L22 12 Z" fill="#D97757"/>
+    <path d="M12 22 L11.5 21 L12 20 L12.5 21 L12 22 Z" fill="#D97757"/>
+    <path d="M2 12 L3 11.5 L4 12 L3 12.5 L2 12 Z" fill="#D97757"/>
+  </g>
+</svg>
+
