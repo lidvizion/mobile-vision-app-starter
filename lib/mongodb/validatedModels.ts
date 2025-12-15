@@ -111,14 +111,15 @@ export async function getValidatedModels(
         { 'tags': { $not: { $regex: 'ai-text-detection', $options: 'i' } } },
         { 'tags': { $not: { $regex: 'document-analysis', $options: 'i' } } },
         // ✅ STRICT HF FILTERING: Only Facebook, Microsoft, NVIDIA + Live/Hosted
-        // Include Roboflow models OR HF models from trusted orgs that are live/hosted
+        // DISABLED: Roboflow models excluded (not working - require API keys)
+        // Only include HF models from trusted orgs that are live/hosted
         {
-          $or: [
-            // Roboflow models (always include)
-            { model_id: { $regex: /^roboflow/i } },
-            // HF models: must be from trusted org AND live/hosted
+          // Roboflow models disabled - exclude them
+          model_id: { $not: { $regex: /^roboflow/i } },
+          // HF models: must be from trusted org AND live/hosted
+          $and: [
+            { model_id: { $regex: new RegExp(`^(${strictTrustedOrgs.map(org => org.replace('/', '\\/')).join('|')})`, 'i') } },
             {
-              model_id: { $regex: new RegExp(`^(${strictTrustedOrgs.map(org => org.replace('/', '\\/')).join('|')})`, 'i') },
               $or: [
                 { inferenceStatus: { $in: ['live', 'hosted', 'warm'] } },
                 { hosted: true },
@@ -208,16 +209,17 @@ export async function getValidatedModels(
     
     // Fetch priority models separately (always include them, regardless of keywords)
     // But still apply strict filtering: only trusted orgs + live/hosted for HF models
+    // DISABLED: Roboflow models excluded (not working - require API keys)
     const priorityQuery: any = {
-      model_id: { $in: priorityModelIds },
       validated: true,
-      // Apply same strict filtering for priority models
-      $or: [
-        // Roboflow models (always include)
-        { model_id: { $regex: /^roboflow/i } },
+      $and: [
+        // Must be in priority list
+        { model_id: { $in: priorityModelIds } },
+        // Roboflow models disabled - exclude them
+        { model_id: { $not: { $regex: /^roboflow/i } } },
         // HF models: must be from trusted org AND live/hosted
+        { model_id: { $regex: new RegExp(`^(${strictTrustedOrgs.map(org => org.replace('/', '\\/')).join('|')})`, 'i') } },
         {
-          model_id: { $regex: new RegExp(`^(${strictTrustedOrgs.map(org => org.replace('/', '\\/')).join('|')})`, 'i') },
           $or: [
             { inferenceStatus: { $in: ['live', 'hosted', 'warm'] } },
             { hosted: true },
@@ -248,37 +250,17 @@ export async function getValidatedModels(
       index === self.findIndex(m => m.model_id === model.model_id)
     )
     
-    // Sort: Roboflow models FIRST (highest priority), then priority models, then others
+    // DISABLED: Roboflow prioritization removed (Roboflow models not working)
+    // Sort: Priority models first, then others
     uniqueModels.sort((a, b) => {
-      const aIsRoboflow = (a.model_id || '').toLowerCase().startsWith('roboflow/') ||
-                         (a.model_id || '').toLowerCase().includes('roboflow') ||
-                         (a.inferenceEndpoint && (
-                           a.inferenceEndpoint.includes('roboflow.com') ||
-                           a.inferenceEndpoint.includes('serverless.roboflow.com') ||
-                           a.inferenceEndpoint.includes('detect.roboflow.com') ||
-                           a.inferenceEndpoint.includes('segment.roboflow.com')
-                         ))
-      const bIsRoboflow = (b.model_id || '').toLowerCase().startsWith('roboflow/') ||
-                         (b.model_id || '').toLowerCase().includes('roboflow') ||
-                         (b.inferenceEndpoint && (
-                           b.inferenceEndpoint.includes('roboflow.com') ||
-                           b.inferenceEndpoint.includes('serverless.roboflow.com') ||
-                           b.inferenceEndpoint.includes('detect.roboflow.com') ||
-                           b.inferenceEndpoint.includes('segment.roboflow.com')
-                         ))
-      
       const aIsPriority = priorityModelIds.includes(a.model_id)
       const bIsPriority = priorityModelIds.includes(b.model_id)
       
-      // PRIORITY 1: Roboflow models always come first
-      if (aIsRoboflow && !bIsRoboflow) return -1
-      if (!aIsRoboflow && bIsRoboflow) return 1
-      
-      // PRIORITY 2: Priority models come after Roboflow
+      // PRIORITY: Priority models come first
       if (aIsPriority && !bIsPriority) return -1
       if (!aIsPriority && bIsPriority) return 1
       
-      // PRIORITY 3: Maintain original order for others (relevance scoring handled in searchValidatedModels)
+      // Maintain original order for others (relevance scoring handled in searchValidatedModels)
       return 0
     })
     
@@ -742,14 +724,10 @@ export async function searchValidatedModels(
       }
     })
     
-    // PRIORITY 1: Roboflow models get massive boost (always prioritize Roboflow)
-    if (isRoboflow) {
-      relevanceScore += 100000 // Very high boost for all Roboflow models
-    }
-    
-    // PRIORITY 2: Priority models get boost (but less than Roboflow)
-    if (isPriority && !isRoboflow) {
-      relevanceScore += 50000 // High boost for priority models (after Roboflow)
+    // DISABLED: Roboflow prioritization removed (Roboflow models not working)
+    // PRIORITY: Priority models get boost
+    if (isPriority) {
+      relevanceScore += 50000 // High boost for priority models
     }
     
     return {
@@ -758,20 +736,10 @@ export async function searchValidatedModels(
     }
   })
   
-  // Sort by relevance score: Roboflow models first, then by keyword matches
+  // DISABLED: Roboflow prioritization removed (Roboflow models not working)
+  // Sort by relevance score
   scoredModels.sort((a, b) => {
-    // Roboflow models always come first
-    const aIsRoboflow = (a.model_id || '').toLowerCase().startsWith('roboflow/') ||
-                       (a.model_id || '').toLowerCase().includes('roboflow') ||
-                       (a.inferenceEndpoint && a.inferenceEndpoint.includes('roboflow.com'))
-    const bIsRoboflow = (b.model_id || '').toLowerCase().startsWith('roboflow/') ||
-                       (b.model_id || '').toLowerCase().includes('roboflow') ||
-                       (b.inferenceEndpoint && b.inferenceEndpoint.includes('roboflow.com'))
-    
-    if (aIsRoboflow && !bIsRoboflow) return -1
-    if (!aIsRoboflow && bIsRoboflow) return 1
-    
-    // Otherwise sort by relevance score
+    // Sort by relevance score
     return b.relevanceScore - a.relevanceScore
   })
   

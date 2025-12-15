@@ -588,7 +588,14 @@ interface NormalizedModel {
 import { getValidatedModels, searchValidatedModels, saveRoboflowModelToValidated } from '@/lib/mongodb/validatedModels';
 import type { RoboflowModel } from '../../lib/roboflowScraper';
 
+// DISABLED: Roboflow models are not working (require API keys)
+// Only Hugging Face and Google Lambda models are working
 async function searchRoboflowModelsPython(keywords: string[], taskType: string): Promise<NormalizedModel[]> {
+  // Return empty array - Roboflow models disabled
+  console.log(`⚠️ Roboflow search disabled - returning empty results`)
+  return []
+  
+  /* COMMENTED OUT - Roboflow models not working
   try {
     console.log(`🐍 Starting Roboflow search (Node.js Scraper) for: ${keywords.join(', ')}`)
 
@@ -792,6 +799,7 @@ async function searchRoboflowModelsPython(keywords: string[], taskType: string):
     console.error('❌ Error in searchRoboflowModelsNode:', error);
     return [];
   }
+  */
 }
 
 // ---------------- Helper function to normalize JSON ----------------
@@ -1167,20 +1175,18 @@ async function prioritizeKnownWorkingModels(models: any[]): Promise<any[]> {
         validated: true,
         works: true,
         workingDate: { $gte: thirtyDaysAgo },
+        // DISABLED: Roboflow models excluded (not working - require API keys)
         // Only include HF models from trusted orgs that are live/hosted
+        // Exclude Roboflow models
+        model_id: { 
+          $not: { $regex: /^roboflow/i },
+          $regex: new RegExp(`^(${strictTrustedOrgs.map(org => org.replace('/', '\\/')).join('|')})`, 'i')
+        },
         $or: [
-          // Roboflow models (always include if validated)
-          { model_id: { $regex: /^roboflow/i } },
-          // HF models: must be from trusted org AND live/hosted
-          {
-            model_id: { $regex: new RegExp(`^(${strictTrustedOrgs.map(org => org.replace('/', '\\/')).join('|')})`, 'i') },
-            $or: [
-              { inferenceStatus: { $in: ['live', 'hosted', 'warm'] } },
-              { hosted: true },
-              { warm: true },
-              { supportsInference: true }
-            ]
-          }
+          { inferenceStatus: { $in: ['live', 'hosted', 'warm'] } },
+          { hosted: true },
+          { warm: true },
+          { supportsInference: true }
         ]
       })
       .project({ model_id: 1, workingDate: 1, inferenceStatus: 1, hosted: 1, warm: 1, supportsInference: 1 })
@@ -2768,22 +2774,17 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
       };
     })
 
-    // Sort: Roboflow models FIRST (highest priority), then priority models, then by relevance score
+    // DISABLED: Roboflow prioritization removed (Roboflow models not working)
+    // Sort: Priority models first, then by relevance score
     curatedModels.sort((a, b) => {
-      const aIsRoboflow = a.source === 'roboflow'
-      const bIsRoboflow = b.source === 'roboflow'
       const aIsPriority = priorityModelIds.includes(a.id)
       const bIsPriority = priorityModelIds.includes(b.id)
 
-      // PRIORITY 1: Roboflow models always come first (even above priority HF models)
-      if (aIsRoboflow && !bIsRoboflow) return -1
-      if (!aIsRoboflow && bIsRoboflow) return 1
-
-      // PRIORITY 2: Priority models come after Roboflow
+      // PRIORITY: Priority models come first
       if (aIsPriority && !bIsPriority) return -1
       if (!aIsPriority && bIsPriority) return 1
 
-      // PRIORITY 3: Sort by relevance score
+      // Sort by relevance score
       return b.relevanceScore - a.relevanceScore
     })
 
@@ -2913,22 +2914,25 @@ async function startBackgroundSearch(keywords: string[], queryId: string, jobId:
         return []
       })
 
+    // DISABLED: Roboflow models are not working (require API keys)
     // Search Roboflow models
-    const rfPromise = searchRoboflowModelsPython(keywords, taskType || 'object-detection')
-      .then(async (models) => {
-        if (models.length > 0) {
-          await saveBackgroundResults(jobId, queryId, models, 'roboflow')
-          console.log(`✅ Saved ${models.length} Roboflow models to MongoDB`)
-        }
-        return models
-      })
-      .catch(error => {
-        console.error('❌ Roboflow search failed:', error)
-        return []
-      })
+    // const rfPromise = searchRoboflowModelsPython(keywords, taskType || 'object-detection')
+    //   .then(async (models) => {
+    //     if (models.length > 0) {
+    //       await saveBackgroundResults(jobId, queryId, models, 'roboflow')
+    //       console.log(`✅ Saved ${models.length} Roboflow models to MongoDB`)
+    //     }
+    //     return models
+    //   })
+    //   .catch(error => {
+    //     console.error('❌ Roboflow search failed:', error)
+    //     return []
+    //   })
+    const rfModels: any[] = [] // Roboflow disabled
 
-    // Wait for both searches to complete
-    const [hfModels, rfModels] = await Promise.all([hfPromise, rfPromise])
+    // Wait for searches to complete (only HF now)
+    const hfModels = await hfPromise
+    // const [hfModels, rfModels] = await Promise.all([hfPromise, rfPromise])
 
     const totalModels = hfModels.length + rfModels.length
     const duration = Date.now() - startTime
@@ -2938,8 +2942,8 @@ async function startBackgroundSearch(keywords: string[], queryId: string, jobId:
     // Update job status to completed
     await updateJobStatus(jobId, 'completed', totalModels)
 
-    // Save to analytics
-    const allBackgroundModels = [...rfModels, ...hfModels].map(model => ({
+    // Save to analytics (only HF models - Roboflow disabled)
+    const allBackgroundModels = [...hfModels].map(model => ({
       ...model,
       isCurated: false
     }))
