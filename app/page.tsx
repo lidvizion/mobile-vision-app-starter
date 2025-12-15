@@ -39,7 +39,10 @@ export default function Home() {
       modelUrl: 'https://ai.google.dev/models/gemini',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: '/api/gemini-inference'
+      inferenceEndpoint: '/api/gemini-inference',
+      status: 'active',
+      isDisabled: false,
+      provider: 'google'
     },
     {
       id: 'gemini-2.5-flash',
@@ -54,7 +57,10 @@ export default function Home() {
       modelUrl: 'https://ai.google.dev/models/gemini',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: '/api/gemini-inference'
+      inferenceEndpoint: '/api/gemini-inference',
+      status: 'active',
+      isDisabled: false,
+      provider: 'google'
     },
     {
       id: 'gemini-2.5-flash-lite',
@@ -69,7 +75,10 @@ export default function Home() {
       modelUrl: 'https://ai.google.dev/models/gemini',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: '/api/gemini-inference'
+      inferenceEndpoint: '/api/gemini-inference',
+      status: 'active',
+      isDisabled: false,
+      provider: 'google'
     },
     {
       id: 'gemini-2.5-pro',
@@ -84,7 +93,10 @@ export default function Home() {
       modelUrl: 'https://ai.google.dev/models/gemini',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: '/api/gemini-inference'
+      inferenceEndpoint: '/api/gemini-inference',
+      status: 'active',
+      isDisabled: false,
+      provider: 'google'
     },
     {
       id: 'gemini-3-pro',
@@ -99,7 +111,10 @@ export default function Home() {
       modelUrl: 'https://ai.google.dev/models/gemini',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: '/api/gemini-inference'
+      inferenceEndpoint: '/api/gemini-inference',
+      status: 'active',
+      isDisabled: false,
+      provider: 'google'
     },
     {
       id: 'facebook/detr-resnet-101',
@@ -114,7 +129,10 @@ export default function Home() {
       modelUrl: 'https://huggingface.co/facebook/detr-resnet-101',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: 'https://api-inference.huggingface.co/models/facebook/detr-resnet-101'
+      inferenceEndpoint: 'https://api-inference.huggingface.co/models/facebook/detr-resnet-101',
+      status: 'active',
+      isDisabled: false,
+      provider: 'huggingface'
     },
     {
       id: 'facebook/detr-resnet-50',
@@ -129,7 +147,10 @@ export default function Home() {
       modelUrl: 'https://huggingface.co/facebook/detr-resnet-50',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: 'https://api-inference.huggingface.co/models/facebook/detr-resnet-50'
+      inferenceEndpoint: 'https://api-inference.huggingface.co/models/facebook/detr-resnet-50',
+      status: 'active',
+      isDisabled: false,
+      provider: 'huggingface'
     },
     {
       id: 'microsoft/resnet-50',
@@ -144,7 +165,10 @@ export default function Home() {
       modelUrl: 'https://huggingface.co/microsoft/resnet-50',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: 'https://api-inference.huggingface.co/models/microsoft/resnet-50'
+      inferenceEndpoint: 'https://api-inference.huggingface.co/models/microsoft/resnet-50',
+      status: 'active',
+      isDisabled: false,
+      provider: 'huggingface'
     },
     {
       id: 'google/vit-base-patch16-224',
@@ -159,7 +183,10 @@ export default function Home() {
       modelUrl: 'https://huggingface.co/google/vit-base-patch16-224',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/google/vit-base-patch16-224'
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/google/vit-base-patch16-224',
+      status: 'active',
+      isDisabled: false,
+      provider: 'huggingface'
     },
     {
       id: 'google/efficientnet-b0',
@@ -174,7 +201,10 @@ export default function Home() {
       modelUrl: 'https://huggingface.co/google/efficientnet-b0',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/google/efficientnet-b0'
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/google/efficientnet-b0',
+      status: 'active',
+      isDisabled: false,
+      provider: 'huggingface'
     },
     {
       id: 'facebook/convnext-tiny-224',
@@ -189,7 +219,10 @@ export default function Home() {
       modelUrl: 'https://huggingface.co/facebook/convnext-tiny-224',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/convnext-tiny-224'
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/convnext-tiny-224',
+      status: 'active',
+      isDisabled: false,
+      provider: 'huggingface'
     },
     {
       id: 'facebook/convnext-base-224',
@@ -204,7 +237,10 @@ export default function Home() {
       modelUrl: 'https://huggingface.co/facebook/convnext-base-224',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/convnext-base-224'
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/convnext-base-224',
+      status: 'active',
+      isDisabled: false,
+      provider: 'huggingface'
     },
     {
       id: 'microsoft/beit-base-patch16-224-pt22k-ft22k',
@@ -219,7 +255,10 @@ export default function Home() {
       modelUrl: 'https://huggingface.co/microsoft/beit-base-patch16-224-pt22k-ft22k',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/microsoft/beit-base-patch16-224-pt22k-ft22k'
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/microsoft/beit-base-patch16-224-pt22k-ft22k',
+      status: 'active',
+      isDisabled: false,
+      provider: 'huggingface'
     },
     {
       id: 'apple/mobilevit-small',
@@ -234,7 +273,10 @@ export default function Home() {
       modelUrl: 'https://huggingface.co/apple/mobilevit-small',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/apple/mobilevit-small'
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/apple/mobilevit-small',
+      status: 'active',
+      isDisabled: false,
+      provider: 'huggingface'
     },
     {
       id: 'facebook/maskformer-swin-large-ade',
@@ -249,7 +291,10 @@ export default function Home() {
       modelUrl: 'https://huggingface.co/facebook/maskformer-swin-large-ade',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/maskformer-swin-large-ade'
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/maskformer-swin-large-ade',
+      status: 'active',
+      isDisabled: false,
+      provider: 'huggingface'
     },
     {
       id: 'nvidia/segformer-b0-finetuned-ade-512-512',
@@ -264,7 +309,10 @@ export default function Home() {
       modelUrl: 'https://huggingface.co/nvidia/segformer-b0-finetuned-ade-512-512',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/nvidia/segformer-b0-finetuned-ade-512-512'
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/nvidia/segformer-b0-finetuned-ade-512-512',
+      status: 'active',
+      isDisabled: false,
+      provider: 'huggingface'
     },
     {
       id: 'facebook/detr-resnet-50-panoptic',
@@ -279,7 +327,10 @@ export default function Home() {
       modelUrl: 'https://huggingface.co/facebook/detr-resnet-50-panoptic',
       platforms: [],
       supportsInference: true,
-      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/detr-resnet-50-panoptic'
+      inferenceEndpoint: 'https://router.huggingface.co/hf-inference/models/facebook/detr-resnet-50-panoptic',
+      status: 'active',
+      isDisabled: false,
+      provider: 'huggingface'
     },
     {
       id: 'meta/sam-segment-anything',
@@ -293,7 +344,432 @@ export default function Home() {
       frameworks: [],
       modelUrl: 'https://aidemos.meta.com/segment-anything/',
       platforms: [],
-      supportsInference: false
+      supportsInference: false,
+      status: 'active',
+      isDisabled: false,
+      provider: 'meta'
+    },
+    // Anthropic Claude Models - Coming Soon
+    {
+      id: 'anthropic/claude-3-haiku',
+      name: 'Claude 3 Haiku',
+      description: 'Anthropic\'s fastest Claude model for vision tasks. Fast and efficient multimodal AI.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Anthropic',
+      downloads: 0,
+      tags: ['claude', 'anthropic', 'multimodal', 'vision'],
+      frameworks: [],
+      modelUrl: 'https://www.anthropic.com/claude',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'anthropic',
+      comingSoonReason: 'Anthropic API integration pending'
+    },
+    {
+      id: 'anthropic/claude-3.7-sonnet',
+      name: 'Claude 3.7 Sonnet',
+      description: 'Anthropic\'s balanced Claude model with enhanced vision capabilities.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Anthropic',
+      downloads: 0,
+      tags: ['claude', 'anthropic', 'multimodal', 'vision'],
+      frameworks: [],
+      modelUrl: 'https://www.anthropic.com/claude',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'anthropic',
+      comingSoonReason: 'Anthropic API integration pending'
+    },
+    {
+      id: 'anthropic/claude-4-opus',
+      name: 'Claude 4 Opus',
+      description: 'Anthropic\'s most capable Claude model for advanced vision tasks.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Anthropic',
+      downloads: 0,
+      tags: ['claude', 'anthropic', 'multimodal', 'vision'],
+      frameworks: [],
+      modelUrl: 'https://www.anthropic.com/claude',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'anthropic',
+      comingSoonReason: 'Anthropic API integration pending'
+    },
+    {
+      id: 'anthropic/claude-4-sonnet',
+      name: 'Claude 4 Sonnet',
+      description: 'Anthropic\'s advanced Claude model with strong vision understanding.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Anthropic',
+      downloads: 0,
+      tags: ['claude', 'anthropic', 'multimodal', 'vision'],
+      frameworks: [],
+      modelUrl: 'https://www.anthropic.com/claude',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'anthropic',
+      comingSoonReason: 'Anthropic API integration pending'
+    },
+    {
+      id: 'anthropic/claude-4.1-opus',
+      name: 'Claude 4.1 Opus',
+      description: 'Enhanced Claude 4 Opus with improved vision capabilities.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Anthropic',
+      downloads: 0,
+      tags: ['claude', 'anthropic', 'multimodal', 'vision'],
+      frameworks: [],
+      modelUrl: 'https://www.anthropic.com/claude',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'anthropic',
+      comingSoonReason: 'Anthropic API integration pending'
+    },
+    {
+      id: 'anthropic/claude-4.5-haiku',
+      name: 'Claude 4.5 Haiku',
+      description: 'Latest fast Claude model with enhanced vision understanding.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Anthropic',
+      downloads: 0,
+      tags: ['claude', 'anthropic', 'multimodal', 'vision'],
+      frameworks: [],
+      modelUrl: 'https://www.anthropic.com/claude',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'anthropic',
+      comingSoonReason: 'Anthropic API integration pending'
+    },
+    {
+      id: 'anthropic/claude-4.5-sonnet',
+      name: 'Claude 4.5 Sonnet',
+      description: 'Latest balanced Claude model with advanced vision capabilities.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Anthropic',
+      downloads: 0,
+      tags: ['claude', 'anthropic', 'multimodal', 'vision'],
+      frameworks: [],
+      modelUrl: 'https://www.anthropic.com/claude',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'anthropic',
+      comingSoonReason: 'Anthropic API integration pending'
+    },
+    // OpenAI Models - Coming Soon
+    {
+      id: 'openai/gpt-4o',
+      name: 'GPT-4o',
+      description: 'OpenAI\'s advanced multimodal model with vision capabilities.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'OpenAI',
+      downloads: 0,
+      tags: ['gpt-4', 'openai', 'multimodal', 'vision'],
+      frameworks: [],
+      modelUrl: 'https://openai.com/gpt-4',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'openai',
+      comingSoonReason: 'OpenAI API integration pending'
+    },
+    // Microsoft Models - Coming Soon
+    {
+      id: 'microsoft/florence-2',
+      name: 'Florence-2',
+      description: 'Microsoft\'s advanced vision-language model for comprehensive image understanding.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Microsoft',
+      downloads: 0,
+      tags: ['florence', 'microsoft', 'vision-language', 'multimodal'],
+      frameworks: [],
+      modelUrl: 'https://huggingface.co/microsoft/Florence-2-base-ft',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'microsoft',
+      comingSoonReason: 'Microsoft Florence-2 API integration pending'
+    },
+    // Google Models - Coming Soon
+    {
+      id: 'google/gemma-3-4b',
+      name: 'Gemma 3 4B',
+      description: 'Google\'s efficient 4B parameter vision-language model.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Google',
+      downloads: 0,
+      tags: ['gemma', 'google', 'vision-language', 'multimodal'],
+      frameworks: [],
+      modelUrl: 'https://ai.google.dev/gemma',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'google',
+      comingSoonReason: 'Google Gemma API integration pending'
+    },
+    {
+      id: 'google/gemma-3-12b',
+      name: 'Gemma 3 12B',
+      description: 'Google\'s balanced 12B parameter vision-language model.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Google',
+      downloads: 0,
+      tags: ['gemma', 'google', 'vision-language', 'multimodal'],
+      frameworks: [],
+      modelUrl: 'https://ai.google.dev/gemma',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'google',
+      comingSoonReason: 'Google Gemma API integration pending'
+    },
+    {
+      id: 'google/gemma-3-27b',
+      name: 'Gemma 3 27B',
+      description: 'Google\'s powerful 27B parameter vision-language model.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Google',
+      downloads: 0,
+      tags: ['gemma', 'google', 'vision-language', 'multimodal'],
+      frameworks: [],
+      modelUrl: 'https://ai.google.dev/gemma',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'google',
+      comingSoonReason: 'Google Gemma API integration pending'
+    },
+    {
+      id: 'google/vision-ocr',
+      name: 'Google Vision OCR',
+      description: 'Google Cloud Vision API for optical character recognition and text extraction.',
+      task: 'ocr',
+      source: 'curated',
+      author: 'Google',
+      downloads: 0,
+      tags: ['ocr', 'google', 'text-extraction', 'vision'],
+      frameworks: [],
+      modelUrl: 'https://cloud.google.com/vision',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'google',
+      comingSoonReason: 'Google Cloud Vision API integration pending'
+    },
+    // Meta Llama Models - Coming Soon
+    {
+      id: 'meta/llama-3.2-vision-11b',
+      name: 'Llama 3.2 Vision 11B',
+      description: 'Meta\'s efficient 11B parameter vision-language model.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Meta',
+      downloads: 0,
+      tags: ['llama', 'meta', 'vision-language', 'multimodal'],
+      frameworks: [],
+      modelUrl: 'https://llama.meta.com',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'meta',
+      comingSoonReason: 'Meta Llama Vision API integration pending'
+    },
+    {
+      id: 'meta/llama-3.2-vision-90b',
+      name: 'Llama 3.2 Vision 90B',
+      description: 'Meta\'s powerful 90B parameter vision-language model.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Meta',
+      downloads: 0,
+      tags: ['llama', 'meta', 'vision-language', 'multimodal'],
+      frameworks: [],
+      modelUrl: 'https://llama.meta.com',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'meta',
+      comingSoonReason: 'Meta Llama Vision API integration pending'
+    },
+    {
+      id: 'meta/llama-4-maverick',
+      name: 'Llama 4 Maverick',
+      description: 'Meta\'s latest Llama 4 model with advanced vision capabilities.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Meta',
+      downloads: 0,
+      tags: ['llama', 'meta', 'vision-language', 'multimodal'],
+      frameworks: [],
+      modelUrl: 'https://llama.meta.com',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'meta',
+      comingSoonReason: 'Meta Llama 4 API integration pending'
+    },
+    {
+      id: 'meta/llama-4-scout',
+      name: 'Llama 4 Scout',
+      description: 'Meta\'s Llama 4 Scout model optimized for vision tasks.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Meta',
+      downloads: 0,
+      tags: ['llama', 'meta', 'vision-language', 'multimodal'],
+      frameworks: [],
+      modelUrl: 'https://llama.meta.com',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'meta',
+      comingSoonReason: 'Meta Llama 4 API integration pending'
+    },
+    // Mistral AI Models - Coming Soon
+    {
+      id: 'mistral/small-3.1-24b',
+      name: 'Mistral Small 3.1 24B',
+      description: 'Mistral\'s efficient 24B parameter vision-language model.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Mistral AI',
+      downloads: 0,
+      tags: ['mistral', 'vision-language', 'multimodal'],
+      frameworks: [],
+      modelUrl: 'https://mistral.ai',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'mistral',
+      comingSoonReason: 'Mistral API integration pending'
+    },
+    {
+      id: 'mistral/medium-3.1',
+      name: 'Mistral Medium 3.1',
+      description: 'Mistral\'s balanced vision-language model with strong performance.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Mistral AI',
+      downloads: 0,
+      tags: ['mistral', 'vision-language', 'multimodal'],
+      frameworks: [],
+      modelUrl: 'https://mistral.ai',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'mistral',
+      comingSoonReason: 'Mistral API integration pending'
+    },
+    {
+      id: 'mistral/pixtral-12b',
+      name: 'Pixtral 12B',
+      description: 'Mistral\'s specialized vision model for image understanding.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Mistral AI',
+      downloads: 0,
+      tags: ['pixtral', 'mistral', 'vision', 'multimodal'],
+      frameworks: [],
+      modelUrl: 'https://mistral.ai',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'mistral',
+      comingSoonReason: 'Mistral Pixtral API integration pending'
+    },
+    // xAI Models - Coming Soon
+    {
+      id: 'xai/grok-4',
+      name: 'Grok 4',
+      description: 'xAI\'s advanced multimodal model with vision capabilities.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'xAI',
+      downloads: 0,
+      tags: ['grok', 'xai', 'multimodal', 'vision'],
+      frameworks: [],
+      modelUrl: 'https://x.ai',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'xai',
+      comingSoonReason: 'xAI Grok API integration pending'
+    },
+    // Qwen Models - Coming Soon
+    {
+      id: 'qwen/qwen-vl-max',
+      name: 'Qwen VL Max',
+      description: 'Alibaba\'s powerful vision-language model for comprehensive image understanding.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Alibaba',
+      downloads: 0,
+      tags: ['qwen', 'vision-language', 'multimodal'],
+      frameworks: [],
+      modelUrl: 'https://qwenlm.github.io',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'qwen',
+      comingSoonReason: 'Qwen API integration pending'
+    },
+    {
+      id: 'qwen/qwen2.5-vl-7b-instruct',
+      name: 'Qwen2.5-VL-7B-Instruct',
+      description: 'Alibaba\'s efficient 7B parameter vision-language model with instruction following.',
+      task: 'multimodal',
+      source: 'curated',
+      author: 'Alibaba',
+      downloads: 0,
+      tags: ['qwen', 'vision-language', 'multimodal', 'instruct'],
+      frameworks: [],
+      modelUrl: 'https://qwenlm.github.io',
+      platforms: [],
+      supportsInference: false,
+      status: 'coming_soon',
+      isDisabled: true,
+      provider: 'qwen',
+      comingSoonReason: 'Qwen API integration pending'
     }
   ]
 

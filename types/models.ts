@@ -3,7 +3,7 @@ export interface ModelMetadata {
   name: string
   description: string
   task: string
-  source: 'roboflow' | 'huggingface' | 'curated' | 'background'
+  source: 'roboflow' | 'huggingface' | 'curated' | 'background' | 'anthropic' | 'openai' | 'google' | 'meta' | 'mistral' | 'xai' | 'qwen' | 'microsoft'
   author: string
   downloads: number
   likes?: number
@@ -19,6 +19,11 @@ export interface ModelMetadata {
   platforms: string[]
   // Phase 1: Curated vs Background models
   isCurated?: boolean
+  // Model status and availability
+  status?: 'active' | 'coming_soon' // Model availability status
+  isDisabled?: boolean // Whether model is disabled/not available
+  comingSoonReason?: string // Reason why model is coming soon
+  provider?: 'huggingface' | 'google' | 'anthropic' | 'openai' | 'meta' | 'mistral' | 'xai' | 'qwen' | 'microsoft' | 'roboflow' // Model provider
   // Model metrics
   metrics?: {
     mAP?: number

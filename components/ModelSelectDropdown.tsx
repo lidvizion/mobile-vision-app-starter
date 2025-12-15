@@ -6,28 +6,27 @@ import { ChevronDown, Check } from 'lucide-react'
 import { ModelMetadata } from '@/types/models'
 import { cn } from '@/lib/utils'
 
-// Model logos mapping - dynamically determine logo based on model ID prefix
-const getModelLogo = (modelId: string): string | null => {
+// Model logos mapping - dynamically determine logo based on model ID prefix and provider
+const getModelLogo = (modelId: string, provider?: string): string | null => {
   const idLower = modelId.toLowerCase()
+  const providerLower = provider?.toLowerCase() || ''
   
-  // Gemini models
-  if (idLower.includes('gemini')) {
+  // Use provider field if available
+  if (providerLower === 'google' || idLower.includes('gemini') || idLower.startsWith('google/')) {
     return '/logos/google-gemini.png'
   }
   
-  // Google models
-  if (idLower.startsWith('google/')) {
-    return '/logos/google-gemini.png'
-  }
-  
-  // Facebook/Meta models
-  if (idLower.startsWith('facebook/') || idLower.startsWith('meta/')) {
+  if (providerLower === 'meta' || idLower.startsWith('facebook/') || idLower.startsWith('meta/')) {
     return '/logos/meta-logo.png'
   }
   
-  // Microsoft models
-  if (idLower.startsWith('microsoft/')) {
+  if (providerLower === 'microsoft' || idLower.startsWith('microsoft/')) {
     return '/logos/microsoft.svg'
+  }
+  
+  // Anthropic, OpenAI, Mistral, xAI, Qwen - no logos available yet, return null
+  if (providerLower === 'anthropic' || providerLower === 'openai' || providerLower === 'mistral' || providerLower === 'xai' || providerLower === 'qwen') {
+    return null
   }
   
   // Apple models - use meta logo as fallback (no Apple logo available)
@@ -118,7 +117,7 @@ export default function ModelSelectDropdown({
     }
   }, [isOpen])
 
-  const selectedLogo = modelLogos[selectedModel.id] || getModelLogo(selectedModel.id)
+  const selectedLogo = modelLogos[selectedModel.id] || getModelLogo(selectedModel.id, selectedModel.provider)
   const selectedGeminiInfo = getGeminiModelInfo(selectedModel.id)
 
   return (
@@ -169,22 +168,28 @@ export default function ModelSelectDropdown({
         <div className="absolute z-50 w-full mt-1 bg-white border border-wells-warm-grey/20 rounded-lg shadow-lg overflow-hidden">
           <div className="py-1 max-h-60 overflow-auto">
             {availableModels.map((model) => {
-              const logo = modelLogos[model.id] || getModelLogo(model.id)
+              const logo = modelLogos[model.id] || getModelLogo(model.id, model.provider)
               const isSelected = model.id === selectedModel.id
               const geminiInfo = getGeminiModelInfo(model.id)
+              const isComingSoon = model.status === 'coming_soon' || model.isDisabled
 
               return (
                 <button
                   key={model.id}
                   type="button"
                   onClick={() => {
-                    onModelChange(model)
-                    setIsOpen(false)
+                    if (!isComingSoon) {
+                      onModelChange(model)
+                      setIsOpen(false)
+                    }
                   }}
+                  disabled={isComingSoon}
                   className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors',
-                    'hover:bg-wells-light-beige/50',
-                    isSelected && 'bg-wells-light-beige/30'
+                    isComingSoon 
+                      ? 'opacity-50 cursor-not-allowed'
+                      : 'hover:bg-wells-light-beige/50',
+                    isSelected && !isComingSoon && 'bg-wells-light-beige/30'
                   )}
                 >
                   {/* Model Logo */}
@@ -205,9 +210,16 @@ export default function ModelSelectDropdown({
                   
                   {/* Model Name with Speed Indicator */}
                   <div className="flex-1 flex flex-col">
-                    <span className="text-sm font-medium text-wells-dark-grey">
-                      {model.name}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-wells-dark-grey">
+                        {model.name}
+                      </span>
+                      {isComingSoon && (
+                        <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-xs font-semibold">
+                          Coming Soon
+                        </span>
+                      )}
+                    </div>
                     {geminiInfo && (
                       <span className="text-xs text-wells-warm-grey">
                         {geminiInfo.icon} {geminiInfo.speed}
@@ -216,7 +228,7 @@ export default function ModelSelectDropdown({
                   </div>
                   
                   {/* Checkmark for selected */}
-                  {isSelected && (
+                  {isSelected && !isComingSoon && (
                     <Check className="w-4 h-4 text-wells-dark-grey flex-shrink-0" />
                   )}
                 </button>

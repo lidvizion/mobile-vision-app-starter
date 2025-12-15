@@ -18,8 +18,11 @@ interface ParallelModelTesterProps {
 }
 
 // Model categorization by task type
+// Each task type shows models specifically designed for that task
+// Multimodal models appear in detection, classification, and segmentation dropdowns
 const modelsByTaskType: Record<string, string[]> = {
   detection: [
+    // Active detection models
     'gemini-2.0-flash-exp',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
@@ -27,9 +30,33 @@ const modelsByTaskType: Record<string, string[]> = {
     'gemini-3-pro',
     'facebook/detr-resnet-101',
     'facebook/detr-resnet-50',
+    // Coming soon - Multimodal models (can do detection)
+    'anthropic/claude-3-haiku',
+    'anthropic/claude-3.7-sonnet',
+    'anthropic/claude-4-opus',
+    'anthropic/claude-4-sonnet',
+    'anthropic/claude-4.1-opus',
+    'anthropic/claude-4.5-haiku',
+    'anthropic/claude-4.5-sonnet',
+    'openai/gpt-4o',
+    'microsoft/florence-2',
+    'google/gemma-3-4b',
+    'google/gemma-3-12b',
+    'google/gemma-3-27b',
+    'google/vision-ocr', // OCR can detect text
+    'meta/llama-3.2-vision-11b',
+    'meta/llama-3.2-vision-90b',
+    'meta/llama-4-maverick',
+    'meta/llama-4-scout',
+    'mistral/small-3.1-24b',
+    'mistral/medium-3.1',
+    'mistral/pixtral-12b',
+    'xai/grok-4',
+    'qwen/qwen-vl-max',
+    'qwen/qwen2.5-vl-7b-instruct',
   ],
   classification: [
-    // Most capable models first (ordered by capability: speed + accuracy)
+    // Active classification models
     // Tier 1: Gemini models (fastest, most capable, multimodal)
     'gemini-2.0-flash-exp',      // Ultra-fast, experimental, best speed
     'gemini-2.5-flash-lite',     // Ultra-fast, lightweight
@@ -47,12 +74,59 @@ const modelsByTaskType: Record<string, string[]> = {
     'apple/mobilevit-small',      // Mobile-optimized, fast
     // Tier 5: Classic models (reliable baseline)
     'microsoft/resnet-50',        // Classic ResNet, reliable
+    // Coming soon - Multimodal models (can do classification)
+    'anthropic/claude-3-haiku',
+    'anthropic/claude-3.7-sonnet',
+    'anthropic/claude-4-opus',
+    'anthropic/claude-4-sonnet',
+    'anthropic/claude-4.1-opus',
+    'anthropic/claude-4.5-haiku',
+    'anthropic/claude-4.5-sonnet',
+    'openai/gpt-4o',
+    'microsoft/florence-2',
+    'google/gemma-3-4b',
+    'google/gemma-3-12b',
+    'google/gemma-3-27b',
+    'meta/llama-3.2-vision-11b',
+    'meta/llama-3.2-vision-90b',
+    'meta/llama-4-maverick',
+    'meta/llama-4-scout',
+    'mistral/small-3.1-24b',
+    'mistral/medium-3.1',
+    'mistral/pixtral-12b',
+    'xai/grok-4',
+    'qwen/qwen-vl-max',
+    'qwen/qwen2.5-vl-7b-instruct',
   ],
   segmentation: [
+    // Active segmentation models
     'meta/sam-segment-anything',  // SAM - redirects to Meta AI Demos
     'facebook/maskformer-swin-large-ade',  // Semantic segmentation
     'nvidia/segformer-b0-finetuned-ade-512-512', // Scene segmentation
-    'facebook/detr-resnet-50-panoptic' // Panoptic segmentation
+    'facebook/detr-resnet-50-panoptic', // Panoptic segmentation
+    // Coming soon - Multimodal models (can do segmentation)
+    'anthropic/claude-3-haiku',
+    'anthropic/claude-3.7-sonnet',
+    'anthropic/claude-4-opus',
+    'anthropic/claude-4-sonnet',
+    'anthropic/claude-4.1-opus',
+    'anthropic/claude-4.5-haiku',
+    'anthropic/claude-4.5-sonnet',
+    'openai/gpt-4o',
+    'microsoft/florence-2',
+    'google/gemma-3-4b',
+    'google/gemma-3-12b',
+    'google/gemma-3-27b',
+    'meta/llama-3.2-vision-11b',
+    'meta/llama-3.2-vision-90b',
+    'meta/llama-4-maverick',
+    'meta/llama-4-scout',
+    'mistral/small-3.1-24b',
+    'mistral/medium-3.1',
+    'mistral/pixtral-12b',
+    'xai/grok-4',
+    'qwen/qwen-vl-max',
+    'qwen/qwen2.5-vl-7b-instruct',
   ],
   'keypoint-detection': [] // Coming soon - will be populated when MediaPipe Pose is added
 }
@@ -95,6 +169,7 @@ export default function ParallelModelTester({
     const modelMap = new Map(featuredModels.map(model => [model.id, model]))
 
     // Return models in the order specified in modelsByTaskType (capability order)
+    // Include coming soon models in dropdown but exclude from initial selection
     const filtered = allowedModelIds
       .map(id => {
         const model = modelMap.get(id)
@@ -103,7 +178,9 @@ export default function ParallelModelTester({
         }
         return model
       })
-      .filter((model): model is ModelMetadata => model !== undefined)
+      .filter((model): model is ModelMetadata => 
+        model !== undefined
+      )
 
     console.log('[ParallelModelTester] Filtered models result:', {
       filteredCount: filtered.length,
@@ -113,10 +190,15 @@ export default function ParallelModelTester({
     return filtered
   }, [selectedTaskType, featuredModels])
 
-  // Initialize models based on task type - auto-select first 3 available models
-  // For detection, prioritize gemini-2.5-flash-lite (fastest) as Model 1
+  // Initialize models based on task type - auto-select first 3 available ACTIVE models
+  // Coming soon models are excluded from initial selection but available in dropdown
   const getInitialModels = useCallback((filtered: ModelMetadata[], taskType: string): (ModelMetadata | null)[] => {
-    if (filtered.length === 0) {
+    // Filter out coming soon models for initial selection
+    const activeModels = filtered.filter(model => 
+      model.status !== 'coming_soon' && !model.isDisabled
+    )
+    
+    if (activeModels.length === 0) {
       return [null, null, null]
     }
 
@@ -124,7 +206,7 @@ export default function ParallelModelTester({
     // Model 1: gemini-2.0-flash-exp (fastest: 1-2s)
     // Model 2: facebook/detr-resnet-101
     // Model 3: facebook/detr-resnet-50
-    let sortedModels = [...filtered]
+    let sortedModels = [...activeModels]
     if (taskType.toLowerCase() === 'detection') {
       sortedModels = [...filtered].sort((a, b) => {
         // Model 1: gemini-2.0-flash-exp (fastest: 1-2s)
@@ -183,7 +265,7 @@ export default function ParallelModelTester({
       // Model 2: nvidia/segformer-b0-finetuned-ade-512-512 (Scene segmentation, high quality)
       // Model 3: facebook/detr-resnet-50-panoptic (Panoptic segmentation, complete scene understanding)
       // Note: meta/sam-segment-anything is available but redirects to Meta AI Demos
-      sortedModels = [...filtered].sort((a, b) => {
+      sortedModels = [...activeModels].sort((a, b) => {
         // Priority order for default selection
         if (a.id === 'facebook/maskformer-swin-large-ade') return -1
         if (b.id === 'facebook/maskformer-swin-large-ade') return 1

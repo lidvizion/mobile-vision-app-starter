@@ -553,8 +553,13 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
               <div
                 key={model.id}
                 data-model-source={model.source}
-                className={`card-floating p-3 hover:shadow-xl transition-all cursor-pointer group flex flex-col h-[350px] ${isTopThree ? 'border-2 border-wells-dark-grey/10' : ''
-                  }`}
+                className={`card-floating p-3 hover:shadow-xl transition-all group flex flex-col h-[350px] ${
+                  isTopThree ? 'border-2 border-wells-dark-grey/10' : ''
+                } ${
+                  model.status === 'coming_soon' || model.isDisabled
+                    ? 'opacity-75 cursor-not-allowed'
+                    : 'cursor-pointer'
+                }`}
               >
                 {/* Rank Badge - Only for first 3 models on page 1 */}
                 {isTopThree && (
@@ -574,19 +579,37 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                   <div className="w-12 h-12 bg-gradient-to-br from-wells-dark-grey/5 to-wells-dark-grey/10 rounded-xl flex items-center justify-center border border-wells-warm-grey/20">
                     {(() => {
                       const modelIdLower = model.id?.toLowerCase() || ''
+                      const provider = model.provider || model.source
 
-                      // Use same logo logic as ModelSelectDropdown for consistency
-                      if (modelIdLower.includes('gemini')) {
-                        return <Image src="/logos/google-gemini.png" alt="Gemini" width={40} height={40} className="object-contain" />
-                      }
-                      if (modelIdLower.startsWith('google/')) {
+                      // Use provider field if available, otherwise fall back to ID-based detection
+                      if (provider === 'google' || modelIdLower.includes('gemini') || modelIdLower.startsWith('google/')) {
                         return <Image src="/logos/google-gemini.png" alt="Google" width={40} height={40} className="object-contain" />
                       }
-                      if (modelIdLower.startsWith('facebook/') || modelIdLower.startsWith('meta/')) {
+                      if (provider === 'meta' || modelIdLower.startsWith('facebook/') || modelIdLower.startsWith('meta/')) {
                         return <Image src="/logos/meta-logo.png" alt="Meta" width={40} height={40} className="object-contain" />
                       }
-                      if (modelIdLower.startsWith('microsoft/')) {
+                      if (provider === 'microsoft' || modelIdLower.startsWith('microsoft/')) {
                         return <Image src="/logos/microsoft.svg" alt="Microsoft" width={40} height={40} className="object-contain" />
+                      }
+                      if (provider === 'anthropic' || modelIdLower.includes('claude')) {
+                        // Anthropic logo - using text for now, can be replaced with actual logo
+                        return <div className="text-2xl font-bold text-wells-dark-grey">∧</div>
+                      }
+                      if (provider === 'openai' || modelIdLower.includes('gpt')) {
+                        // OpenAI logo - using text for now, can be replaced with actual logo
+                        return <div className="text-xs font-bold text-wells-dark-grey">OpenAI</div>
+                      }
+                      if (provider === 'mistral' || modelIdLower.includes('mistral') || modelIdLower.includes('pixtral')) {
+                        // Mistral logo - using text for now
+                        return <div className="text-xs font-bold text-wells-dark-grey">M</div>
+                      }
+                      if (provider === 'xai' || modelIdLower.includes('grok')) {
+                        // xAI logo - using text for now
+                        return <div className="text-xs font-bold text-wells-dark-grey">xAI</div>
+                      }
+                      if (provider === 'qwen' || modelIdLower.includes('qwen')) {
+                        // Qwen logo - using text for now
+                        return <div className="text-xs font-bold text-wells-dark-grey">Qwen</div>
                       }
                       if (modelIdLower.startsWith('apple/')) {
                         return <TaskIcon className="w-6 h-6 text-wells-dark-grey" /> // Apple logo not available, use task icon
@@ -679,19 +702,37 @@ const GuidedModelFlow = observer(({ onModelSelect }: GuidedModelFlowProps) => {
                   ))}
                 </div>
 
+                {/* Coming Soon Badge */}
+                {(model.status === 'coming_soon' || model.isDisabled) && (
+                  <div className="mb-2">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-semibold">
+                      <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></span>
+                      Coming Soon
+                    </span>
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex gap-2 mt-auto flex-shrink-0">
                   <button
                     ref={model.id?.toLowerCase().includes('gemini') && modelViewStore.modelList[0]?.id === model.id ? geminiButtonRef : null}
                     data-model-id={model.id}
                     onClick={() => {
+                      if (model.status === 'coming_soon' || model.isDisabled) {
+                        return // Don't allow selection of coming soon models
+                      }
                       console.log('🔘 Use Model button clicked for:', model.id, model.name)
                       handleSelectModel(model)
                     }}
-                    className="flex-1 px-4 py-3 bg-wells-dark-grey text-white rounded-lg hover:bg-wells-warm-grey transition-colors font-semibold text-sm flex items-center justify-center gap-2 group-hover:scale-[1.02] transition-transform"
+                    disabled={model.status === 'coming_soon' || model.isDisabled}
+                    className={`flex-1 px-4 py-3 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-all ${
+                      model.status === 'coming_soon' || model.isDisabled
+                        ? 'bg-wells-warm-grey/30 text-wells-warm-grey cursor-not-allowed opacity-50'
+                        : 'bg-wells-dark-grey text-white hover:bg-wells-warm-grey group-hover:scale-[1.02] transition-transform'
+                    }`}
                   >
-                    Use Model
-                    <ArrowRight className="w-4 h-4" />
+                    {model.status === 'coming_soon' || model.isDisabled ? 'Coming Soon' : 'Use Model'}
+                    {!(model.status === 'coming_soon' || model.isDisabled) && <ArrowRight className="w-4 h-4" />}
                   </button>
                   <a
                     href={model.modelUrl}

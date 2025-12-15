@@ -2707,28 +2707,64 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
       }
     ]
 
-    // Prepend all Gemini models, DETR, ResNet-50, classification models, and segmentation models to the validated models list
-    const allModels = [...geminiModels, detrModel, resnetModel, ...classificationModels, ...segmentationModels, ...validatedModels]
+    // 🆕 ADD COMING SOON MODELS - These models are defined but not yet integrated
+    const comingSoonModels = [
+      // Anthropic Claude Models
+      { model_id: 'anthropic/claude-3-haiku', name: 'Claude 3 Haiku', author: 'Anthropic', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'anthropic', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'anthropic', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet', author: 'Anthropic', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'anthropic', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'anthropic', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'anthropic/claude-4-opus', name: 'Claude 4 Opus', author: 'Anthropic', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'anthropic', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'anthropic', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'anthropic/claude-4-sonnet', name: 'Claude 4 Sonnet', author: 'Anthropic', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'anthropic', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'anthropic', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'anthropic/claude-4.1-opus', name: 'Claude 4.1 Opus', author: 'Anthropic', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'anthropic', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'anthropic', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'anthropic/claude-4.5-haiku', name: 'Claude 4.5 Haiku', author: 'Anthropic', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'anthropic', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'anthropic', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'anthropic/claude-4.5-sonnet', name: 'Claude 4.5 Sonnet', author: 'Anthropic', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'anthropic', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'anthropic', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      // OpenAI Models
+      { model_id: 'openai/gpt-4o', name: 'GPT-4o', author: 'OpenAI', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'openai', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'openai', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      // Microsoft Models
+      { model_id: 'microsoft/florence-2', name: 'Florence-2', author: 'Microsoft', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'microsoft', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'microsoft', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      // Google Models
+      { model_id: 'google/gemma-3-4b', name: 'Gemma 3 4B', author: 'Google', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'google', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'google', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'google/gemma-3-12b', name: 'Gemma 3 12B', author: 'Google', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'google', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'google', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'google/gemma-3-27b', name: 'Gemma 3 27B', author: 'Google', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'google', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'google', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'google/vision-ocr', name: 'Google Vision OCR', author: 'Google', task_type: 'ocr', pipeline_tag: 'ocr', library_name: 'google', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'google', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      // Meta Llama Models
+      { model_id: 'meta/llama-3.2-vision-11b', name: 'Llama 3.2 Vision 11B', author: 'Meta', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'meta', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'meta', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'meta/llama-3.2-vision-90b', name: 'Llama 3.2 Vision 90B', author: 'Meta', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'meta', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'meta', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'meta/llama-4-maverick', name: 'Llama 4 Maverick', author: 'Meta', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'meta', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'meta', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'meta/llama-4-scout', name: 'Llama 4 Scout', author: 'Meta', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'meta', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'meta', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      // Mistral AI Models
+      { model_id: 'mistral/small-3.1-24b', name: 'Mistral Small 3.1 24B', author: 'Mistral AI', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'mistral', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'mistral', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'mistral/medium-3.1', name: 'Mistral Medium 3.1', author: 'Mistral AI', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'mistral', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'mistral', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'mistral/pixtral-12b', name: 'Pixtral 12B', author: 'Mistral AI', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'mistral', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'mistral', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      // xAI Models
+      { model_id: 'xai/grok-4', name: 'Grok 4', author: 'xAI', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'xai', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'xai', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      // Qwen Models
+      { model_id: 'qwen/qwen-vl-max', name: 'Qwen VL Max', author: 'Alibaba', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'qwen', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'qwen', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+      { model_id: 'qwen/qwen2.5-vl-7b-instruct', name: 'Qwen2.5-VL-7B-Instruct', author: 'Alibaba', task_type: 'multimodal', pipeline_tag: 'image-analysis', library_name: 'qwen', relevanceScore: 100, status: 'coming_soon', isDisabled: true, provider: 'qwen', downloads: 0, likes: 0, tags: [], classes: [], validated: false, works: false, supportsInference: false, inferenceStatus: 'pending' as const },
+    ]
+
+    // Prepend all Gemini models, DETR, ResNet-50, classification models, segmentation models, and coming soon models to the validated models list
+    const allModels = [...geminiModels, detrModel, resnetModel, ...classificationModels, ...segmentationModels, ...comingSoonModels, ...validatedModels]
 
     // Convert to the expected format
     const curatedModels = allModels.map(model => {
       // Detect if this is a Roboflow model (check multiple formats)
       const modelIdLower = (model.model_id || '').toLowerCase()
+      const modelAny = model as any
       const isRoboflowModel =
         modelIdLower.startsWith('roboflow/') ||
         modelIdLower.startsWith('roboflow-') ||
-        model.library_name === 'roboflow' ||
-        (model.inferenceEndpoint && (
-          model.inferenceEndpoint.includes('serverless.roboflow.com') ||
-          model.inferenceEndpoint.includes('detect.roboflow.com') ||
-          model.inferenceEndpoint.includes('segment.roboflow.com')
+        modelAny.library_name === 'roboflow' ||
+        (modelAny.inferenceEndpoint && (
+          modelAny.inferenceEndpoint.includes('serverless.roboflow.com') ||
+          modelAny.inferenceEndpoint.includes('detect.roboflow.com') ||
+          modelAny.inferenceEndpoint.includes('segment.roboflow.com')
         )) ||
         // Check if model_id contains roboflow indicators even if not normalized
         (modelIdLower.includes('roboflow') && (
           modelIdLower.includes('soccer') ||
           modelIdLower.includes('ball') ||
           modelIdLower.includes('basketball') ||
-          model.inferenceEndpoint?.includes('roboflow.com')
+          modelAny.inferenceEndpoint?.includes('roboflow.com')
         ));
 
       // Determine source
@@ -2738,39 +2774,48 @@ async function getCuratedModels(keywords: string[], limit: number = 20, taskType
       let inferenceEndpoint: string | undefined;
       if (isRoboflowModel) {
         // For Roboflow models, use the endpoint from database
-        inferenceEndpoint = model.inferenceEndpoint || model.inference_endpoint;
+        inferenceEndpoint = (model as any).inferenceEndpoint || (model as any).inference_endpoint;
       } else {
         // For Hugging Face models, use endpoint from database or generate default
-        inferenceEndpoint = model.inferenceEndpoint || model.inference_endpoint ||
-          (model.supportsInference || model.inferenceStatus === 'hosted' || model.inferenceStatus === 'warm'
+        const supportsInference = (model as any).supportsInference || (model as any).inferenceStatus === 'hosted' || (model as any).inferenceStatus === 'warm';
+        inferenceEndpoint = (model as any).inferenceEndpoint || (model as any).inference_endpoint ||
+          (supportsInference
             ? `https://router.huggingface.co/hf-inference/models/${model.model_id}`
             : undefined);
       }
+
+      // Check if this is a coming soon model
+      const isComingSoon = (model as any).status === 'coming_soon' || (model as any).isDisabled === true
 
       return {
         id: model.model_id,
         name: model.name || model.model_id.split('/').pop() || 'Unknown Model',
         author: model.author || model.model_id.split('/')[0] || 'Unknown',
         task: model.task_type || 'unknown',
-        downloads: model.downloads || 0,
-        likes: model.likes || 0,
-        tags: model.tags || [],
-        classes: model.classes || [], // Include classes for debugging and display
-        pipeline_tag: model.pipeline_tag || 'unknown',
-        library_name: model.library_name || 'unknown',
-        inference: model.supportsInference || model.inferenceStatus === 'hosted' || model.inferenceStatus === 'warm',
+        downloads: (model as any).downloads || 0,
+        likes: (model as any).likes || 0,
+        tags: (model as any).tags || [],
+        classes: (model as any).classes || [], // Include classes for debugging and display
+        pipeline_tag: (model as any).pipeline_tag || 'unknown',
+        library_name: (model as any).library_name || 'unknown',
+        inference: (model as any).supportsInference || (model as any).inferenceStatus === 'hosted' || (model as any).inferenceStatus === 'warm',
         // Add required properties for useCVTask hook
-        supportsInference: model.supportsInference || model.inferenceStatus === 'hosted' || model.inferenceStatus === 'warm',
+        supportsInference: (model as any).supportsInference || (model as any).inferenceStatus === 'hosted' || (model as any).inferenceStatus === 'warm',
         inferenceEndpoint: inferenceEndpoint,
         // Add API key for Roboflow models
         ...(isRoboflowModel && { apiKey: process.env.ROBOFLOW_API_KEY }),
-        validated: model.validated || false,
-        works: model.works || false,
-        workingDate: model.workingDate,
+        validated: (model as any).validated || false,
+        works: (model as any).works || false,
+        workingDate: (model as any).workingDate,
         relevanceScore: model.relevanceScore || 0,
         source: source, // Correctly set source based on model type
         isCurated: true,
-        isPriority: priorityModelIds.includes(model.model_id) // Mark priority models
+        isPriority: priorityModelIds.includes(model.model_id), // Mark priority models
+        // Add coming soon status fields
+        status: isComingSoon ? 'coming_soon' : 'active',
+        isDisabled: isComingSoon || false,
+        provider: (model as any).provider || (isRoboflowModel ? 'roboflow' : 'huggingface'),
+        comingSoonReason: isComingSoon ? 'API integration pending' : undefined
       };
     })
 
