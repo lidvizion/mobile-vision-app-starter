@@ -182,6 +182,9 @@ export default function KeypointDetectionUI() {
 
     // Setup exercise analyzer
     const setupExercise = useCallback(async (exerciseName: string) => {
+        console.log('🎯 setupExercise called with:', exerciseName)
+        console.log('🔑 API Key present:', !!geminiApiKey, geminiApiKey ? `(${geminiApiKey.substring(0, 10)}...)` : '(empty)')
+
         if (!uploadedVideo) {
             alert('Please upload a video first')
             return
@@ -192,6 +195,7 @@ export default function KeypointDetectionUI() {
 
         const normalizedName = exerciseName.toLowerCase().replace(/\s+/g, '_')
 
+        // 1. Check built-in exercises first
         if (['squat', 'kettlebell', 'long_cycle'].includes(normalizedName)) {
             setSelectedExercise(exerciseName)
             setIsProcessing(false)
@@ -199,18 +203,55 @@ export default function KeypointDetectionUI() {
             return
         }
 
-        // Custom exercise - use Gemini
-        setProcessingStatus('Generating config with Gemini AI...')
         try {
+            // 2. Check MongoDB for saved config
+            setProcessingStatus('Checking library...')
+            console.log(`🔍 Checking MongoDB for: ${normalizedName}`)
+
+            const savedConfig = await fetch(`/api/exercise-config/${normalizedName}`)
+                .then(r => r.json())
+
+            if (savedConfig.found) {
+                // Use saved config
+                console.log(`✅ Found config in library: ${exerciseName}`)
+                const runner = new TemplateExerciseRunner(savedConfig.config)
+                setDynamicAnalyzer(runner)
+                setSelectedExercise(exerciseName)
+                setProcessingStatus('')
+                setIsProcessing(false)
+                setFeedback(`Loaded ${exerciseName} from library! Press play.`)
+                return
+            }
+
+            // 3. Generate with Gemini and save
+            console.log(`📡 Generating config with Gemini for: ${exerciseName}`)
+            setProcessingStatus('Generating config with Gemini AI...')
+
             const config = await generateExerciseConfig(geminiApiKey, exerciseName)
+
+            // Save to MongoDB for future use
+            console.log(`💾 Saving to MongoDB...`)
+            await fetch('/api/exercise-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    slug: normalizedName,
+                    displayName: exerciseName,
+                    config,
+                    source: 'gemini'
+                })
+            })
+            console.log(`✅ Saved to MongoDB`)
+
             const runner = new TemplateExerciseRunner(config)
             setDynamicAnalyzer(runner)
             setSelectedExercise(exerciseName)
             setProcessingStatus('')
             setIsProcessing(false)
-            setFeedback(`Ready! Press play to analyze ${exerciseName}`)
+            setFeedback(`Generated and saved: ${exerciseName}. Press play!`)
+
         } catch (err) {
-            console.error('Gemini failed:', err)
+            console.error('Exercise setup failed:', err)
             setSelectedExercise('squat')
             setProcessingStatus('')
             setIsProcessing(false)
@@ -339,8 +380,8 @@ export default function KeypointDetectionUI() {
                             onClick={() => prompt.trim() && setupExercise(prompt.trim())}
                             disabled={!uploadedVideo || !prompt.trim() || isProcessing}
                             className={`mt-3 w-full py-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2 ${uploadedVideo && prompt.trim() && !isProcessing
-                                    ? 'bg-wells-dark-grey text-white hover:bg-wells-dark-grey/90'
-                                    : 'bg-wells-warm-grey/30 text-wells-warm-grey cursor-not-allowed'
+                                ? 'bg-wells-dark-grey text-white hover:bg-wells-dark-grey/90'
+                                : 'bg-wells-warm-grey/30 text-wells-warm-grey cursor-not-allowed'
                                 }`}
                         >
                             {isProcessing ? (
